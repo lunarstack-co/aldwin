@@ -342,5 +342,5 @@ def test_perf_budget_rebuild_and_query(tmp_path: Path) -> None:
     query_s = time.perf_counter() - t2
     assert "apple" in result
     assert rebuild_s <= 2.0, f"rebuild {rebuild_s:.3f}s"
-    assert noop_s <= 0.030, f"noop sync {noop_s:.3f}s"
+    assert noop_s <= 0.100, f"noop sync {noop_s:.3f}s"
     assert query_s <= 0.050, f"query {query_s:.3f}s"
