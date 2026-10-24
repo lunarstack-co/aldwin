@@ -29,7 +29,6 @@ from aldwin.core.settings import (
     resolve_key,
 )
 from aldwin.core.skills import build_task as build_task  # noqa: F401  # public re-export
-from aldwin.core.tools import builtin_tools
 from aldwin.core.workspace import Workspace
 
 logger = logging.getLogger("aldwin.core.agent")
@@ -370,10 +369,18 @@ def build_agent(
 
     if tools is not None:
         active_tools: tuple[Tool, ...] = tuple(tools)
-    elif active_ws is not None and policy_session is not None:
+    else:
+        if active_ws is None:
+            raise RuntimeError(
+                "build_agent requires a workspace when tools are not supplied "
+                "(pass workspace= or run from an existing directory)."
+            )
+        active_policy = policy_session
+        if active_policy is None:
+            active_policy = PolicySession(workspace=active_ws, home=root)
         ctx = SessionContext(
             workspace=active_ws,
-            policy_session=policy_session,
+            policy_session=active_policy,
             ask=coerce_policy_ask(ask),
             approval_log=approval_log,
             emit=emit,
@@ -386,33 +393,6 @@ def build_agent(
             model_name=config.model,
         )
         active_tools = tuple(build_tools(ctx))
-    else:
-        policy_ask = coerce_policy_ask(ask)
-
-        async def _compat_ask(summary: str, detail: str = "") -> bool:
-            ans = await policy_ask(
-                ApprovalRequest(
-                    tool="run_command",
-                    tier="ask",
-                    summary=summary,
-                    detail=detail,
-                    grantable=False,
-                    grant_key=None,
-                    risky=(),
-                    digest="",
-                )
-            )
-            return ans.answer in ("yes", "yes_session")
-
-        built = builtin_tools(
-            _compat_ask,
-            root,
-            secrets,
-            persona_cap=config.limits.persona_chars,
-            session_id_getter=session_id_getter,
-        )
-        verify_registered_tools(built)
-        active_tools = tuple(built)
 
     catalogue = build_catalogue(
         root,

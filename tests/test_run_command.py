@@ -38,6 +38,21 @@ async def test_run_command_approved_executes_in_cwd(tmp_path: Path) -> None:
     assert "hello_aldwin.txt" in str(res)
 
 
+def test_prepare_approval_includes_resolved_cwd(tmp_path: Path) -> None:
+    """Approval preview shows the resolved working directory when cwd is set."""
+
+    async def unused(_summary: str, _detail: str = "") -> bool:
+        return True
+
+    tool = build_run_command_tool(unused, cwd=tmp_path)
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    preview = tool.prepare_approval("ls -la", cwd=str(sub))
+    assert sub.name in preview.summary
+    assert f"$ cd {sub.resolve()}" in preview.detail
+    assert preview.detail.endswith("ls -la")
+
+
 async def test_run_command_declined_skips_execution(tmp_path: Path) -> None:
     """Declined `run_command` skips execution and returns `user declined`."""
     marker = tmp_path / "should_not_be_created.txt"

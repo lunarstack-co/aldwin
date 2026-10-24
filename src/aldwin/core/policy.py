@@ -1129,6 +1129,29 @@ def decide(
                     source="rule",
                     reason=f"blocked: {blocked_token} may contain secrets",
                 )
+            # Same hard denylist as RunCommandTool (sudo, interactive, bare REPLs).
+            from aldwin.core.tools.run_command import check_command_allowed
+
+            refusal = check_command_allowed(
+                str(args["command"]),
+                apply_denylist=True,
+            )
+            if refusal is not None:
+                return Decision(
+                    kind="deny",
+                    source="rule",
+                    reason=refusal,
+                )
+            for arg_name, _raw_str, res_path in resolved_paths:
+                if arg_name != "cwd":
+                    continue
+                if not res_path.inside:
+                    shown = format_outside_display(res_path.path)
+                    return Decision(
+                        kind="deny",
+                        source="rule",
+                        reason=f"cwd outside workspace: {shown}",
+                    )
 
         base_tier: Tier = policy.tier(args) if callable(policy.tier) else policy.tier
 

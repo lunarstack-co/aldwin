@@ -265,11 +265,11 @@ def check_command_allowed(
     *,
     apply_denylist: bool = True,
 ) -> str | None:
-    """Validate `command` length, and optionally refuse sudo and interactive programs.
+    """Validate `command` length, and refuse sudo / interactive / bare REPLs.
 
     Returns `None` if the command may run, or a concise refusal reason.
-    The policy wrapper passes `apply_denylist=False`. Sudo and editors are
-    labelled and approved by the engine instead of refused here.
+    Policy `decide()` and the tool both apply this denylist; do not disable it
+    on the production (policy-wrapped) path.
     """
     if not isinstance(command, str) or "\x00" in command:
         return "command must be a valid string"
@@ -473,13 +473,19 @@ class RunCommandTool(Tool):
         """Build the `ApprovalPreview` for `PolicyWrappedTool`."""
         from aldwin.core.policy import ApprovalPreview
 
-        _ = cwd
+        work_dir = self._resolve_work_dir(cwd)
         short_cmd = " ".join(command.split())
         if len(short_cmd) > 60:
             short_cmd = f"{short_cmd[:59]}…"
+        summary = (
+            f"Run command in {work_dir.name}: {short_cmd}"
+            if short_cmd
+            else f"Run command in {work_dir.name}?"
+        )
+        detail = command if cwd is None else f"$ cd {work_dir}\n{command}"
         return ApprovalPreview(
-            summary=f"Run command: {short_cmd}" if short_cmd else "Run this command?",
-            detail=command,
+            summary=summary,
+            detail=detail,
             mtime_ns=None,
         )
 
@@ -488,10 +494,7 @@ class RunCommandTool(Tool):
         command: str,
         cwd: str | None = None,
     ) -> ToolOutput:
-        refusal = check_command_allowed(
-            command,
-            apply_denylist=not self._wrapped_by_policy,
-        )
+        refusal = check_command_allowed(command, apply_denylist=True)
         if refusal is not None:
             return ToolOutput(
                 f"Command refused: {refusal}",
