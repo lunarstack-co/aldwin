@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 import pytest
+from perf_slack import budget
 from prompt_toolkit.completion import CompleteEvent
 from prompt_toolkit.document import Document
 
@@ -129,7 +130,7 @@ async def test_grep_budget_100k_lines(perf_ws, aldwin_home: Path) -> None:
     t0 = time.perf_counter()
     await tools["grep"].call({"pattern": "needle", "path": "big"})
     elapsed = time.perf_counter() - t0
-    limit = 2.0 if shutil.which("rg") else 10.0
+    limit = budget(2.0 if shutil.which("rg") else 10.0)
     assert elapsed < limit, elapsed
 
 
@@ -155,7 +156,7 @@ async def test_read_document_50_page_pdf(perf_ws, aldwin_home: Path) -> None:
     t0 = time.perf_counter()
     await tools["read_document"].call({"path": "fifty.pdf"})
     elapsed = time.perf_counter() - t0
-    assert elapsed < 3.0, elapsed
+    assert elapsed < budget(3.0), elapsed
 
 
 async def test_recall_budget_after_index(aldwin_home: Path) -> None:
@@ -169,7 +170,7 @@ async def test_recall_budget_after_index(aldwin_home: Path) -> None:
     t0 = time.perf_counter()
     await tool.forward(query="fact 42", scope="notes")
     elapsed_ms = (time.perf_counter() - t0) * 1000
-    assert elapsed_ms < 50.0, elapsed_ms
+    assert elapsed_ms < budget(0.050) * 1000, elapsed_ms
 
 
 def test_skill_catalogue_budget(aldwin_home: Path) -> None:
@@ -189,7 +190,7 @@ def test_skill_catalogue_budget(aldwin_home: Path) -> None:
     cat = build_catalogue(aldwin_home, version="0.0.2", model="gpt-test")
     elapsed_ms = (time.perf_counter() - t0) * 1000
     assert len(cat) >= 50
-    assert elapsed_ms < 100.0, elapsed_ms
+    assert elapsed_ms < budget(0.100) * 1000, elapsed_ms
 
 
 def test_at_filter_budget() -> None:
@@ -211,4 +212,4 @@ def test_at_filter_budget() -> None:
     t0 = time.perf_counter()
     list(completer.get_completions(doc, event))
     elapsed_ms = (time.perf_counter() - t0) * 1000
-    assert elapsed_ms < 16.0, elapsed_ms
+    assert elapsed_ms < budget(0.016) * 1000, elapsed_ms

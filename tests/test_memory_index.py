@@ -10,6 +10,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
+from perf_slack import budget
 
 from aldwin.core.home import FILE_MODE, atomic_write
 from aldwin.core.memory_index import (
@@ -341,6 +342,6 @@ def test_perf_budget_rebuild_and_query(tmp_path: Path) -> None:
     result = idx.search("apple")
     query_s = time.perf_counter() - t2
     assert "apple" in result
-    assert rebuild_s <= 2.0, f"rebuild {rebuild_s:.3f}s"
-    assert noop_s <= 0.100, f"noop sync {noop_s:.3f}s"
-    assert query_s <= 0.050, f"query {query_s:.3f}s"
+    assert rebuild_s <= budget(2.0), f"rebuild {rebuild_s:.3f}s"
+    assert noop_s <= budget(0.030), f"noop sync {noop_s:.3f}s"
+    assert query_s <= budget(0.050), f"query {query_s:.3f}s"
