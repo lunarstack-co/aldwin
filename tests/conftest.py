@@ -1,26 +1,37 @@
-"""Shared pytest fixtures and helpers for Aldwin (`FR-2` to `FR-5`)."""
+"""Shared pytest fixtures and helpers for Aldwin."""
 
 from __future__ import annotations
 
+import hashlib
+import random
 import socket
-from collections.abc import AsyncIterator
+import time
+from collections.abc import AsyncIterator, Callable, Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 from agentling import AgentSession
+from canary import CANARY
 from fakes.host import FakeHost
 from fakes.model import FakeModel
 
 from aldwin.client import AldwinClient
 from aldwin.core.agent import build_agent, new_session
 from aldwin.core.home import ensure_home
+from aldwin.core.policy import ApprovalAnswer, ApprovalRequest
 from aldwin.core.settings import AldwinConfig, SecretsConfig
+from aldwin.core.workspace import Workspace
 from aldwin.host import AldwinHost, AskFn, InProcessTransport
-from aldwin.protocol import ApprovalAnswer, ApprovalEvent, Event
+from aldwin.protocol import ApprovalAnswer as ProtocolApprovalAnswer
+from aldwin.protocol import ApprovalEvent, Event
 
 _ORIG_SOCKET_CONNECT = socket.socket.connect
 _ORIG_SOCKET_CONNECT_EX = socket.socket.connect_ex
+
+# Snapshot of the real user home before any test redirects HOME.
+_REAL_USER_HOME = Path.home().resolve()
+_REAL_ALDWIN = _REAL_USER_HOME / ".aldwin"
 
 
 async def _allow_ask(_summary: str, _detail: str = "") -> bool:
@@ -28,7 +39,7 @@ async def _allow_ask(_summary: str, _detail: str = "") -> bool:
 
 
 async def collect(aiter: AsyncIterator[Event]) -> list[Event]:
-    """Drain an async iterator of protocol `Event`s into a list (`FR-4`)."""
+    """Drain an async iterator of protocol `Event`s into a list."""
     events: list[Event] = []
     async for ev in aiter:
         events.append(ev)
@@ -38,18 +49,54 @@ async def collect(aiter: AsyncIterator[Event]) -> list[Event]:
 async def auto_approve(
     client: AldwinClient,
     aiter: AsyncIterator[Event],
-    answer: ApprovalAnswer = "yes",
+    answer: ProtocolApprovalAnswer = "yes",
 ) -> list[Event]:
-    """Consume a turn stream and automatically answer every `ApprovalEvent` (`FR-4`)."""
+    """Consume a turn stream and automatically answer every `ApprovalEvent`."""
     events: list[Event] = []
     async for ev in aiter:
         events.append(ev)
         if isinstance(ev, ApprovalEvent):
-            await client.approve(ev.approval_id, answer)
+            await client.approve(ev.approval_id, answer, digest=ev.digest)
     return events
 
 
 _NET_ERR = "Network access is disabled in default tests; mark with @pytest.mark.live"
+
+
+def _allows_network(request: pytest.FixtureRequest) -> bool:
+    return "live" in request.keywords or "e2e" in request.keywords
+
+
+def _fingerprint_tree(root: Path) -> dict[str, str]:
+    """Map relative paths under `root` to content hashes (files only)."""
+    if not root.is_dir():
+        return {}
+    out: dict[str, str] = {}
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = str(path.relative_to(root))
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        out[rel] = digest
+    return out
+
+
+@pytest.fixture(scope="session")
+def assert_real_home_unchanged() -> Iterator[None]:
+    """Fail the session if tests mutate the real `~/.aldwin`."""
+    before = _fingerprint_tree(_REAL_ALDWIN)
+    yield
+    after = _fingerprint_tree(_REAL_ALDWIN)
+    assert after == before, (
+        "Real ~/.aldwin changed during the test session. "
+        f"before={sorted(before)} after={sorted(after)}"
+    )
+
+
+@pytest.fixture(autouse=True)
+def _session_home_guard(assert_real_home_unchanged: None) -> None:
+    """Pull the session home-guard into every test collection."""
+    return None
 
 
 @pytest.fixture(autouse=True)
@@ -73,7 +120,7 @@ def aldwin_home(
     home = tmp_path / "home"
     monkeypatch.setenv("ALDWIN_HOME", str(home))
 
-    if "live" not in request.keywords:
+    if not _allows_network(request):
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.delenv("TAVILY_API_KEY", raising=False)
 
@@ -88,8 +135,8 @@ def no_network(
     monkeypatch: pytest.MonkeyPatch,
     request: pytest.FixtureRequest,
 ) -> None:
-    """Block outbound `AF_INET`/`AF_INET6` sockets unless marked `live` (`TC-01`)."""
-    if "live" in request.keywords:
+    """Block outbound `AF_INET`/`AF_INET6` sockets unless marked `live`/`e2e`."""
+    if _allows_network(request):
         return
 
     def _blocked_connect(self: socket.socket, address: Any) -> Any:
@@ -111,14 +158,73 @@ def no_network(
 
 
 @pytest.fixture
+def workspace(tmp_path: Path, aldwin_home: Path) -> Workspace:
+    """Isolated workspace directory (`tmp_path/ws`) for file and security tests."""
+    root = tmp_path / "ws"
+    root.mkdir(exist_ok=True)
+    return Workspace(root, home=aldwin_home)
+
+
+@pytest.fixture
+def canary_env(monkeypatch: pytest.MonkeyPatch) -> str:
+    """Put the canary value in the process environment; return the constant."""
+    monkeypatch.setenv("ALDWIN_CANARY", CANARY)
+    monkeypatch.setenv(CANARY, "1")
+    return CANARY
+
+
+@pytest.fixture
+def seeded_rng(monkeypatch: pytest.MonkeyPatch) -> random.Random:
+    """Deterministic RNG for tests that need reproducible randomness."""
+    rng = random.Random(433)
+    monkeypatch.setattr(random, "random", rng.random)
+    monkeypatch.setattr(random, "choice", rng.choice)
+    monkeypatch.setattr(random, "randrange", rng.randrange)
+    return rng
+
+
+@pytest.fixture
+def frozen_clock(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[float], None]]:
+    """Injectable clock: call `set_now(ts)` then `time.time()` returns `ts`."""
+    state = {"now": 1_724_000_000.0}
+
+    def set_now(ts: float) -> None:
+        state["now"] = ts
+
+    monkeypatch.setattr(time, "time", lambda: state["now"])
+    yield set_now
+
+
+@pytest.fixture
+def approver() -> Callable[..., Any]:
+    """Build an ask callback that returns a fixed answer, echoing digests."""
+
+    def _factory(
+        answer: Literal["yes", "yes_session", "no"] = "yes",
+        reason: str | None = None,
+        *,
+        asks: list[ApprovalRequest] | None = None,
+    ) -> Callable[[ApprovalRequest], Any]:
+        bucket = asks if asks is not None else []
+
+        async def ask(req: ApprovalRequest) -> ApprovalAnswer:
+            bucket.append(req)
+            return ApprovalAnswer(answer, "user", reason=reason)
+
+        return ask
+
+    return _factory
+
+
+@pytest.fixture
 def fake_model() -> FakeModel:
-    """Return a fresh, network-free `FakeModel` instance (`FR-3`)."""
+    """Return a fresh, network-free `FakeModel` instance."""
     return FakeModel()
 
 
 @pytest.fixture
 def agent_session(fake_model: FakeModel, aldwin_home: Path) -> AgentSession:
-    """Build a real `aldwin.core` `AgentSession` wired to `fake_model` (`FR-4`)."""
+    """Build a real `aldwin.core` `AgentSession` wired to `fake_model`."""
     agent = build_agent(
         AldwinConfig(),
         SecretsConfig(),
@@ -159,5 +265,5 @@ async def host_client(
 
 @pytest.fixture
 def fake_host() -> FakeHost:
-    """Return a scriptable `FakeHost` test double for CLI tests (`FR-5`)."""
+    """Return a scriptable `FakeHost` test double for CLI tests."""
     return FakeHost()

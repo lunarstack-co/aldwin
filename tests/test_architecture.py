@@ -133,7 +133,7 @@ def test_architecture_guard_catches_deliberate_bad_import(tmp_path: Path) -> Non
 
 
 def test_ci_workflow_runs_matrix_and_uploads_coverage() -> None:
-    """`FR-10` & `TC-11`: CI workflow checks Ubuntu+macOS x Py3.11/3.13 + coverage."""
+    """ENG-433 FR-20: CI matrix 3.11–3.13, security job, coverage upload."""
     ci_path = REPO_ROOT / ".github" / "workflows" / "ci.yml"
     assert ci_path.is_file()
     data = yaml.safe_load(ci_path.read_text(encoding="utf-8"))
@@ -141,7 +141,7 @@ def test_ci_workflow_runs_matrix_and_uploads_coverage() -> None:
     job = data["jobs"]["test"]
     matrix = job["strategy"]["matrix"]
     assert matrix["os"] == ["ubuntu-latest", "macos-latest"]
-    assert matrix["python-version"] == ["3.11", "3.13"]
+    assert matrix["python-version"] == ["3.11", "3.12", "3.13"]
 
     steps = job["steps"]
     runs = [step.get("run", "") for step in steps]
@@ -154,11 +154,23 @@ def test_ci_workflow_runs_matrix_and_uploads_coverage() -> None:
         and "--cov-fail-under=90" in r
         for r in runs
     )
+    assert any("pytest -m perf" in r for r in runs)
     assert any(
         step.get("uses") == "actions/upload-artifact@v4"
         and step.get("with", {}).get("path") == "coverage.xml"
         for step in steps
     )
+
+    security = data["jobs"]["security"]
+    sec_runs = [step.get("run", "") for step in security["steps"]]
+    assert any("tests/security" in r for r in sec_runs)
+
+    e2e_path = REPO_ROOT / ".github" / "workflows" / "e2e.yml"
+    assert e2e_path.is_file()
+    e2e_text = e2e_path.read_text(encoding="utf-8")
+    assert "workflow_dispatch" in e2e_text
+    assert "schedule:" in e2e_text
+    assert "pytest -m e2e" in e2e_text
 
 
 def test_manual_test_doc_exists_and_covers_all_fr11_steps() -> None:

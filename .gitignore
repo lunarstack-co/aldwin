@@ -28,6 +28,9 @@ htmlcov/
 .env
 .env.*
 
+# E2E transcripts (ENG-433); may contain masked keys but stay local
+tests/e2e/out/
+
 # Agent & editor folders
 .opencode/
 .claude/

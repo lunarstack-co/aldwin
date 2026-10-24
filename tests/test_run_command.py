@@ -49,8 +49,9 @@ def test_prepare_approval_includes_resolved_cwd(tmp_path: Path) -> None:
     sub.mkdir()
     preview = tool.prepare_approval("ls -la", cwd=str(sub))
     assert sub.name in preview.summary
-    assert f"$ cd {sub.resolve()}" in preview.detail
-    assert preview.detail.endswith("ls -la")
+    detail = preview.detail or ""
+    assert f"$ cd {sub.resolve()}" in detail
+    assert detail.endswith("ls -la")
 
 
 async def test_run_command_declined_skips_execution(tmp_path: Path) -> None:

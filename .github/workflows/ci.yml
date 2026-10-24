@@ -14,13 +14,13 @@ concurrency:
 
 jobs:
   test:
-    timeout-minutes: 10
+    timeout-minutes: 15
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        python-version: ["3.11", "3.13"]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - name: Check out repository
@@ -56,6 +56,10 @@ jobs:
       - name: Test with coverage (pytest)
         run: uv run pytest --cov=aldwin --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=90
 
+      - name: Perf budgets (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: uv run pytest -m perf -q
+
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -65,3 +69,26 @@ jobs:
 
       - name: Build package
         run: uv build
+
+  security:
+    name: security
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Security + policy suite
+        run: uv run pytest tests/security -q --tb=short

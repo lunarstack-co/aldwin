@@ -1,0 +1,43 @@
+name: E2E
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: e2e-openai
+    if: ${{ secrets.OPENAI_API_KEY != '' }}
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies and package
+        run: |
+          uv sync
+          uv tool install -e .
+
+      - name: Run E2E demos
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: uv run pytest -m e2e -q --tb=short
+
+      - name: Upload transcripts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-transcripts
+          path: tests/e2e/out/
+          if-no-files-found: ignore

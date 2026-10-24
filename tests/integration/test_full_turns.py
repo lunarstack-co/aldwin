@@ -97,11 +97,11 @@ async def test_tool_call_approve_no_skips_command_and_informs_model(
     results = [ev for ev in events if isinstance(ev, ToolResultEvent)]
     assert len(results) == 1
     assert results[0].ok is False
-    assert results[0].summary == "declined"
+    assert "denied by the user" in results[0].summary.lower()
 
     tool_msgs = [m for m in fake_model.received_messages if m.role == "tool"]
     assert len(tool_msgs) == 1
-    assert "user declined" in (tool_msgs[0].content or "").lower()
+    assert "denied by the user" in (tool_msgs[0].content or "").lower()
     assert isinstance(events[-1], DoneEvent)
     assert events[-1].reason == "answered"
 
