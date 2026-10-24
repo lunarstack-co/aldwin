@@ -224,4 +224,4 @@ Found a bug or want to propose an improvement? Open an issue on [GitHub Issues](
 
 ## Licence
 
-MIT. See [`LICENSE`](https://github.com/lunarstack-co/aldwin/blob/main/LICENSE).
+Apache-2.0. See [`LICENSE`](https://github.com/lunarstack-co/aldwin/blob/main/LICENSE) and [`NOTICE`](https://github.com/lunarstack-co/aldwin/blob/main/NOTICE).

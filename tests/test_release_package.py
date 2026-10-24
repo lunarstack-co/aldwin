@@ -268,7 +268,7 @@ def test_readme_contains_all_fr1_sections_and_doc_links() -> None:
         "docs/protocol.md",
         "docs/manual-test.md",
         "docs/releasing.md",
-        "MIT",
+        "Apache-2.0",
     )
     for snippet in required_snippets:
         assert snippet in readme, f"Missing {snippet!r} in README.md"
