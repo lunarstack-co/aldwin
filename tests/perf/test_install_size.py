@@ -21,9 +21,35 @@ def _linux_only() -> None:
         pytest.skip("Installed-size budget runs on Linux CI only")
 
 
+def _is_real_file(path: Path) -> bool:
+    """True for a regular file, false for a directory or a symlink.
+
+    `uv` symlinks the interpreter (`bin/python`, `bin/python3`, ...) to a
+    Python build it manages outside the install entirely, shared across
+    every tool it installs. `Path.is_file()`/`Path.stat()` follow symlinks,
+    so counting those names would attribute that external, shared
+    interpreter's size to this install, once per symlink name pointing to it.
+    """
+    return path.is_file() and not path.is_symlink()
+
+
 def _dir_size_mb(root: Path) -> float:
-    total = sum(f.stat().st_size for f in root.rglob("*") if f.is_file())
+    total = sum(f.stat().st_size for f in root.rglob("*") if _is_real_file(f))
     return total / (1024 * 1024)
+
+
+def _size_breakdown(root: Path, limit: int = 20) -> str:
+    """Return the largest entries under `root`, grouped by their first five
+    path components (deep enough to separate individual packages inside
+    site-packages from each other), descending by size."""
+    totals: dict[str, int] = {}
+    for f in root.rglob("*"):
+        if not _is_real_file(f):
+            continue
+        key = "/".join(f.relative_to(root).parts[:5])
+        totals[key] = totals.get(key, 0) + f.stat().st_size
+    ranked = sorted(totals.items(), key=lambda kv: kv[1], reverse=True)[:limit]
+    return "\n".join(f"{size / (1024 * 1024):8.2f} MB  {name}" for name, size in ranked)
 
 
 def test_installed_size_under_budget(tmp_path: Path) -> None:
@@ -70,5 +96,6 @@ def test_installed_size_under_budget(tmp_path: Path) -> None:
     size_mb = _dir_size_mb(tool_dir)
     assert size_mb <= INSTALLED_SIZE_BUDGET_MB, (
         f"Installed size {size_mb:.1f} MB exceeds the "
-        f"{INSTALLED_SIZE_BUDGET_MB} MB budget"
+        f"{INSTALLED_SIZE_BUDGET_MB} MB budget\n"
+        f"Largest entries:\n{_size_breakdown(tool_dir)}"
     )
