@@ -19,6 +19,10 @@ FILE_MODE: Final[int] = 0o600
 TMP_RETENTION_DAYS: Final[int] = 7
 SECONDS_PER_DAY: Final[int] = 86_400
 
+HOME_VERSION: Final[int] = 2
+HOME_VERSION_FILENAME: Final[str] = "home_version"
+CONFIG_BACKUP_0_0_1_NAME: Final[str] = "config.yaml.bak-0.0.1"
+
 SUBDIRS: Final[tuple[str, ...]] = (
     "skills",
     "sessions",
@@ -36,6 +40,10 @@ STARTER_ASSETS: Final[tuple[tuple[str, str], ...]] = (
 )
 
 BASE_INSTRUCTIONS_ASSET: Final[str] = "instructions.md"
+
+
+class HomeError(Exception):
+    """Raised when preparing or migrating the Aldwin home folder fails."""
 
 
 def home_dir() -> Path:
@@ -188,6 +196,72 @@ def cleanup_old_tmp_files(
         except OSError:
             continue
     return deleted
+
+
+def _read_home_version(marker_path: Path) -> int | None:
+    """Return the integer home-layout version recorded at `marker_path`, if any."""
+    try:
+        text = marker_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        return None
+
+
+def _write_home_version(marker_path: Path) -> None:
+    atomic_write(marker_path, f"{HOME_VERSION}\n", mode=FILE_MODE)
+
+
+def _backup_config_if_needed(root: Path) -> None:
+    """Copy `config.yaml` to `config.yaml.bak-0.0.1` once, before any other change."""
+    backup_path = root / CONFIG_BACKUP_0_0_1_NAME
+    if backup_path.exists():
+        return
+    config_path = root / "config.yaml"
+    if not config_path.exists():
+        return
+    atomic_write(backup_path, config_path.read_bytes(), mode=FILE_MODE)
+
+
+def migrate_0_0_1(home: Path, *, fresh_install: bool) -> None:
+    """Idempotently migrate a 0.0.1 home folder to the 0.0.2 layout.
+
+    ``fresh_install`` must be the value `ensure_home` returned for this call: a
+    brand-new 0.0.2 home is marked migrated directly, skipping the 0.0.1
+    upgrade steps (backup, added config keys, memory index) that do not apply
+    to it. Raises `HomeError` on failure; 0.0.1 data is left untouched.
+    """
+    root = home.expanduser().resolve()
+    marker_path = root / "state" / HOME_VERSION_FILENAME
+    if _read_home_version(marker_path) == HOME_VERSION:
+        logger.info("migration: up to date")
+        return
+
+    if fresh_install:
+        _write_home_version(marker_path)
+        return
+
+    try:
+        _backup_config_if_needed(root)
+
+        logs_dir = root / "logs"
+        if logs_dir.is_dir():
+            for entry in logs_dir.iterdir():
+                if entry.is_file():
+                    ensure_permissions(entry, FILE_MODE)
+
+        from aldwin.core.memory_index import default_memory_index
+        from aldwin.core.settings import ensure_run_command_env_allow
+
+        ensure_run_command_env_allow(root)
+        default_memory_index(root).sync()
+        _write_home_version(marker_path)
+    except (OSError, UnicodeDecodeError) as exc:
+        raise HomeError(f"migration failed: {exc}; your data is unchanged") from exc
+
+    logger.info("Migrated Aldwin home to version %d", HOME_VERSION)
 
 
 def read_base_instructions() -> str:

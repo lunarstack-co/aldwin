@@ -8,10 +8,18 @@ from aldwin.cli.tips import TIPS, next_tip
 
 
 def test_tips_count_and_themes() -> None:
-    """Twelve tips covering core discoverability themes."""
-    assert len(TIPS) == 12
+    """Fourteen tips covering core discoverability themes, including the 0.0.2 ones."""
+    assert len(TIPS) == 14
     joined = " ".join(TIPS).lower()
-    for needle in ("@", "/model", "esc", "alt+enter", "/verbose"):
+    for needle in (
+        "@",
+        "/model",
+        "esc",
+        "alt+enter",
+        "/verbose",
+        "find every todo",
+        "summarise report.pdf",
+    ):
         assert needle in joined
 
 

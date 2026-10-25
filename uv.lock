@@ -23,21 +23,18 @@ wheels = [
 
 [[package]]
 name = "aldwin"
-version = "0.0.1"
+version = "0.0.2"
 source = { editable = "." }
 dependencies = [
     { name = "agentling" },
     { name = "beautifulsoup4" },
     { name = "httpx" },
-    { name = "mammoth" },
     { name = "markdownify" },
-    { name = "openpyxl" },
     { name = "packaging" },
     { name = "pathspec" },
     { name = "prompt-toolkit" },
     { name = "pydantic" },
     { name = "pypdfium2" },
-    { name = "python-pptx" },
     { name = "pyyaml" },
     { name = "rich" },
     { name = "trafilatura" },
@@ -51,15 +48,23 @@ docs = [
     { name = "python-docx" },
     { name = "reportlab" },
 ]
+office = [
+    { name = "mammoth" },
+    { name = "openpyxl" },
+    { name = "python-pptx" },
+]
 
 [package.dev-dependencies]
 dev = [
     { name = "hypothesis" },
+    { name = "mammoth" },
     { name = "mypy" },
+    { name = "openpyxl" },
     { name = "pexpect" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
+    { name = "python-pptx" },
     { name = "ruff" },
     { name = "types-pyyaml" },
 ]
@@ -69,17 +74,17 @@ requires-dist = [
     { name = "agentling", specifier = ">=0.1,<0.2" },
     { name = "beautifulsoup4", specifier = ">=4.12.0" },
     { name = "httpx", specifier = ">=0.28.0" },
-    { name = "mammoth", specifier = ">=1.8.0" },
+    { name = "mammoth", marker = "extra == 'office'", specifier = ">=1.8,<2" },
     { name = "markdownify", specifier = ">=0.14.0" },
-    { name = "openpyxl", specifier = ">=3.1.0" },
     { name = "openpyxl", marker = "extra == 'docs'", specifier = ">=3.1,<4" },
+    { name = "openpyxl", marker = "extra == 'office'", specifier = ">=3.1,<4" },
     { name = "packaging", specifier = ">=23.0" },
     { name = "pathspec", specifier = ">=0.12.0" },
     { name = "prompt-toolkit", specifier = ">=3.0.48" },
     { name = "pydantic", specifier = ">=2.10.0" },
     { name = "pypdfium2", specifier = ">=4.30.0" },
     { name = "python-docx", marker = "extra == 'docs'", specifier = ">=1.1,<2" },
-    { name = "python-pptx", specifier = ">=1.0.0" },
+    { name = "python-pptx", marker = "extra == 'office'", specifier = ">=1.0,<2" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "reportlab", marker = "extra == 'docs'", specifier = ">=4,<5" },
     { name = "rich", specifier = ">=13.9.0" },
@@ -87,16 +92,19 @@ requires-dist = [
     { name = "typer", specifier = ">=0.15.0" },
     { name = "tzlocal", specifier = ">=5.2" },
 ]
-provides-extras = ["docs"]
+provides-extras = ["docs", "office"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "hypothesis", specifier = ">=6.100.0" },
+    { name = "mammoth", specifier = ">=1.8,<2" },
     { name = "mypy", specifier = ">=1.14.0" },
+    { name = "openpyxl", specifier = ">=3.1,<4" },
     { name = "pexpect", specifier = ">=4.9.0" },
     { name = "pytest", specifier = ">=8.3.0" },
     { name = "pytest-asyncio", specifier = ">=0.25.0" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
+    { name = "python-pptx", specifier = ">=1.0,<2" },
     { name = "ruff", specifier = ">=0.9.0" },
     { name = "types-pyyaml", specifier = ">=6.0" },
 ]

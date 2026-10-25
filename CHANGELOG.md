@@ -4,23 +4,58 @@ All notable changes to Aldwin are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.0.2] - 2026-10-30
+
+Aldwin now works with your files and documents, knows good habits out of the box, and lets you pick a skill with `@`.
 
 ### Added
 
+- **File tools with diff approval:** `list_dir`, `glob`, `grep`, `read_file` (read-only); `edit_file` and `write_file`, each shown as a folded diff before anything is written to disk.
+- **Document reading:** `read_document` converts PDF (page-range selection with `pages=`), Word, PowerPoint, Excel (`sheet=` by name or index), CSV/TSV, and HTML to markdown. `download_file` saves a public URL into the workspace after approval.
+- **Planning tools:** `todo` keeps a checklist for jobs of three or more steps, shown as a live view in the CLI; `calculate` does exact arithmetic and ISO date maths without a shell.
+- **Upgraded memory:** `recall` now does ranked search across notes and past conversations; notes can be corrected in place (`replace=`) or removed (`forget`, after diff approval) instead of only growing.
 - **Nine packaged default skills** (`using-aldwin`, `files`, `markdown-notes`, `documents`, `making-documents`, `web-research`, `memory`, `terminal`, `skill-creator`) loaded from the install via `importlib.resources`; user skills under `~/.aldwin/skills/<name>/` override by name.
-- **`create_skill` tool** (Diff approval, never session-grantable) to write or update a user skill; host rebuilds the agent after the turn and shows `skills reloaded`.
-- **`aldwin[docs]` optional extra** (`python-docx`, `openpyxl`, `reportlab`) for the `making-documents` skill.
-- **`/skills show <name>`** prints the effective skill body; `/skills` and `aldwin skills` show `name · source · description` with `default` / `user` / `user override` labels.
+- **`@` skill picker:** type `@` to insert a skill into the turn; `/skills` and `aldwin skills` list `name · source · description` with `default` / `user` / `user override` labels, and `/skills show <name>` prints a skill's effective body.
+- **`create_skill` tool** (diff approval, never session-grantable) to write or update a user skill; the host rebuilds the agent after the turn and shows `skills reloaded`.
+- **`aldwin[docs]` optional extra** (`python-docx`, `openpyxl`, `reportlab`) for the `making-documents` skill to write Office files via `run_command`.
+- **`aldwin[office]` optional extra** (`mammoth`, `python-pptx`, `openpyxl`) for reading `.docx`, `.pptx`, and `.xlsx`. It is left out of the default install to keep the installed size within budget; without it, `read_document` says how to enable those formats. PDF, CSV/TSV, and HTML always work.
+- **Protocol v2** (`hello(v_min, v_max)` negotiation): a v2 door gets Diff-tier approvals with digests; a v1 door still completes a turn with plain y/n approvals, and any Diff-tier call from a v1 door is refused as unapprovable rather than silently downgraded.
+- **New slash commands:** `/todo` (checklist view), `/skills` (catalogue and `show`), `/verbose` (toggle file-tool previews), `/workspace` (inspect or change the workspace root).
+- **One-time What's new panel** on the first everyday launch after an upgrade, and three new idle tips pointing at the file, document, and skill-picker workflows.
+- **PyPI update-available nudge:** a muted one-line notice under the welcome card when a newer `aldwin` is published, opt out with `check_for_updates: false`.
 
 ### Changed
 
+- **Policy engine:** every tool call now goes through a deterministic three-tier approval pipeline (session-grantable, per-call y/n, and Diff approval that can never be session-granted) with a hard floor that denies outright before any tier is even offered.
+- **`run_command` runs with a clean, minimal environment.** Secrets and API keys are no longer visible to spawned commands by default; extra variable names to pass through are opt-in via `run_command.env_allow` in `config.yaml` (secret-looking names are always ignored).
+- **`run_command` always asks, with No as the default answer**, and refuses outright (no prompt) a short list of privilege-escalation, interactive-program, and bare-REPL commands, and anything naming a blocked path (see Security).
 - Default skills are no longer copied into `~/.aldwin` on first run; upgrades improve packaged skills automatically.
 - Skills never load code: a `tools:` frontmatter key is stripped (flagged as `tools removed` for user skills).
 
-### Migration
+### Security
 
-- An unmodified 0.0.1 starter copy of `~/.aldwin/skills/using-aldwin/` is renamed to `using-aldwin.old-0.0.1/` so the new packaged identity block takes effect. An edited copy is kept as a user override.
+- **Hard floor, fail closed:** a fixed set of paths that commonly hold secrets (`.ssh/`, `.aws/`, `.gnupg/`, `.kube/`, `.docker/config.json`, `*.pem`/`*.key`/`*.p12`/`*.pfx`, SSH private keys, `.netrc`, `.pgpass`, `.npmrc`, `.pypirc`, `.git-credentials`, `.env*`, and `~/.aldwin/` itself) is never readable, writable, or passed to `run_command`, with no config override (except read-only `~/.aldwin/tmp/**` for `read_file`). This check runs before any approval tier and cannot be session-granted away.
+- **Approvals bound to what was shown:** a Diff-tier approval carries a `sha256` digest over the tool name, resolved arguments, and the diff text; if the file or digest changed since the diff was shown, Aldwin re-confirms once rather than applying a stale approval.
+- **Every tool result is wrapped as `<untrusted>`** before it reaches the model, so text read from a file, page, or command output is never treated as an instruction.
+- **Approvals log:** every policy decision (approved, denied, blocked, refused) is appended as one redacted JSON line to `~/.aldwin/logs/approvals.jsonl`, rotated at 10 MB.
+- **Clean command environment:** see `run_command` above.
+
+### Upgrade notes
+
+- Upgrading from `0.0.1` runs an automatic, idempotent migration on first launch: `config.yaml` is backed up to `config.yaml.bak-0.0.1` (once), gains `run_command.env_allow: []` with every existing value and comment preserved, `tmp/`, `state/`, and `logs/` are created or repaired to `0700`, and `memory/index.sqlite` is built from existing notes and sessions. Nothing in `~/.aldwin` is deleted. A second launch is a no-op.
+- A command that used to see `$OPENAI_API_KEY` (or any other secret-looking variable) under `0.0.1` no longer does; add its name to `run_command.env_allow` if a command genuinely needs a non-secret variable passed through.
+- An unmodified `0.0.1` starter copy of `~/.aldwin/skills/using-aldwin/` is renamed to `using-aldwin.old-0.0.1/` so the new packaged identity block takes effect; an edited copy is kept as a user override.
+- The one-time What's new panel shows once on the first launch after upgrading, then never again for that version.
+
+### Known issues
+
+- A workspace file's contents could, in principle, be read by Aldwin and included in a URL it is asked to fetch. Review `run_command` and `web_fetch` approvals for anything that forwards file contents externally.
+- Hard links into a blocked path are not themselves detected as blocked; avoid creating hard links to secret files inside the workspace.
+- `run_command`'s refusal checks parse the command as text, not a real shell grammar; unusual quoting or encoding could in principle evade a check meant to catch it.
+
+### Sizes
+
+- Wheel: ~0.23 MB. Installed (no extras): ~116 MB on macOS arm64, within the 120 MB budget (Linux x86_64 to be confirmed before publish). With `aldwin[office]`: ~131 MB.
 
 ## [0.0.1] - 2026-11-01
 
@@ -50,4 +85,5 @@ First public release of Aldwin: an open-source personal assistant that runs on y
 - **Fixed built-in toolset:** includes the five built-in tools (`web_search`, `web_fetch`, `run_command`, `remember`, `recall`); custom code tools cannot be added in `0.0.1` (drop-in Markdown skills in `~/.aldwin/skills/` are supported).
 - **macOS and Linux only:** requires Python `3.11+` on macOS or Linux. Windows is not supported yet.
 
+[0.0.2]: https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.2
 [0.0.1]: https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.1

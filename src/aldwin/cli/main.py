@@ -25,7 +25,7 @@ app = typer.Typer(
 def _load_client():
     """Import the client only when a command needs the host.
 
-    `--version` must stay under half a second, so the module body does not
+    The module body itself stays light, so a bare `aldwin --help` does not
     import the policy engine, pathspec, or tzlocal.
     """
     import aldwin.client as client
@@ -40,7 +40,8 @@ def _is_interactive_tty() -> bool:
 
 def _version_callback(value: bool) -> None:
     if value:
-        typer.echo(f"aldwin {__version__}")
+        client = _load_client()
+        typer.echo(client.format_version_string(__version__))
         raise typer.Exit(code=0)
 
 

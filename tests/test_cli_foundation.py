@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import time
+from importlib import metadata
 from pathlib import Path
 
 import pytest
@@ -14,7 +15,7 @@ from typer.testing import CliRunner
 
 from aldwin import __version__
 from aldwin.cli.main import app
-from aldwin.client import bootstrap
+from aldwin.client import bootstrap, whats_new_due
 from aldwin.core.home import STARTER_ASSETS, SUBDIRS, atomic_write
 
 runner = CliRunner()
@@ -40,6 +41,18 @@ def test_cli_first_run_creates_home(aldwin_home: Path) -> None:
         dest = aldwin_home / dest_rel
         assert dest.is_file()
         assert (dest.stat().st_mode & 0o777) == 0o600
+
+
+@pytest.mark.uninitialized_home
+def test_fresh_home_never_owes_whats_new(aldwin_home: Path) -> None:
+    """A brand-new home records the current version, so launch two shows no panel."""
+    first = bootstrap(plain=True)
+    assert first.created is True
+    assert whats_new_due(aldwin_home, __version__) is False
+
+    second = bootstrap(plain=True)
+    assert second.created is False
+    assert whats_new_due(aldwin_home, __version__) is False
 
 
 @pytest.mark.uninitialized_home
@@ -70,9 +83,12 @@ def test_cli_invalid_config_exits_cleanly(aldwin_home: Path) -> None:
 @pytest.mark.uninitialized_home
 def test_cli_version_fast_and_side_effect_free(aldwin_home: Path) -> None:
     """TC-12: aldwin --version prints version, exits 0 in < 0.5 s, creates no home."""
+    expected = (
+        f"aldwin {__version__} (protocol v2, agentling {metadata.version('agentling')})"
+    )
     in_proc = runner.invoke(app, ["--version"])
     assert in_proc.exit_code == 0
-    assert in_proc.output.strip() == f"aldwin {__version__}"
+    assert in_proc.output.strip() == expected
 
     env = os.environ.copy()
     env["ALDWIN_HOME"] = str(aldwin_home)
@@ -88,7 +104,7 @@ def test_cli_version_fast_and_side_effect_free(aldwin_home: Path) -> None:
     elapsed = time.perf_counter() - start
 
     assert proc.returncode == 0
-    assert proc.stdout.strip() == f"aldwin {__version__}"
+    assert proc.stdout.strip() == expected
     assert elapsed < 0.5, f"aldwin --version took {elapsed:.3f}s (budget < 0.5s)"
     assert not aldwin_home.exists()
 

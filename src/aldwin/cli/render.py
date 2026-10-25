@@ -362,6 +362,20 @@ class ChatRenderer:
         """Print one muted PyPI update-available line under the welcome card."""
         self.console.print(Text(sanitize_display_text(line), style="muted"))
 
+    def render_whats_new(self, text: str, *, version: str) -> None:
+        """Print the one-time upgrade What's new panel under the welcome card."""
+        panel_width = _panel_width(self.console)
+        self.console.print(
+            Panel(
+                Text(sanitize_display_text(text), style="fg"),
+                title=f"What's new in {version}",
+                title_align="left",
+                border_style="" if self.plain else "border",
+                width=panel_width,
+                padding=(0, 1),
+            )
+        )
+
     def render_history(
         self,
         event: HistoryEvent,

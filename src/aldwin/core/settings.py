@@ -406,6 +406,32 @@ def update_config_theme(theme: str, home: Path | None = None) -> None:
     atomic_write(config_path, updated, mode=FILE_MODE)
 
 
+_RUN_COMMAND_ENV_ALLOW_BLOCK: Final[str] = (
+    "\n"
+    "# Extra environment variable names (beyond a minimal safe set) passed to\n"
+    "# run_command; secret-looking names are always ignored\n"
+    "run_command:\n"
+    "  env_allow: []\n"
+)
+
+
+def ensure_run_command_env_allow(home: Path | None = None) -> None:
+    """Add a documented ``run_command: env_allow: []`` section if one is missing.
+
+    Preserves every existing value and comment in ``config.yaml``; a no-op when
+    a top-level ``run_command`` key is already present.
+    """
+    root = (home if home is not None else home_dir()).expanduser().resolve()
+    config_path = root / CONFIG_FILENAME
+    source = _read_config_source(config_path)
+    if re.search(r"(?m)^run_command\s*:", source):
+        return
+    sep = "" if source.endswith("\n") or not source else "\n"
+    atomic_write(
+        config_path, f"{source}{sep}{_RUN_COMMAND_ENV_ALLOW_BLOCK}", mode=FILE_MODE
+    )
+
+
 def update_config_last_seen_version(version: str, home: Path | None = None) -> None:
     """Persist ``last_seen_version`` for upgrade-once What's new / splash gates."""
     cleaned = version.strip()

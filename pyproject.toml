@@ -1,6 +1,6 @@
 [project]
 name = "aldwin"
-version = "0.0.1"
+version = "0.0.2"
 description = "An open-source personal assistant that runs on your own computer, built on Agentling."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -35,9 +35,6 @@ dependencies = [
     "pathspec>=0.12.0",
     "tzlocal>=5.2",
     "pypdfium2>=4.30.0",
-    "mammoth>=1.8.0",
-    "python-pptx>=1.0.0",
-    "openpyxl>=3.1.0",
     "beautifulsoup4>=4.12.0",
     "markdownify>=0.14.0",
 ]
@@ -54,6 +51,11 @@ docs = [
     "python-docx>=1.1,<2",
     "openpyxl>=3.1,<4",
     "reportlab>=4,<5",
+]
+office = [
+    "mammoth>=1.8,<2",
+    "python-pptx>=1.0,<2",
+    "openpyxl>=3.1,<4",
 ]
 
 [project.scripts]
@@ -125,4 +127,9 @@ dev = [
     "types-PyYAML>=6.0",
     "ruff>=0.9.0",
     "mypy>=1.14.0",
+    # Mirrors the optional `office` extra so a plain `uv sync` still exercises
+    # read_document's .docx/.pptx/.xlsx paths; never shipped in the wheel.
+    "mammoth>=1.8,<2",
+    "python-pptx>=1.0,<2",
+    "openpyxl>=3.1,<4",
 ]

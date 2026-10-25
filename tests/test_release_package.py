@@ -10,6 +10,7 @@ import tarfile
 import time
 import tomllib
 import zipfile
+from importlib import metadata
 from pathlib import Path
 from typing import Any
 
@@ -80,18 +81,19 @@ def built_distributions(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path,
 
 
 @pytest.mark.uninitialized_home
-def test_version_is_0_0_1(aldwin_home: Path) -> None:
-    """TC-06: pyproject.toml, aldwin.__version__, and `aldwin --version` are 0.0.1."""
+def test_version_is_0_0_2(aldwin_home: Path) -> None:
+    """TC-01: pyproject.toml, aldwin.__version__, and `aldwin --version` are 0.0.2."""
     pyproject_data = tomllib.loads(
         (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )
-    assert pyproject_data["project"]["version"] == "0.0.1"
-    assert aldwin.__version__ == "0.0.1"
+    assert pyproject_data["project"]["version"] == "0.0.2"
+    assert aldwin.__version__ == "0.0.2"
+    expected = f"aldwin 0.0.2 (protocol v2, agentling {metadata.version('agentling')})"
 
     runner = CliRunner()
     res = runner.invoke(app, ["--version"])
     assert res.exit_code == 0
-    assert res.output.strip() == "aldwin 0.0.1"
+    assert res.output.strip() == expected
     assert not aldwin_home.exists()
 
     start = time.perf_counter()
@@ -103,9 +105,42 @@ def test_version_is_0_0_1(aldwin_home: Path) -> None:
     )
     elapsed = time.perf_counter() - start
     assert proc.returncode == 0
-    assert proc.stdout.strip() == "aldwin 0.0.1"
+    assert proc.stdout.strip() == expected
     assert elapsed < 0.5
     assert not aldwin_home.exists()
+
+
+def test_dependency_ranges_and_lock() -> None:
+    """TC-03: every runtime dependency has a lower bound; the lock is in sync."""
+    pyproject_data = tomllib.loads(
+        (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    deps = pyproject_data["project"]["dependencies"]
+    assert "agentling>=0.1,<0.2" in deps
+    assert any(d.startswith("packaging>=") for d in deps)
+    for dep in deps:
+        assert ">=" in dep, f"{dep!r} has no lower bound"
+
+    uv_bin = shutil.which("uv")
+    assert uv_bin is not None, "Expected `uv` binary on PATH"
+    proc = subprocess.run(
+        [uv_bin, "lock", "--check"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, f"uv lock --check failed:\n{proc.stderr}"
+
+
+def test_docs_extra_declared() -> None:
+    """TC-26: `aldwin[docs]` declares python-docx, openpyxl, and reportlab."""
+    pyproject_data = tomllib.loads(
+        (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    docs_extra = pyproject_data["project"]["optional-dependencies"]["docs"]
+    names = {dep.split(">")[0].split("=")[0].strip() for dep in docs_extra}
+    assert names == {"python-docx", "openpyxl", "reportlab"}
 
 
 def test_build_produces_sdist_and_wheel_under_1mb(
@@ -113,8 +148,8 @@ def test_build_produces_sdist_and_wheel_under_1mb(
 ) -> None:
     """TC-01: `uv build` produces sdist and wheel in dist/ under the 1 MB budget."""
     wheel_path, sdist_path = built_distributions
-    assert wheel_path.name == "aldwin-0.0.1-py3-none-any.whl"
-    assert sdist_path.name == "aldwin-0.0.1.tar.gz"
+    assert wheel_path.name == "aldwin-0.0.2-py3-none-any.whl"
+    assert sdist_path.name == "aldwin-0.0.2.tar.gz"
 
     assert 0 < wheel_path.stat().st_size < MAX_DIST_BYTES
     assert 0 < sdist_path.stat().st_size < MAX_DIST_BYTES
@@ -143,7 +178,7 @@ def test_wheel_and_sdist_include_assets_and_exclude_dev_files(
         sdist_names = set(tf.getnames())
 
     for asset in EXPECTED_WHEEL_ASSETS:
-        expected_sdist_entry = f"aldwin-0.0.1/src/{asset}"
+        expected_sdist_entry = f"aldwin-0.0.2/src/{asset}"
         assert expected_sdist_entry in sdist_names, (
             f"Missing {expected_sdist_entry} in sdist"
         )
@@ -154,10 +189,10 @@ def test_wheel_and_sdist_include_assets_and_exclude_dev_files(
         "CHANGELOG.md",
         "pyproject.toml",
     ):
-        assert f"aldwin-0.0.1/{required_root_file}" in sdist_names
+        assert f"aldwin-0.0.2/{required_root_file}" in sdist_names
 
     for entry in sdist_names:
-        rel_entry = entry.removeprefix("aldwin-0.0.1/")
+        rel_entry = entry.removeprefix("aldwin-0.0.2/")
         for forbidden in FORBIDDEN_ARCHIVE_PREFIXES:
             assert not rel_entry.startswith(forbidden), (
                 f"Forbidden path {entry!r} leaked into sdist"
@@ -222,31 +257,42 @@ def test_readme_uses_absolute_https_image_urls_and_balanced_fences() -> None:
     assert len(fence_lines) % 2 == 0, "Unclosed ``` code fence in README.md"
 
 
-def test_readme_contains_all_fr1_sections_and_doc_links() -> None:
-    """TC-10: README contains required sections and links to docs/*.md."""
+def test_readme_contains_all_fr7_sections_and_doc_links() -> None:
+    """TC-21: README has the FR-7 sections, in order, and links to docs/*.md."""
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 
     required_headings = (
         "# Aldwin",
         "## Install",
-        "## First run",
-        "## Commands and slash commands",
-        "## What it can do",
+        "### First run",
+        "## What Aldwin can do",
         "## Safety model",
+        "## Skills",
         "## Data and privacy",
-        "## Limitations in 0.0.1",
-        "## Documentation",
+        "## Commands and slash commands",
+        "## What's next",
+        "## Uninstall",
         "## Contributing",
         "## Licence",
     )
-    for heading in required_headings:
-        assert heading in readme, f"Missing heading {heading!r} in README.md"
+
+    def _heading_pos(heading: str) -> int:
+        match = re.search(rf"(?m)^{re.escape(heading)}\s*$", readme)
+        assert match is not None, f"Missing heading {heading!r} in README.md"
+        return match.start()
+
+    positions = [_heading_pos(heading) for heading in required_headings]
+    assert positions == sorted(positions), "README sections are out of order"
     assert "## Roadmap" not in readme
     assert "## How it's built" not in readme
+    assert "## Documentation" not in readme
+    assert "0.0.3" in readme
 
     required_snippets = (
         "uv tool install aldwin",
         "https://astral.sh/uv/install.sh",
+        "pip install aldwin",
+        "uv tool upgrade aldwin",
         "/help",
         "/new",
         "/history",
@@ -254,6 +300,9 @@ def test_readme_contains_all_fr1_sections_and_doc_links() -> None:
         "/persona",
         "/memory",
         "/skills",
+        "/todo",
+        "/workspace",
+        "/verbose",
         "/tools",
         "/exit",
         "web_search",
@@ -262,6 +311,19 @@ def test_readme_contains_all_fr1_sections_and_doc_links() -> None:
         "remember",
         "recall",
         "forget",
+        "list_dir",
+        "glob",
+        "grep",
+        "read_file",
+        "edit_file",
+        "write_file",
+        "read_document",
+        "download_file",
+        "todo",
+        "calculate",
+        "create_skill",
+        "aldwin[docs]",
+        "aldwin[office]",
         "~/.aldwin",
         "ALDWIN_HOME",
         "https://agentling.dev",
@@ -274,14 +336,43 @@ def test_readme_contains_all_fr1_sections_and_doc_links() -> None:
         assert snippet in readme, f"Missing {snippet!r} in README.md"
 
 
-def test_changelog_has_0_0_1_entry() -> None:
-    """TC-12: CHANGELOG.md follows Keep a Changelog and has a 0.0.1 entry."""
+def test_changelog_0_0_2_entry() -> None:
+    """TC-22: CHANGELOG.md has a complete 0.0.2 entry, and keeps the 0.0.1 one."""
     changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "# Changelog" in changelog
     assert "Keep a Changelog" in changelog
+    assert "## [0.0.2] - 2026-10-30" in changelog
     assert "## [0.0.1]" in changelog
-    assert "### Added" in changelog
-    assert "### Known limitations" in changelog
+
+    start = changelog.index("## [0.0.2]")
+    end = changelog.index("## [0.0.1]")
+    section = changelog[start:end]
+    for heading in (
+        "### Added",
+        "### Changed",
+        "### Security",
+        "### Upgrade notes",
+        "### Known issues",
+    ):
+        assert heading in section, f"Missing {heading!r} in the 0.0.2 changelog entry"
+
+    for snippet in (
+        "read_document",
+        "edit_file",
+        "skill picker",
+        "/todo",
+        "/skills",
+        "/verbose",
+        "/workspace",
+        "Protocol v2",
+        "run_command.env_allow",
+        "using-aldwin.old-0.0.1",
+        "aldwin[docs]",
+        "aldwin[office]",
+        "hard floor",
+        "Installed",
+    ):
+        assert snippet in section, f"Missing {snippet!r} in the 0.0.2 changelog entry"
 
 
 def test_docs_protocol_manual_test_and_releasing_present() -> None:

@@ -32,3 +32,8 @@ limits:
 
   # Maximum agent steps per turn before asking to continue
   max_steps: 15
+
+# Extra environment variable names (beyond a minimal safe set) passed to
+# run_command; secret-looking names are always ignored
+run_command:
+  env_allow: []

@@ -376,3 +376,36 @@ def test_markitdown_not_a_dependency() -> None:
 
     with pytest.raises(ImportError):
         importlib.import_module("markitdown")
+
+
+def test_read_docx_without_office_extra_gives_install_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing mammoth raises a ToolCallError pointing at `aldwin[office]`."""
+    import sys
+
+    monkeypatch.setitem(sys.modules, "mammoth", None)
+    with pytest.raises(ToolCallError, match=r"aldwin\[office\]"):
+        convert_document(FIXTURES / "contract.docx")
+
+
+def test_read_pptx_without_office_extra_gives_install_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing python-pptx raises a ToolCallError pointing at `aldwin[office]`."""
+    import sys
+
+    monkeypatch.setitem(sys.modules, "pptx", None)
+    with pytest.raises(ToolCallError, match=r"aldwin\[office\]"):
+        convert_document(FIXTURES / "deck.pptx")
+
+
+def test_read_xlsx_without_office_extra_gives_install_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing openpyxl raises a ToolCallError pointing at `aldwin[office]`."""
+    import sys
+
+    monkeypatch.setitem(sys.modules, "openpyxl", None)
+    with pytest.raises(ToolCallError, match=r"aldwin\[office\]"):
+        convert_document(FIXTURES / "Q3_large.xlsx")

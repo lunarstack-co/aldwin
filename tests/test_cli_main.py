@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from importlib import metadata
 from pathlib import Path
 
 import pytest
@@ -24,7 +25,9 @@ def test_cli_main_routes_to_chat_and_version(
     """Bare `aldwin` routes to chat entry; `--version` prints version."""
     ver_res = runner.invoke(app, ["--version"])
     assert ver_res.exit_code == 0
-    assert ver_res.output.strip() == f"aldwin {__version__}"
+    assert ver_res.output.strip() == (
+        f"aldwin {__version__} (protocol v2, agentling {metadata.version('agentling')})"
+    )
     assert not aldwin_home.exists()
 
     routed: list[BootstrapResult] = []

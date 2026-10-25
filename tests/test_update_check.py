@@ -6,6 +6,7 @@ import io
 import json
 import time
 import tomllib
+from importlib import metadata
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -302,7 +303,9 @@ def test_version_flag_does_not_call_pypi(monkeypatch: pytest.MonkeyPatch) -> Non
     )
     res = CliRunner().invoke(app, ["--version"])
     assert res.exit_code == 0
-    assert res.output.strip() == f"aldwin {__version__}"
+    assert res.output.strip() == (
+        f"aldwin {__version__} (protocol v2, agentling {metadata.version('agentling')})"
+    )
     assert calls == []
 
 

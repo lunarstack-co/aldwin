@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from fakes.host import FakeClient
 from prompt_toolkit.formatted_text import to_plain_text
 from prompt_toolkit.input import Input
@@ -15,16 +16,19 @@ from prompt_toolkit.input.defaults import create_pipe_input
 from rich.console import Console
 
 from aldwin.cli.chat_screen import (
+    WHATS_NEW_TEXT,
     TurnKeyListener,
     build_prompt_session,
     format_bottom_toolbar,
     format_toolbar_model_segment,
     read_approval_key,
+    render_whats_new_if_due,
     run_chat,
 )
-from aldwin.cli.render import CONTEXT_NEARLY_FULL_NOTICE
+from aldwin.cli.render import CONTEXT_NEARLY_FULL_NOTICE, ChatRenderer
 from aldwin.cli.theme import PLAIN_PROMPT_STYLE, create_console
-from aldwin.client import BootstrapResult, bootstrap
+from aldwin.client import BootstrapResult, bootstrap, mark_whats_new_seen, whats_new_due
+from aldwin.core.settings import load_config
 from aldwin.protocol import (
     ApprovalEvent,
     DoneEvent,
@@ -570,3 +574,102 @@ async def test_context_nearly_full_notice_once(aldwin_home: Path) -> None:
     assert rc == 0
     text = console.export_text()
     assert text.count(CONTEXT_NEARLY_FULL_NOTICE) == 1
+
+
+def test_whats_new_due_matrix(aldwin_home: Path) -> None:
+    """TC-13: absent, older, unparseable, and current last_seen_version."""
+    assert whats_new_due(aldwin_home, "0.0.2") is True
+
+    mark_whats_new_seen(aldwin_home, "0.0.1")
+    assert whats_new_due(aldwin_home, "0.0.2") is True
+
+    mark_whats_new_seen(aldwin_home, "banana")
+    assert whats_new_due(aldwin_home, "0.0.2") is True
+
+    mark_whats_new_seen(aldwin_home, "0.0.2")
+    assert whats_new_due(aldwin_home, "0.0.2") is False
+
+
+def test_mark_whats_new_seen_persists_and_preserves_comments(aldwin_home: Path) -> None:
+    """TC-14: mark_whats_new_seen writes last_seen_version and keeps comments."""
+    config_path = aldwin_home / "config.yaml"
+    before = config_path.read_text(encoding="utf-8")
+    assert "# Aldwin configuration" in before
+
+    mark_whats_new_seen(aldwin_home, "0.0.2")
+
+    after = config_path.read_text(encoding="utf-8")
+    assert "# Aldwin configuration" in after
+    assert "last_seen_version: 0.0.2" in after
+    assert load_config(aldwin_home).last_seen_version == "0.0.2"
+    assert whats_new_due(aldwin_home, "0.0.2") is False
+
+
+def test_render_whats_new_if_due_shows_once(aldwin_home: Path) -> None:
+    """TC-15: the panel shows on the first due launch, not on the next."""
+    buf = io.StringIO()
+    console = create_console(plain=False, width=80, record=True, file=buf)
+    renderer = ChatRenderer(console, plain=False)
+
+    shown = render_whats_new_if_due(
+        renderer, home=aldwin_home, current_version="0.0.2", boot_created=False
+    )
+    assert shown is True
+    assert "What's new" in console.export_text()
+
+    buf2 = io.StringIO()
+    console2 = create_console(plain=False, width=80, record=True, file=buf2)
+    renderer2 = ChatRenderer(console2, plain=False)
+    shown_again = render_whats_new_if_due(
+        renderer2, home=aldwin_home, current_version="0.0.2", boot_created=False
+    )
+    assert shown_again is False
+    assert "What's new" not in console2.export_text()
+
+
+def test_render_whats_new_if_due_skips_new_homes(aldwin_home: Path) -> None:
+    """TC-16: a freshly created home (``boot_created``) never shows the panel."""
+    buf = io.StringIO()
+    console = create_console(plain=False, width=80, record=True, file=buf)
+    renderer = ChatRenderer(console, plain=False)
+
+    shown = render_whats_new_if_due(
+        renderer, home=aldwin_home, current_version="0.0.2", boot_created=True
+    )
+    assert shown is False
+    assert "What's new" not in console.export_text()
+    assert load_config(aldwin_home).last_seen_version is None
+
+
+def test_render_whats_new_if_due_fails_quiet(
+    aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A write failure while marking the panel seen never crashes the chat loop."""
+    import aldwin.cli.chat_screen as chat_screen_mod
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(chat_screen_mod, "mark_whats_new_seen", _boom)
+
+    buf = io.StringIO()
+    console = create_console(plain=False, width=80, record=True, file=buf)
+    renderer = ChatRenderer(console, plain=False)
+
+    shown = render_whats_new_if_due(
+        renderer, home=aldwin_home, current_version="0.0.2", boot_created=False
+    )
+    assert shown is False
+
+
+def test_render_whats_new_copy_and_plain_mode() -> None:
+    """TC-17: the panel prints the verbatim copy; plain mode drops border colour."""
+    buf = io.StringIO()
+    console = create_console(plain=True, width=80, record=True, file=buf)
+    renderer = ChatRenderer(console, plain=True)
+    renderer.render_whats_new(WHATS_NEW_TEXT, version="0.0.2")
+    text = console.export_text()
+    assert "What's new in 0.0.2" in text
+    assert "pick with @" in text
+    assert ".env" in text
+    assert "~/.ssh" in text

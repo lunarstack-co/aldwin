@@ -9,14 +9,11 @@ import re
 from pathlib import Path
 from typing import Any, Final
 
-import mammoth
 import markdownify
 import pypdfium2 as pdfium
 from agentling import Tool
 from agentling.tools import ToolCallError
 from bs4 import BeautifulSoup
-from openpyxl import load_workbook
-from pptx import Presentation
 
 from aldwin.core.policy import PolicySession
 from aldwin.core.tools import ToolOutput
@@ -38,6 +35,10 @@ _OBJECT_SCHEMA: Final[dict[str, Any]] = {
     "additionalProperties": False,
 }
 _SUPPORTED_LIST: Final[str] = "pdf, docx, pptx, xlsx, csv, tsv, html"
+_OFFICE_EXTRA_HINT: Final[str] = (
+    'needs the office extra: install with `uv tool install "aldwin[office]"` '
+    '(or `pip install "aldwin[office]"`)'
+)
 
 
 def running_summary(
@@ -239,6 +240,11 @@ def _sheet_to_markdown(rows: list[list[Any]], *, total_rows: int) -> str:
 
 
 def _read_xlsx(path: Path, sheet: str | None) -> tuple[str, str]:
+    try:
+        from openpyxl import load_workbook
+    except ImportError as exc:
+        raise ToolCallError(f"reading .xlsx {_OFFICE_EXTRA_HINT}") from exc
+
     wb_form = load_workbook(path, read_only=True, data_only=False)
     try:
         names = list(wb_form.sheetnames)
@@ -321,6 +327,11 @@ def _read_csv(path: Path, *, delimiter: str | None = None) -> tuple[str, str]:
 
 
 def _read_docx(path: Path) -> tuple[str, str]:
+    try:
+        import mammoth
+    except ImportError as exc:
+        raise ToolCallError(f"reading .docx {_OFFICE_EXTRA_HINT}") from exc
+
     with path.open("rb") as handle:
         result = mammoth.convert_to_markdown(handle)
     text = (result.value or "").strip() + "\n"
@@ -328,6 +339,11 @@ def _read_docx(path: Path) -> tuple[str, str]:
 
 
 def _read_pptx(path: Path) -> tuple[str, str]:
+    try:
+        from pptx import Presentation
+    except ImportError as exc:
+        raise ToolCallError(f"reading .pptx {_OFFICE_EXTRA_HINT}") from exc
+
     prs = Presentation(str(path))
     chunks: list[str] = []
     for index, slide in enumerate(prs.slides, start=1):

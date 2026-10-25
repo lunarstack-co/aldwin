@@ -46,9 +46,11 @@ from aldwin.cli.theme import (
 from aldwin.client import (
     BootstrapResult,
     ProtocolError,
+    mark_whats_new_seen,
     open_in_process_client,
     pop_profile_truncation_warning,
     sanitize_display_text,
+    whats_new_due,
 )
 from aldwin.protocol import (
     ApprovalAnswer,
@@ -70,6 +72,14 @@ from aldwin.protocol import (
 logger = logging.getLogger("aldwin.cli")
 
 ESCAPE_FLUSH_DELAY: Final[float] = 0.05
+
+WHATS_NEW_TEXT: Final[str] = (
+    "Aldwin can now read, search and edit your files with a diff before every "
+    "change, read PDFs and Office files, keep a todo list for bigger jobs, and "
+    "use skills you pick with @. It never touches secret files like .env or "
+    "~/.ssh, and commands no longer see your API keys. Your conversation, "
+    "memory and persona are kept."
+)
 
 
 def _render_skills_used(console: Console, event: SkillsUsedEvent) -> None:
@@ -615,6 +625,29 @@ def build_prompt_session(
     return session
 
 
+def render_whats_new_if_due(
+    renderer: ChatRenderer,
+    *,
+    home: Path,
+    current_version: str,
+    boot_created: bool,
+) -> bool:
+    """Render the one-time upgrade What's new panel when due; return whether shown.
+
+    Never due for a brand-new home (``boot_created``); otherwise shown once per
+    version, then marked seen.
+    """
+    if boot_created or not whats_new_due(home, current_version):
+        return False
+    try:
+        renderer.render_whats_new(WHATS_NEW_TEXT, version=current_version)
+        mark_whats_new_seen(home, current_version)
+    except Exception:
+        logger.warning("What's new panel skipped", exc_info=True)
+        return False
+    return True
+
+
 async def fetch_and_render_update_nudge(
     renderer: ChatRenderer,
     *,
@@ -817,6 +850,12 @@ async def _chat_loop(
                 display_home=boot.display_home,
                 display_workspace=boot.display_workspace or None,
                 tip=tip,
+            )
+            render_whats_new_if_due(
+                renderer,
+                home=boot.home,
+                current_version=__version__,
+                boot_created=boot.created,
             )
             # Start in parallel with history + key check (shared 2s budget).
             update_task = asyncio.create_task(

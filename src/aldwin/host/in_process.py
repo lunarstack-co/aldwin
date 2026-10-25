@@ -15,7 +15,13 @@ from typing import TYPE_CHECKING, Literal, Protocol
 
 from pydantic import SecretStr
 
-from aldwin.core.home import ensure_home, format_home_path, home_dir
+from aldwin.core.home import (
+    HomeError,
+    ensure_home,
+    format_home_path,
+    home_dir,
+    migrate_0_0_1,
+)
 from aldwin.core.logging import setup_logging
 from aldwin.core.memory import (
     MemorySummary,
@@ -367,6 +373,51 @@ def update_available_nudge(
     )
 
 
+def format_version_string(aldwin_version: str) -> str:
+    """Return the `aldwin --version` line, with protocol and agentling versions."""
+    from importlib.metadata import PackageNotFoundError
+    from importlib.metadata import version as pkg_version
+
+    from aldwin.protocol.messages import PROTOCOL_VERSION
+
+    try:
+        agentling_version = pkg_version("agentling")
+    except PackageNotFoundError:
+        agentling_version = "unknown"
+    return (
+        f"aldwin {aldwin_version} "
+        f"(protocol v{PROTOCOL_VERSION}, agentling {agentling_version})"
+    )
+
+
+def whats_new_due(home: Path, current_version: str) -> bool:
+    """Return True when the upgrade What's new panel for `current_version` is due.
+
+    Due when `last_seen_version` is missing, unparseable (shown once rather
+    than silently suppressed forever), or older than `current_version`.
+    """
+    try:
+        config = load_config(home)
+    except ConfigError:
+        return False
+    seen = (config.last_seen_version or "").strip()
+    if not seen:
+        return True
+    from packaging.version import InvalidVersion, Version
+
+    try:
+        return Version(seen) < Version(current_version)
+    except InvalidVersion:
+        return True
+
+
+def mark_whats_new_seen(home: Path, version: str) -> None:
+    """Persist `last_seen_version` so the What's new panel does not show again."""
+    from aldwin.core.settings import update_config_last_seen_version
+
+    update_config_last_seen_version(version, home)
+
+
 def bootstrap_host(
     *,
     plain: bool = False,
@@ -391,6 +442,17 @@ def bootstrap_host(
     else:
         created = ensure_home(root)
         setup_logging(root, debug=debug)
+
+    try:
+        migrate_0_0_1(root, fresh_install=created)
+    except HomeError as exc:
+        logger.error("migration_error %s", exc)
+        raise ClientBootstrapError(str(exc)) from None
+
+    if created:
+        import aldwin
+
+        mark_whats_new_seen(root, aldwin.__version__)
 
     if workspace is not None:
         ws = Workspace(workspace, home=root)
@@ -609,6 +671,7 @@ __all__ = [
     "WorkspaceSummary",
     "bootstrap_host",
     "check_openai_key",
+    "format_version_string",
     "verify_active_openai_key",
     "get_builtin_tools",
     "get_memory_summary",
@@ -617,6 +680,7 @@ __all__ = [
     "get_persona_text",
     "get_skills_report",
     "list_available_models",
+    "mark_whats_new_seen",
     "mask_secret",
     "open_in_process_client",
     "pop_profile_truncation_warning",
@@ -625,4 +689,5 @@ __all__ = [
     "sanitize_display_text",
     "save_setup",
     "update_available_nudge",
+    "whats_new_due",
 ]
