@@ -32,12 +32,25 @@ def test_installed_size_under_budget(tmp_path: Path) -> None:
     uv_bin = shutil.which("uv")
     assert uv_bin is not None, "Expected `uv` binary on PATH"
 
+    # Cache and tool dir must share a filesystem so `uv` can hardlink cached
+    # package files into the install (as it does for a real user, whose cache
+    # and tool directories both live under $HOME). A CI job's own UV_CACHE_DIR
+    # can sit on a different mount than pytest's tmp_path, which forces uv to
+    # fall back to full copies and measures an inflated, unrepresentative size.
+    env = {
+        **os.environ,
+        "UV_CACHE_DIR": str(tmp_path / "cache"),
+        "UV_TOOL_DIR": str(tmp_path / "tool"),
+        "UV_TOOL_BIN_DIR": str(tmp_path / "bin"),
+    }
+
     dist_dir = tmp_path / "dist"
     build = subprocess.run(
         [uv_bin, "build", "--out-dir", str(dist_dir)],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        env=env,
         check=False,
     )
     assert build.returncode == 0, f"uv build failed:\n{build.stderr}\n{build.stdout}"
@@ -45,8 +58,6 @@ def test_installed_size_under_budget(tmp_path: Path) -> None:
     assert len(wheels) == 1, f"Expected 1 wheel, found {wheels}"
 
     tool_dir = tmp_path / "tool"
-    bin_dir = tmp_path / "bin"
-    env = {**os.environ, "UV_TOOL_DIR": str(tool_dir), "UV_TOOL_BIN_DIR": str(bin_dir)}
     install = subprocess.run(
         [uv_bin, "tool", "install", str(wheels[0])],
         capture_output=True,
