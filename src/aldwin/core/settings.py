@@ -100,6 +100,7 @@ class AldwinConfig(BaseModel):
     model: str = Field(default="gpt-4o", min_length=1)
     theme: ThemeName = "dark"
     last_seen_version: str | None = None
+    check_for_updates: bool = True
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
     run_command: RunCommandConfig = Field(default_factory=RunCommandConfig)
 

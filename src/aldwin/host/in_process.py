@@ -36,6 +36,7 @@ from aldwin.core.settings import (
     update_config_model,
 )
 from aldwin.core.tools import ToolInfo, list_builtin_tools
+from aldwin.core.update_check import update_nudge_line
 from aldwin.core.workspace import (
     Workspace,
     WorkspaceError,
@@ -344,6 +345,28 @@ class BootstrapResult:
             )
 
 
+def update_available_nudge(
+    home: Path,
+    *,
+    current_version: str,
+    plain: bool = False,
+) -> str | None:
+    """Return a one-line PyPI update nudge, or ``None`` when none should show.
+
+    Reads ``check_for_updates`` from ``config.yaml``. Failures and opt-out are
+    silent. Does not run during ``bootstrap_host``; only when a door asks.
+    """
+    try:
+        config = load_config(home)
+    except ConfigError:
+        return None
+    return update_nudge_line(
+        current_version=current_version,
+        check_enabled=config.check_for_updates,
+        plain=plain,
+    )
+
+
 def bootstrap_host(
     *,
     plain: bool = False,
@@ -601,4 +624,5 @@ __all__ = [
     "resolve_workspace_summary",
     "sanitize_display_text",
     "save_setup",
+    "update_available_nudge",
 ]

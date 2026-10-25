@@ -40,6 +40,7 @@ from aldwin.host.in_process import (
     purge_home_data,
     resolve_workspace_summary,
     save_setup,
+    update_available_nudge,
     verify_active_openai_key,
 )
 from aldwin.protocol import (
@@ -429,4 +430,5 @@ __all__ = [
     "pop_profile_truncation_warning",
     "purge_home_data",
     "save_setup",
+    "update_available_nudge",
 ]

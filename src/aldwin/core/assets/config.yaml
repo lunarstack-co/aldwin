@@ -10,6 +10,9 @@ theme: dark
 # Last Aldwin version that showed upgrade What's new (set automatically)
 # last_seen_version: 0.0.2
 
+# On everyday launch, check PyPI for a newer Aldwin release (public metadata only)
+check_for_updates: true
+
 # Context and turn limits
 limits:
   # Number of recent user/assistant exchanges sent to the model

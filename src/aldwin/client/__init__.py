@@ -38,6 +38,7 @@ from aldwin.host.in_process import (
     resolve_workspace_summary,
     sanitize_display_text,
     save_setup,
+    update_available_nudge,
     verify_active_openai_key,
 )
 
@@ -100,4 +101,5 @@ __all__ = [
     "resolve_workspace_summary",
     "sanitize_display_text",
     "save_setup",
+    "update_available_nudge",
 ]

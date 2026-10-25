@@ -29,6 +29,7 @@ dependencies = [
     "prompt-toolkit>=3.0.48",
     "pydantic>=2.10.0",
     "pyyaml>=6.0",
+    "packaging>=23.0",
     "httpx>=0.28.0",
     "trafilatura>=2.0.0",
     "pathspec>=0.12.0",

@@ -358,6 +358,10 @@ class ChatRenderer:
         if tip:
             self.console.print(Text(tip, style="muted"))
 
+    def render_update_nudge(self, line: str) -> None:
+        """Print one muted PyPI update-available line under the welcome card."""
+        self.console.print(Text(sanitize_display_text(line), style="muted"))
+
     def render_history(
         self,
         event: HistoryEvent,

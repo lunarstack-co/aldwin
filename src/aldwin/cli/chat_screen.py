@@ -12,7 +12,7 @@ from contextlib import AbstractAsyncContextManager, ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import Final, Protocol
+from typing import Any, Final, Protocol
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import FormattedText, to_plain_text
@@ -615,6 +615,48 @@ def build_prompt_session(
     return session
 
 
+async def fetch_and_render_update_nudge(
+    renderer: ChatRenderer,
+    *,
+    home: Path,
+    plain: bool,
+    current_version: str,
+    skip_welcome: bool,
+    nudge_fn: Callable[..., str | None] | None = None,
+    timeout: float = 2.0,
+) -> str | None:
+    """Fetch a PyPI update nudge (≤ ``timeout`` s) and print it when present.
+
+    Skipped when ``skip_welcome`` is true (first-run / onboarding). Failures and
+    timeouts are silent so the prompt stays ready.
+    """
+    if skip_welcome:
+        return None
+    from aldwin.client import update_available_nudge as default_nudge
+
+    check = nudge_fn if nudge_fn is not None else default_nudge
+    try:
+        line = await asyncio.wait_for(
+            asyncio.to_thread(
+                check,
+                home,
+                current_version=current_version,
+                plain=plain,
+            ),
+            timeout=timeout,
+        )
+    except TimeoutError:
+        return None
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.warning("Startup update check failed", exc_info=True)
+        return None
+    if line:
+        renderer.render_update_nudge(line)
+    return line
+
+
 async def run_chat(
     boot: BootstrapResult,
     *,
@@ -700,6 +742,7 @@ async def _chat_loop(
     key_rejected = False
     context_notice_shown = False
     key_check_task: asyncio.Task[None] | None = None
+    update_task: asyncio.Task[str | None] | None = None
 
     def _request_quit() -> None:
         nonlocal quit_requested
@@ -764,6 +807,7 @@ async def _chat_loop(
             session.lexer = None
         history_ev = await client.history(limit=20)
         if not skip_welcome:
+            from aldwin import __version__
             from aldwin.cli.tips import next_tip
 
             tip = next_tip(boot.home, plain=boot.plain)
@@ -773,6 +817,16 @@ async def _chat_loop(
                 display_home=boot.display_home,
                 display_workspace=boot.display_workspace or None,
                 tip=tip,
+            )
+            # Start in parallel with history + key check (shared 2s budget).
+            update_task = asyncio.create_task(
+                fetch_and_render_update_nudge(
+                    renderer,
+                    home=boot.home,
+                    plain=boot.plain,
+                    current_version=__version__,
+                    skip_welcome=False,
+                )
             )
         # Quiet reopen: no transcript dump (use /history). Keep interrupted notice.
         renderer.render_history(
@@ -794,10 +848,13 @@ async def _chat_loop(
                 key_rejected = True
 
         key_check_task = asyncio.create_task(_background_key_check())
-        # Prefer finishing the check before the first prompt so the footer can warn.
+        # Prefer finishing startup checks before the first prompt (shared 2s cap).
+        waiters: list[asyncio.Future[Any]] = [asyncio.shield(key_check_task)]
+        if update_task is not None:
+            waiters.append(update_task)
         try:
-            await asyncio.wait_for(asyncio.shield(key_check_task), timeout=2.0)
-        except (TimeoutError, asyncio.TimeoutError, asyncio.CancelledError):
+            await asyncio.wait_for(asyncio.gather(*waiters), timeout=2.0)
+        except TimeoutError:
             pass
         if enable_skills:
             try:
@@ -1018,6 +1075,12 @@ async def _chat_loop(
         console.print(Text("Saved. See you.", style="muted"))
         return 0
     finally:
+        if update_task is not None and not update_task.done():
+            update_task.cancel()
+            try:
+                await update_task
+            except asyncio.CancelledError:
+                pass
         if key_check_task is not None and not key_check_task.done():
             key_check_task.cancel()
             try:

@@ -177,7 +177,7 @@ All local data lives in one directory, `~/.aldwin` (override with `ALDWIN_HOME=/
 
 - **No telemetry:** Aldwin collects no analytics or telemetry.
 - **No message content or secrets in logs:** `logs/aldwin.log` records lifecycle events and errors only, and passes all log records through a secret-redacting filter (`sk-…`, `tvly-…`).
-- **Network calls:** your prompts and recent conversation turns (last 20 exchanges) are sent directly to OpenAI using your API key. When `web_search` or `web_fetch` runs, search queries go to Tavily and HTTP GET requests go to the target URL.
+- **Network calls:** your prompts and recent conversation turns (last 20 exchanges) are sent directly to OpenAI using your API key. When `web_search` or `web_fetch` runs, search queries go to Tavily and HTTP GET requests go to the target URL. On everyday launch, Aldwin may GET public project metadata from `https://pypi.org/pypi/aldwin/json` to show an update-available line (no user id, keys, or home path); set `check_for_updates: false` in `~/.aldwin/config.yaml` to opt out.
 
 ---
 
