@@ -2,7 +2,7 @@
 
 An open-source personal assistant that works with your files and documents, knows good habits out of the box, and runs on your own computer, in your terminal, built on [Agentling](https://agentling.dev).
 
-![Aldwin 0.0.2 session: install, first run, tool call and command approval](https://raw.githubusercontent.com/lunarstack-co/aldwin/main/docs/assets/demo.gif)
+![Aldwin 0.0.2 session: summarising a spreadsheet and a slide deck, then finding and fixing a TODO with diff approval](https://raw.githubusercontent.com/lunarstack-co/aldwin/main/docs/assets/demo.gif)
 
 ---
 
