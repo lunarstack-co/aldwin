@@ -373,23 +373,6 @@ def update_available_nudge(
     )
 
 
-def format_version_string(aldwin_version: str) -> str:
-    """Return the `aldwin --version` line, with protocol and agentling versions."""
-    from importlib.metadata import PackageNotFoundError
-    from importlib.metadata import version as pkg_version
-
-    from aldwin.protocol.messages import PROTOCOL_VERSION
-
-    try:
-        agentling_version = pkg_version("agentling")
-    except PackageNotFoundError:
-        agentling_version = "unknown"
-    return (
-        f"aldwin {aldwin_version} "
-        f"(protocol v{PROTOCOL_VERSION}, agentling {agentling_version})"
-    )
-
-
 def whats_new_due(home: Path, current_version: str) -> bool:
     """Return True when the upgrade What's new panel for `current_version` is due.
 
@@ -671,7 +654,6 @@ __all__ = [
     "WorkspaceSummary",
     "bootstrap_host",
     "check_openai_key",
-    "format_version_string",
     "verify_active_openai_key",
     "get_builtin_tools",
     "get_memory_summary",

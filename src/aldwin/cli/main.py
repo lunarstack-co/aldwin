@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import typer
 
-from aldwin import __version__
+from aldwin import __version__, format_version_string
 
 if TYPE_CHECKING:
     from aldwin.client import BootstrapResult
@@ -25,7 +25,7 @@ app = typer.Typer(
 def _load_client():
     """Import the client only when a command needs the host.
 
-    The module body itself stays light, so a bare `aldwin --help` does not
+    `--version` must stay under half a second, so the module body does not
     import the policy engine, pathspec, or tzlocal.
     """
     import aldwin.client as client
@@ -40,8 +40,7 @@ def _is_interactive_tty() -> bool:
 
 def _version_callback(value: bool) -> None:
     if value:
-        client = _load_client()
-        typer.echo(client.format_version_string(__version__))
+        typer.echo(format_version_string())
         raise typer.Exit(code=0)
 
 

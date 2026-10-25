@@ -50,7 +50,7 @@ Aldwin now works with your files and documents, knows good habits out of the box
 ### Known issues
 
 - A workspace file's contents could, in principle, be read by Aldwin and included in a URL it is asked to fetch. Review `run_command` and `web_fetch` approvals for anything that forwards file contents externally.
-- Hard links into a blocked path are not themselves detected as blocked; avoid creating hard links to secret files inside the workspace.
+- A hard link inside the workspace pointing to a file outside it can resolve as if it were inside, letting a file read skip the outside-workspace approval step; its own filename is still checked against the blocked-path list.
 - `run_command`'s refusal checks parse the command as text, not a real shell grammar; unusual quoting or encoding could in principle evade a check meant to catch it.
 
 ### Sizes
