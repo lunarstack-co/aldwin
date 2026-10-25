@@ -14,6 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The one-time What's new panel is keyed to the feature release (`major.minor.micro`), so a patch release such as this one does not show the `0.0.2` panel a second time.
 
+### Security
+
+- Upgraded the pinned `certifi` to `2026.10.23`. Earlier releases bundled emSign root CAs whose intermediate CA keys were compromised (GHSA-6q48-6c7w-9gw2); `web_fetch` and `download_file` verify TLS against this bundle.
+
 ## [0.0.2] - 2026-10-30
 
 Aldwin now works with your files and documents, knows good habits out of the box, and lets you pick a skill with `@`.
