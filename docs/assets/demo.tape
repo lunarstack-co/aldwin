@@ -28,19 +28,20 @@ Sleep 0.8s
 Enter
 Sleep 1.5s
 
-# 2. Ask Aldwin to find every TODO in the folder (grep, no approval needed)
-Type "Find every TODO in this folder"
+# 2. Ask Aldwin to read and summarise a spreadsheet and a deck (no approval
+# needed; read_document is Auto-tier)
+Type "Summarise sheet 2 of Q3.xlsx and the deck.pptx"
 Enter
-Sleep 2.5s
+Sleep 12s
 
-# 3. Ask it to fix the first one, which edits a file (folded diff approval)
-Type "Fix the first one"
+# 3. Ask it to find and fix a TODO, which edits a file (folded diff approval)
+Type "Find every TODO in this folder and fix the first one"
 Enter
-Sleep 2.5s
+Sleep 12s
 
 # 4. Approve the edit diff with `y`
 Type "y"
-Sleep 3s
+Sleep 4s
 
 # 5. Exit cleanly
 Type "/exit"
