@@ -20,6 +20,7 @@ from aldwin.client import AldwinClient, ProtocolError
 from aldwin.core.home import ensure_home
 from aldwin.core.logging import setup_logging
 from aldwin.core.settings import load_config
+from aldwin.core.workspace import DEFAULT_WORKSPACE_DIRNAME
 from aldwin.host import (
     AldwinHost,
     AskFn,
@@ -1105,3 +1106,29 @@ async def test_batch_step_decline_second_edit_runs_no_tools_in_step(
     finally:
         await client.close()
         await host.stop_host()
+
+
+def test_host_falls_back_to_aldwin_workspace_when_cwd_is_user_home(
+    aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Building the host from `~` uses the fallback root instead of raising."""
+    monkeypatch.chdir(Path.home())
+
+    host = AldwinHost(InProcessTransport())
+
+    expected = (aldwin_home.parent / DEFAULT_WORKSPACE_DIRNAME).resolve()
+    assert host.workspace_summary().root == expected
+
+
+def test_host_accepts_the_root_bootstrap_chose_from_user_home(
+    aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The root `bootstrap_host` picks from `~` must construct a host without error."""
+    from aldwin.host.in_process import bootstrap_host
+
+    monkeypatch.chdir(Path.home())
+    boot = bootstrap_host(plain=True)
+
+    host = AldwinHost(InProcessTransport(), home=boot.home, workspace=boot.workspace)
+
+    assert host.workspace_summary().root == boot.workspace

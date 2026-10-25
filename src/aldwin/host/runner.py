@@ -74,7 +74,11 @@ from aldwin.core.tools.files import row_summary as file_row_summary
 from aldwin.core.tools.files import running_summary as file_running_summary
 from aldwin.core.tools.memory_tools import running_summary as memory_running_summary
 from aldwin.core.tools.todo import todo_counts, validate_todo_items
-from aldwin.core.workspace import Workspace, format_outside_display
+from aldwin.core.workspace import (
+    Workspace,
+    default_workspace_root,
+    format_outside_display,
+)
 from aldwin.host.in_process import InProcessTransport, WorkspaceSummary
 from aldwin.host.sessions import (
     MAX_PREVIEW_CHARS,
@@ -527,12 +531,9 @@ class AldwinHost:
         elif workspace is not None:
             self._workspace = Workspace(workspace, home=self._home)
         else:
-            try:
-                self._workspace = Workspace(Path.cwd(), home=self._home)
-            except Exception:
-                ws_fallback = self._home.parent / "aldwin_workspace"
-                ws_fallback.mkdir(parents=True, exist_ok=True)
-                self._workspace = Workspace(ws_fallback, home=self._home)
+            self._workspace = Workspace(
+                default_workspace_root(self._home), home=self._home
+            )
 
         self._approval_log = ApprovalLogger(
             home=self._home,

@@ -239,6 +239,32 @@ def validate_workspace_root(
     return resolved
 
 
+DEFAULT_WORKSPACE_DIRNAME: Final[str] = "aldwin_workspace"
+
+
+def default_workspace_root(home: Path | None = None) -> Path:
+    """Return the workspace root for a launch without an explicit `--workspace`.
+
+    The current directory is used when it is an allowed root. When it is not
+    (`/`, the user's home, or a folder inside the Aldwin home), a sibling of
+    the Aldwin home named `aldwin_workspace` is created and used instead, so
+    typing `aldwin` from the home directory still starts a session.
+    """
+    try:
+        return validate_workspace_root(Path.cwd(), home=home)
+    except WorkspaceError:
+        pass
+
+    aldwin_root = (home if home is not None else home_dir()).expanduser().resolve()
+    fallback = aldwin_root.parent / DEFAULT_WORKSPACE_DIRNAME
+    try:
+        fallback.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        shown = format_outside_display(fallback)
+        raise WorkspaceNotFoundError(f"workspace not found: {shown}") from exc
+    return validate_workspace_root(fallback, home=home)
+
+
 class Workspace:
     """Enforces the workspace root boundary and resolves paths safely."""
 
@@ -356,12 +382,14 @@ class Workspace:
 
 
 __all__ = [
+    "DEFAULT_WORKSPACE_DIRNAME",
     "MAX_SYMLINK_DEPTH",
     "ResolvedPath",
     "Workspace",
     "WorkspaceError",
     "WorkspaceNotAllowedError",
     "WorkspaceNotFoundError",
+    "default_workspace_root",
     "format_outside_display",
     "is_path_within",
     "relative_path_str",

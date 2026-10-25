@@ -17,6 +17,11 @@ from aldwin import __version__
 from aldwin.cli.main import app
 from aldwin.client import bootstrap, whats_new_due
 from aldwin.core.home import STARTER_ASSETS, SUBDIRS, atomic_write
+from aldwin.core.workspace import (
+    DEFAULT_WORKSPACE_DIRNAME,
+    Workspace,
+    format_outside_display,
+)
 
 runner = CliRunner()
 
@@ -198,3 +203,17 @@ def test_bootstrap_resolves_plain_mode_from_flag_env_and_config(
     monkeypatch.delenv("NO_COLOR", raising=False)
     atomic_write(aldwin_home / "config.yaml", "theme: plain\n")
     assert bootstrap(plain=False).plain is True
+
+
+def test_bootstrap_from_user_home_falls_back_to_aldwin_workspace(
+    aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`aldwin` typed in `~` gets `aldwin_workspace`, and the host accepts that root."""
+    monkeypatch.chdir(Path.home())
+
+    result = bootstrap(plain=True)
+
+    expected = (aldwin_home.parent / DEFAULT_WORKSPACE_DIRNAME).resolve()
+    assert result.workspace == expected
+    assert result.display_workspace == format_outside_display(expected)
+    assert Workspace(result.workspace, home=aldwin_home).root == expected

@@ -577,7 +577,7 @@ async def test_context_nearly_full_notice_once(aldwin_home: Path) -> None:
 
 
 def test_whats_new_due_matrix(aldwin_home: Path) -> None:
-    """TC-13: absent, older, unparseable, and current last_seen_version."""
+    """TC-13: absent, older, unparseable, current, and patch-level last_seen_version."""
     assert whats_new_due(aldwin_home, "0.0.2") is True
 
     mark_whats_new_seen(aldwin_home, "0.0.1")
@@ -588,6 +588,13 @@ def test_whats_new_due_matrix(aldwin_home: Path) -> None:
 
     mark_whats_new_seen(aldwin_home, "0.0.2")
     assert whats_new_due(aldwin_home, "0.0.2") is False
+
+    # A patch release never re-shows the feature release's panel.
+    assert whats_new_due(aldwin_home, "0.0.2.1") is False
+
+    mark_whats_new_seen(aldwin_home, "0.0.2.1")
+    assert whats_new_due(aldwin_home, "0.0.2.1") is False
+    assert whats_new_due(aldwin_home, "0.0.3") is True
 
 
 def test_mark_whats_new_seen_persists_and_preserves_comments(aldwin_home: Path) -> None:

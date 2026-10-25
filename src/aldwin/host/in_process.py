@@ -48,6 +48,7 @@ from aldwin.core.workspace import (
     WorkspaceError,
     WorkspaceNotAllowedError,
     WorkspaceNotFoundError,
+    default_workspace_root,
     format_outside_display,
 )
 
@@ -377,7 +378,9 @@ def whats_new_due(home: Path, current_version: str) -> bool:
     """Return True when the upgrade What's new panel for `current_version` is due.
 
     Due when `last_seen_version` is missing, unparseable (shown once rather
-    than silently suppressed forever), or older than `current_version`.
+    than silently suppressed forever), or behind `current_version` at the
+    feature-release level (`major.minor.micro`). A patch release such as
+    `0.0.2.1` never shows the `0.0.2` panel a second time.
     """
     try:
         config = load_config(home)
@@ -389,9 +392,11 @@ def whats_new_due(home: Path, current_version: str) -> bool:
     from packaging.version import InvalidVersion, Version
 
     try:
-        return Version(seen) < Version(current_version)
+        seen_release = Version(seen).release[:3]
+        current_release = Version(current_version).release[:3]
     except InvalidVersion:
         return True
+    return seen_release < current_release
 
 
 def mark_whats_new_seen(home: Path, version: str) -> None:
@@ -437,18 +442,12 @@ def bootstrap_host(
 
         mark_whats_new_seen(root, aldwin.__version__)
 
-    if workspace is not None:
-        ws = Workspace(workspace, home=root)
-        ws_root = ws.root
-        ws_display = ws.display_root
-    else:
-        try:
-            ws = Workspace(Path.cwd(), home=root)
-            ws_root = ws.root
-            ws_display = ws.display_root
-        except WorkspaceError:
-            ws_root = Path.cwd().resolve()
-            ws_display = format_outside_display(ws_root)
+    ws = Workspace(
+        workspace if workspace is not None else default_workspace_root(root),
+        home=root,
+    )
+    ws_root = ws.root
+    ws_display = ws.display_root
 
     try:
         config = load_config(root)

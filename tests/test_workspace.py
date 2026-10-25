@@ -11,11 +11,13 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from aldwin.core.workspace import (
+    DEFAULT_WORKSPACE_DIRNAME,
     ResolvedPath,
     Workspace,
     WorkspaceError,
     WorkspaceNotAllowedError,
     WorkspaceNotFoundError,
+    default_workspace_root,
     format_outside_display,
     is_path_within,
     relative_path_str,
@@ -196,6 +198,57 @@ def test_workspace_root_validation_rejects_missing_broad_and_aldwin_home(
 
     with pytest.raises(WorkspaceNotAllowedError, match="workspace not allowed"):
         Workspace(aldwin_home / "skills")
+
+
+def test_default_workspace_root_uses_cwd_when_it_is_allowed(
+    tmp_path: Path, aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A normal project folder is used as the root without creating a fallback."""
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    assert default_workspace_root(aldwin_home) == project.resolve()
+    assert not (aldwin_home.parent / DEFAULT_WORKSPACE_DIRNAME).exists()
+
+
+def test_default_workspace_root_falls_back_when_cwd_is_user_home(
+    aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Launching from `~` yields a created `aldwin_workspace` beside the Aldwin home."""
+    monkeypatch.chdir(Path.home())
+
+    root = default_workspace_root(aldwin_home)
+
+    expected = (aldwin_home.parent / DEFAULT_WORKSPACE_DIRNAME).resolve()
+    assert root == expected
+    assert root.is_dir()
+    assert Workspace(root, home=aldwin_home).root == expected
+
+
+def test_default_workspace_root_falls_back_when_cwd_is_inside_aldwin_home(
+    aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cwd inside `~/.aldwin` is never used as the root."""
+    monkeypatch.chdir(aldwin_home)
+
+    expected = (aldwin_home.parent / DEFAULT_WORKSPACE_DIRNAME).resolve()
+    assert default_workspace_root(aldwin_home) == expected
+
+
+def test_default_workspace_root_reports_unwritable_fallback(
+    aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fallback folder that cannot be created raises a `WorkspaceError`."""
+    monkeypatch.chdir(Path.home())
+
+    def fail_mkdir(self: Path, *args: object, **kwargs: object) -> None:
+        raise PermissionError("read-only home")
+
+    monkeypatch.setattr(Path, "mkdir", fail_mkdir)
+
+    with pytest.raises(WorkspaceNotFoundError, match="workspace not found"):
+        default_workspace_root(aldwin_home)
 
 
 def test_set_root_clears_all_grants_and_mark_read_records_mtime(
