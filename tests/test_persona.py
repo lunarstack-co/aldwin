@@ -189,6 +189,22 @@ def test_read_persona_missing_fallback_and_over_cap_warning(
     assert len(warnings) == 1
 
 
+def test_set_persona_schema_states_configured_cap(aldwin_home: Path) -> None:
+    """The tool tells the model the configured `persona_chars` limit."""
+
+    async def _ask(summary: str, detail: str = "") -> bool:
+        return True
+
+    tool = build_persona_tool(_ask, aldwin_home, cap=500)
+    param = tool.parameters["properties"]["new_text"]["description"]
+    assert "1-500 characters" in tool.description
+    assert "1-500 characters" in param
+    assert "2,000" not in tool.description + param
+
+    wide = build_persona_tool(_ask, aldwin_home, cap=8000)
+    assert "1-8,000 characters" in wide.description
+
+
 async def test_set_persona_rejects_empty_or_over_2000_chars_without_asking(
     aldwin_home: Path,
 ) -> None:

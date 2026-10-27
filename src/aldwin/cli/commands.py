@@ -266,9 +266,10 @@ def _render_memory(client: SlashCommandClient, renderer: ChatRenderer) -> None:
                 style="warn",
             )
         )
+    window = "day" if mem.notes_window_days == 1 else f"{mem.notes_window_days} days"
     console.print(
         Text(
-            f"Notes in the last 7 days: {mem.notes_last_7_days}",
+            f"Notes in the last {window}: {mem.notes_in_window}",
             style="muted",
         )
     )

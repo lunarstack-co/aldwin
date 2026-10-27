@@ -241,6 +241,7 @@ async def test_slash_completer_and_inspect_commands() -> None:
     assert "~/.aldwin/persona.md" in text
     assert "calm and direct assistant" in text
     assert "~/.aldwin/memory/profile.md" in text
+    assert "Notes in the last 7 days: 2" in text
     assert "Fola prefers short answers" in text
     assert "using-aldwin · default ·" in text
     assert "broken-skill · error: missing description" in text

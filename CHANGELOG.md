@@ -4,6 +4,13 @@ All notable changes to Aldwin are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- The `set_persona` tool always told the model the persona limit was 2,000 characters, even when `limits.persona_chars` was set to something else. With a lower limit the model wrote text that was then rejected. The tool now states the configured limit.
+- `/memory` always said "Notes in the last 7 days" and counted over a fixed seven days, while the prompt uses `limits.notes_days`. The count and label now follow `notes_days`.
+
 ## [0.0.2.1] - 2026-10-25
 
 ### Fixed

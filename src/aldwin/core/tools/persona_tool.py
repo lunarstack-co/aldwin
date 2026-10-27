@@ -20,26 +20,8 @@ class SetPersonaTool(Tool):
     """Replace `persona.md` only after explicit `y/n` approval via `ask`."""
 
     name = "set_persona"
-    description = (
-        "Propose a new persona for Aldwin (1-2,000 characters). Always asks the user "
-        "for y/n approval before updating persona.md."
-    )
     parallel_safe = False
     timeout: float | None = float("inf")
-    parameters: dict[str, Any] = {
-        "type": "object",
-        "properties": {
-            "new_text": {
-                "type": "string",
-                "description": (
-                    "Full replacement persona text (1-2,000 characters) shown to the "
-                    "user for y/n approval."
-                ),
-            },
-        },
-        "required": ["new_text"],
-        "additionalProperties": False,
-    }
 
     def __init__(
         self,
@@ -53,6 +35,25 @@ class SetPersonaTool(Tool):
         self._home = home
         self._cap = cap
         self._wrapped_by_policy = wrapped_by_policy
+        # Built per instance so the stated limit follows `limits.persona_chars`.
+        self.description = (
+            f"Propose a new persona for Aldwin (1-{cap:,} characters). Always asks "
+            "the user for y/n approval before updating persona.md."
+        )
+        self.parameters: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "new_text": {
+                    "type": "string",
+                    "description": (
+                        f"Full replacement persona text (1-{cap:,} characters) shown "
+                        "to the user for y/n approval."
+                    ),
+                },
+            },
+            "required": ["new_text"],
+            "additionalProperties": False,
+        }
 
     def _validate_new_text(self, new_text: str) -> tuple[str | None, str | None]:
         """Return `(cleaned_text, error_message)` for `new_text`."""

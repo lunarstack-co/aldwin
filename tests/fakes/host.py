@@ -90,7 +90,8 @@ class FakeHost:
             profile_size_chars=120,
             profile_cap_chars=4000,
             profile_truncated=False,
-            notes_last_7_days=2,
+            notes_window_days=7,
+            notes_in_window=2,
             recent_notes=(
                 NoteEntry(date="2026-10-18", text="Fola prefers short answers"),
                 NoteEntry(date="2026-10-17", text="Agentling docs move comes first"),
