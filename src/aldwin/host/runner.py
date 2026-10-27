@@ -242,6 +242,7 @@ class RequestScope:
         self,
         reason: DoneReason,
         usage: TokenUsage | None = None,
+        max_steps: int | None = None,
     ) -> None:
         """Emit the single terminal `DoneEvent` for this request."""
         if self._terminated:
@@ -250,7 +251,13 @@ class RequestScope:
             )
         self._terminated = True
         await self._send_event(
-            DoneEvent(v=self._version, re=self.req_id, reason=reason, usage=usage)
+            DoneEvent(
+                v=self._version,
+                re=self.req_id,
+                reason=reason,
+                usage=usage,
+                max_steps=max_steps,
+            )
         )
 
     async def error(self, code: ErrorCode, message: str) -> None:
@@ -1203,7 +1210,11 @@ class AldwinHost:
                     self._rebuild_agent_for_skills()
                     await scope.emit(NoticeEvent(re=req.id, message="skills reloaded"))
                     await scope.emit(self._skills_event(req.id))
-                await scope.done(reason, usage=_to_token_usage(final_usage))
+                await scope.done(
+                    reason,
+                    usage=_to_token_usage(final_usage),
+                    max_steps=self._agent.max_steps if reason == "max_steps" else None,
+                )
 
             except asyncio.CancelledError:
                 self._approvals.cancel_all()

@@ -76,7 +76,17 @@ ERROR_COPY: Final[dict[ErrorCode, str]] = {
 INTERRUPTED_NOTICE: Final[str] = (
     "Your last request was interrupted. Say *continue* to pick it up."
 )
-MAX_STEPS_NOTICE: Final[str] = "Stopped after 15 steps. Say *continue* to keep going."
+MAX_STEPS_NOTICE: Final[str] = "Stopped {steps}. Say *continue* to keep going."
+
+
+def _steps_phrase(max_steps: int | None) -> str:
+    """Describe the step limit for the max-steps notice."""
+    if max_steps is None:
+        return "at the step limit"
+    unit = "step" if max_steps == 1 else "steps"
+    return f"after {max_steps} {unit}"
+
+
 CONTEXT_NEARLY_FULL_NOTICE: Final[str] = (
     "Context nearly full. Older messages will be dropped; /new starts fresh."
 )
@@ -1203,10 +1213,11 @@ class TurnRenderer:
         self._flush_markdown_buffer()
 
         if event.reason == "max_steps":
+            steps = _steps_phrase(event.max_steps)
             if self.plain:
-                self.console.print(MAX_STEPS_NOTICE)
+                self.console.print(MAX_STEPS_NOTICE.format(steps=steps))
             else:
-                notice = Text("Stopped after 15 steps. Say ", style="warn")
+                notice = Text(f"Stopped {steps}. Say ", style="warn")
                 notice.append("continue", style="italic")
                 notice.append(" to keep going.")
                 self.console.print(notice)

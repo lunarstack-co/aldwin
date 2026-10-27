@@ -46,7 +46,7 @@ Every message is a Pydantic v2 model with `model_config = ConfigDict(extra="igno
 | `approval` | `ApprovalEvent` | `approval_id: str`, `summary: str`, `detail: str = ""` | No | Host is paused waiting for a `yes` or `no` `approve` request. |
 | `history` | `HistoryEvent` | `messages: list[HistoryItem]`, `interrupted: bool` | No | Past messages (`role: "user" \| "assistant" \| "tool"`, `text`, `at`). |
 | `status` | `StatusEvent` | `message: str` | No | Non-terminal status notice (e.g. `OpenAI is busy, retrying (2 of 3)…`). |
-| `done` | `DoneEvent` | `reason: "answered" \| "stopped" \| "max_steps" \| "ok"`, `usage: TokenUsage \| None` | **Yes** | Request completed normally. |
+| `done` | `DoneEvent` | `reason: "answered" \| "stopped" \| "max_steps" \| "ok"`, `usage: TokenUsage \| None`, `max_steps: int \| None` (set when `reason="max_steps"`) | **Yes** | Request completed normally. |
 | `error` | `ErrorEvent` | `code: ErrorCode`, `message: str` | **Yes** | Request failed with a single-sentence actionable message. |
 
 ### Error codes (`ErrorCode`)

@@ -313,6 +313,7 @@ class DoneEvent(EventBase):
     kind: Literal["done"] = "done"
     reason: DoneReason
     usage: TokenUsage | None = None
+    max_steps: int | None = None
 
 
 class ErrorEvent(EventBase):

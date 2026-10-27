@@ -7,6 +7,7 @@ import io
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
 from rich.console import Group
 from rich.text import Text
 
@@ -364,12 +365,34 @@ def test_turn_renderer_status_ticker_retry_notice_and_max_steps() -> None:
 
     turn.on_status("OpenAI is busy. Retrying in 2s (2/3)…")
     assert turn._retry_status == "OpenAI is busy. Retrying in 2s (2/3)…"
-    turn.finish_done(DoneEvent(re="r1", reason="max_steps"))
+    turn.finish_done(DoneEvent(re="r1", reason="max_steps", max_steps=42))
 
     text = console.export_text()
     # In-place Live status is not stacked as permanent scrollback lines.
     assert text.count("OpenAI is busy. Retrying") == 0
-    assert "Stopped after 15 steps. Say continue to keep going." in text
+    assert "Stopped after 42 steps. Say continue to keep going." in text
+
+
+@pytest.mark.parametrize(
+    ("max_steps", "expected"),
+    [
+        (1, "Stopped after 1 step. Say continue to keep going."),
+        (None, "Stopped at the step limit. Say continue to keep going."),
+    ],
+)
+@pytest.mark.parametrize("plain", [False, True])
+def test_turn_renderer_max_steps_notice_uses_reported_limit(
+    max_steps: int | None, expected: str, plain: bool
+) -> None:
+    """The max-steps notice reflects the limit carried on `DoneEvent`."""
+    buf = io.StringIO()
+    console = create_console(plain=plain, width=80, record=True, file=buf)
+    renderer = ChatRenderer(console, plain=plain)
+
+    turn = renderer.start_turn(clock=lambda: 0.0)
+    turn.finish_done(DoneEvent(re="r1", reason="max_steps", max_steps=max_steps))
+
+    assert expected in console.export_text().replace("*", "")
 
 
 def test_turn_renderer_flushes_narration_before_tool_card() -> None:

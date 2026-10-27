@@ -562,6 +562,7 @@ async def test_max_steps_maps_to_done_reason_max_steps(
         events = await _collect_turn(client, "keep pinging")
         assert isinstance(events[-1], DoneEvent)
         assert events[-1].reason == "max_steps"
+        assert events[-1].max_steps == 2
         assert events[-1].usage is not None
     finally:
         await client.close()
