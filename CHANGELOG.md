@@ -8,8 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+## [Unreleased]
+
+### Fixed
+
+- Running `aldwin` (or `aldwin skills`) from a folder that had been deleted after you `cd`-ed into it crashed with a `FileNotFoundError` traceback. Aldwin now falls back to `~/aldwin_workspace`, the same as when it is launched from the home directory.
+- Some invalid `config.yaml` values produced garbled errors such as `'check_for_updates' must be Input should be a valid boolean…`. `check_for_updates` and `last_seen_version` now have proper messages, and a bad item in `run_command.env_allow` is named by its position (`run_command.env_allow[0]`).
+- The "Stopped after N steps" notice always said 15, even when `limits.max_steps` in `~/.aldwin/config.yaml` was set to something else. It now shows the configured limit. `DoneEvent` carries the limit in a new optional `max_steps` field when `reason` is `max_steps`.
+- Setting `theme: light` or `theme: colour_blind` in `~/.aldwin/config.yaml` had no effect: chat and `aldwin setup` always used the dark theme. The configured theme is now applied. `theme: plain` already worked and is unchanged.
+- `/tools` labelled every tool that needs approval "(always asks y/n)". That was wrong for `edit_file` and `write_file`, which can be allowed per file for the session with `a`, and for the diff-approved tools, which don't ask y/n. Each tool now shows a note that matches its approval tier. `run_command` is described as running in the workspace, not the launch folder.
 - The `set_persona` tool always told the model the persona limit was 2,000 characters, even when `limits.persona_chars` was set to something else. With a lower limit the model wrote text that was then rejected. The tool now states the configured limit.
 - `/memory` always said "Notes in the last 7 days" and counted over a fixed seven days, while the prompt uses `limits.notes_days`. The count and label now follow `notes_days`.
+
 
 ## [0.0.2.1] - 2026-10-25
 
