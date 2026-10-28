@@ -236,6 +236,20 @@ def test_default_workspace_root_falls_back_when_cwd_is_inside_aldwin_home(
     assert default_workspace_root(aldwin_home) == expected
 
 
+def test_default_workspace_root_falls_back_when_cwd_was_deleted(
+    tmp_path: Path, aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cwd removed after `cd` falls back instead of raising `FileNotFoundError`."""
+    gone = tmp_path / "gone"
+    gone.mkdir()
+    monkeypatch.chdir(gone)
+    gone.rmdir()
+
+    expected = (aldwin_home.parent / DEFAULT_WORKSPACE_DIRNAME).resolve()
+    assert default_workspace_root(aldwin_home) == expected
+    assert expected.is_dir()
+
+
 def test_default_workspace_root_reports_unwritable_fallback(
     aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
