@@ -8,7 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+## [Unreleased]
+
+### Fixed
+
+- Running `aldwin` (or `aldwin skills`) from a folder that had been deleted after you `cd`-ed into it crashed with a `FileNotFoundError` traceback. Aldwin now falls back to `~/aldwin_workspace`, the same as when it is launched from the home directory.
+- Some invalid `config.yaml` values produced garbled errors such as `'check_for_updates' must be Input should be a valid boolean…`. `check_for_updates` and `last_seen_version` now have proper messages, and a bad item in `run_command.env_allow` is named by its position (`run_command.env_allow[0]`).
 - The "Stopped after N steps" notice always said 15, even when `limits.max_steps` in `~/.aldwin/config.yaml` was set to something else. It now shows the configured limit. `DoneEvent` carries the limit in a new optional `max_steps` field when `reason` is `max_steps`.
+
 
 ## [0.0.2.1] - 2026-10-25
 

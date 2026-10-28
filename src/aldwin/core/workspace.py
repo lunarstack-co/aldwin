@@ -246,13 +246,15 @@ def default_workspace_root(home: Path | None = None) -> Path:
     """Return the workspace root for a launch without an explicit `--workspace`.
 
     The current directory is used when it is an allowed root. When it is not
-    (`/`, the user's home, or a folder inside the Aldwin home), a sibling of
-    the Aldwin home named `aldwin_workspace` is created and used instead, so
-    typing `aldwin` from the home directory still starts a session.
+    (`/`, the user's home, or a folder inside the Aldwin home), or when it no
+    longer exists, a sibling of the Aldwin home named `aldwin_workspace` is
+    created and used instead, so typing `aldwin` from the home directory still
+    starts a session.
     """
     try:
         return validate_workspace_root(Path.cwd(), home=home)
-    except WorkspaceError:
+    except (WorkspaceError, OSError):
+        # OSError: the shell's current directory was deleted after `cd`.
         pass
 
     aldwin_root = (home if home is not None else home_dir()).expanduser().resolve()
