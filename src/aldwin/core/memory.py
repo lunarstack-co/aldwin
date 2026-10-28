@@ -84,7 +84,8 @@ class MemorySummary:
     profile_size_chars: int
     profile_cap_chars: int
     profile_truncated: bool
-    notes_last_7_days: int
+    notes_window_days: int
+    notes_in_window: int
     recent_notes: tuple[NoteEntry, ...]
     indexed_notes: int = 0
     indexed_conversations: int = 0
@@ -633,13 +634,13 @@ def memory_summary(
         cleaned_profile = ""
 
     profile_size = len(cleaned_profile)
-    notes_7d = _load_notes_newest_first(
+    notes_in_window = _load_notes_newest_first(
         root,
-        days=DUPLICATE_WINDOW_DAYS,
+        days=active_limits.notes_days,
         today=today,
     )
-    if len(notes_7d) >= SUMMARY_RECENT_LIMIT:
-        recent_notes = tuple(notes_7d[:SUMMARY_RECENT_LIMIT])
+    if len(notes_in_window) >= SUMMARY_RECENT_LIMIT:
+        recent_notes = tuple(notes_in_window[:SUMMARY_RECENT_LIMIT])
     else:
         recent_notes = tuple(
             _load_notes_newest_first(
@@ -670,7 +671,8 @@ def memory_summary(
         profile_size_chars=profile_size,
         profile_cap_chars=active_limits.profile_chars,
         profile_truncated=profile_size > active_limits.profile_chars,
-        notes_last_7_days=len(notes_7d),
+        notes_window_days=active_limits.notes_days,
+        notes_in_window=len(notes_in_window),
         recent_notes=recent_notes,
         indexed_notes=indexed_notes,
         indexed_conversations=indexed_conversations,

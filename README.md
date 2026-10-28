@@ -87,7 +87,7 @@ Notes live in `~/.aldwin/memory/notes/YYYY-MM-DD.md`; a rebuildable SQLite FTS5 
 ### Memory and persona
 
 - **Profile (`~/.aldwin/memory/profile.md`):** durable facts about you (up to 4,000 characters), always included in the system prompt. Only you can edit this file; the agent cannot modify it.
-- **Persona (`~/.aldwin/persona.md`):** controls Aldwin's tone and style (up to 2,000 characters). Edit the file directly, or ask Aldwin to change how it talks; it shows the proposed `persona.md` in an approval box and asks `y/n` before saving.
+- **Persona (`~/.aldwin/persona.md`):** controls Aldwin's tone and style (up to 2,000 characters by default; set `limits.persona_chars` in `config.yaml` to change it). Edit the file directly, or ask Aldwin to change how it talks; it shows the proposed `persona.md` in an approval box and asks `y/n` before saving.
 
 ### Web
 

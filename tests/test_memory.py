@@ -539,7 +539,8 @@ def test_memory_summary_via_core_and_client(aldwin_home: Path) -> None:
     assert summary.profile_size_chars == len("Fola · London · Founder")
     assert summary.profile_cap_chars == 4000
     assert summary.profile_truncated is False
-    assert summary.notes_last_7_days == 12
+    assert summary.notes_window_days == 7
+    assert summary.notes_in_window == 12
     assert len(summary.recent_notes) == 10
     assert summary.recent_notes[0].text == "Recent note 11"
     assert summary.recent_notes[9].text == "Recent note 2"
@@ -561,8 +562,27 @@ def test_memory_summary_via_core_and_client(aldwin_home: Path) -> None:
         LimitsConfig(),
         today=date(2026, 10, 28),
     )
-    assert later_summary.notes_last_7_days == 0
+    assert later_summary.notes_in_window == 0
     assert len(later_summary.recent_notes) == 10
+
+
+def test_memory_summary_counts_notes_over_configured_notes_days(
+    aldwin_home: Path,
+) -> None:
+    """`/memory` counts notes over `limits.notes_days`, not a fixed 7 days."""
+    ensure_home(aldwin_home)
+    today = date(2026, 10, 17)
+    for day in (17, 16, 14, 12):
+        ts = datetime(2026, 10, day, 10, 0, tzinfo=timezone.utc)
+        remember_note(aldwin_home, f"Note from Oct {day}", now=ts)
+
+    summary = memory_summary(aldwin_home, LimitsConfig(notes_days=2), today=today)
+    assert summary.notes_window_days == 2
+    assert summary.notes_in_window == 2
+
+    wide = memory_summary(aldwin_home, LimitsConfig(notes_days=30), today=today)
+    assert wide.notes_window_days == 30
+    assert wide.notes_in_window == 4
 
 
 async def test_host_remember_tool_binds_active_session_id(
