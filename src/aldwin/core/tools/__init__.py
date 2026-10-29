@@ -256,7 +256,7 @@ def builtin_tools(
     persona_cap: int | None = None,
     session_id_getter: Callable[[], str] | None = None,
 ) -> list[Tool]:
-    """Return the fixed 6 built-in tools for Aldwin 0.0.1."""
+    """Return Aldwin's built-in tools, in `BUILTIN_TOOL_NAMES` order."""
     from aldwin.core.persona import DEFAULT_PERSONA_CAP
     from aldwin.core.tools.memory_tools import build_memory_tools
     from aldwin.core.tools.persona_tool import build_persona_tool
