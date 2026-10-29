@@ -765,7 +765,7 @@ def test_resolve_diff_approval_uses_summary_not_persona() -> None:
 
 
 def test_tc44_verbose_help_readme(aldwin_home: Path) -> None:
-    """`/verbose` shows preview lines, and help and the README list it."""
+    """`/verbose` shows preview lines, and help and the commands doc list it."""
     config = aldwin_home / "config.yaml"
     before = config.read_bytes() if config.is_file() else b""
     buf = io.StringIO()
@@ -840,8 +840,8 @@ def test_tc44_verbose_help_readme(aldwin_home: Path) -> None:
     help_text = help_console.export_text()
     assert "/verbose" in help_text
     assert "/workspace" in help_text
-    readme = Path("README.md").read_text(encoding="utf-8")
-    slash = readme.split("### Slash commands", 1)[1].split("### Keyboard", 1)[0]
+    commands_doc = Path("docs/commands.md").read_text(encoding="utf-8")
+    slash = commands_doc.split("## Slash commands", 1)[1].split("## Keyboard", 1)[0]
     assert "/verbose" in slash
     assert "/workspace" in slash
 

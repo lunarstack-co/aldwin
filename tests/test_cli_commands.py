@@ -180,7 +180,7 @@ async def test_slash_todo_prints_list_or_empty() -> None:
     assert "Tasks 1/2" in text
     assert "List downloads" in text
     assert "Rename invoices" in text
-    assert "/todo" in Path("README.md").read_text(encoding="utf-8")
+    assert "/todo" in Path("docs/commands.md").read_text(encoding="utf-8")
 
 
 async def test_slash_completer_and_inspect_commands() -> None:
@@ -390,7 +390,7 @@ async def test_workspace_command_shows_and_switches_root_and_clears_grants(
 
 
 async def test_tc44_verbose_help_readme(aldwin_home: Path) -> None:
-    """`/help` and the README list `/verbose` and `/workspace`."""
+    """`/help` and the commands doc list `/verbose` and `/workspace`."""
     config = aldwin_home / "config.yaml"
     before = config.read_bytes() if config.is_file() else b""
     buf = io.StringIO()
@@ -419,8 +419,8 @@ async def test_tc44_verbose_help_readme(aldwin_home: Path) -> None:
     assert "verbose: off" in text
     assert "/verbose" in text
     assert "/workspace" in text
-    readme = Path("README.md").read_text(encoding="utf-8")
-    slash = readme.split("### Slash commands", 1)[1].split("### Keyboard", 1)[0]
+    commands_doc = Path("docs/commands.md").read_text(encoding="utf-8")
+    slash = commands_doc.split("## Slash commands", 1)[1].split("## Keyboard", 1)[0]
     assert "/verbose" in slash
     assert "/workspace" in slash
     after = config.read_bytes() if config.is_file() else b""
