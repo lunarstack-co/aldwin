@@ -479,11 +479,11 @@ def test_no_new_runtime_deps_for_update_check() -> None:
     assert "urllib3" not in joined
 
 
-def test_readme_privacy_mentions_pypi_and_opt_out() -> None:
-    """README documents the PyPI check and check_for_updates opt-out."""
-    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    assert "pypi.org/pypi/aldwin/json" in readme
-    assert "check_for_updates" in readme
+def test_privacy_doc_mentions_pypi_and_opt_out() -> None:
+    """The privacy doc documents the PyPI check and check_for_updates opt-out."""
+    privacy = (REPO_ROOT / "docs" / "privacy.md").read_text(encoding="utf-8")
+    assert "pypi.org/pypi/aldwin/json" in privacy
+    assert "check_for_updates" in privacy
 
 
 def test_bootstrap_does_not_fetch(

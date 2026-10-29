@@ -259,8 +259,17 @@ def test_readme_uses_absolute_https_image_urls_and_balanced_fences() -> None:
     assert len(fence_lines) % 2 == 0, "Unclosed ``` code fence in README.md"
 
 
-def test_readme_contains_all_fr7_sections_and_doc_links() -> None:
-    """TC-21: README has the FR-7 sections, in order, and links to docs/*.md."""
+USER_DOCS = (
+    "docs/tools.md",
+    "docs/skills.md",
+    "docs/safety.md",
+    "docs/privacy.md",
+    "docs/commands.md",
+)
+
+
+def test_readme_contains_all_sections_and_doc_links() -> None:
+    """TC-21: README has its sections, in order, and links to every user doc."""
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 
     required_headings = (
@@ -268,12 +277,10 @@ def test_readme_contains_all_fr7_sections_and_doc_links() -> None:
         "## Install",
         "### First run",
         "## What Aldwin can do",
-        "## Safety model",
-        "## Skills",
+        "## Safety",
         "## Data and privacy",
-        "## Commands and slash commands",
+        "## Commands",
         "## What's next",
-        "## Uninstall",
         "## Contributing",
         "## Licence",
     )
@@ -287,14 +294,30 @@ def test_readme_contains_all_fr7_sections_and_doc_links() -> None:
     assert positions == sorted(positions), "README sections are out of order"
     assert "## Roadmap" not in readme
     assert "## How it's built" not in readme
-    assert "## Documentation" not in readme
     assert "0.0.3" in readme
+
+    # PyPI renders the README, so links to other repo files must be absolute.
+    blob = "https://github.com/lunarstack-co/aldwin/blob/main/"
+    for doc in (*USER_DOCS, "docs/README.md", "CONTRIBUTING.md"):
+        assert blob + doc in readme, f"README.md does not link to {doc}"
 
     required_snippets = (
         "uv tool install aldwin",
         "https://astral.sh/uv/install.sh",
         "pip install aldwin",
         "uv tool upgrade aldwin",
+        "https://agentling.dev",
+        "~/.aldwin",
+        "Apache-2.0",
+    )
+    for snippet in required_snippets:
+        assert snippet in readme, f"Missing {snippet!r} in README.md"
+
+
+def test_user_docs_cover_every_tool_command_and_extra() -> None:
+    """Every tool, slash command, and extra is documented in the user docs."""
+    docs = "\n".join((REPO_ROOT / doc).read_text(encoding="utf-8") for doc in USER_DOCS)
+    required_snippets = (
         "/help",
         "/new",
         "/history",
@@ -326,16 +349,23 @@ def test_readme_contains_all_fr7_sections_and_doc_links() -> None:
         "create_skill",
         "aldwin[docs]",
         "aldwin[office]",
-        "~/.aldwin",
         "ALDWIN_HOME",
-        "https://agentling.dev",
+        "aldwin uninstall",
+    )
+    for snippet in required_snippets:
+        assert snippet in docs, f"Missing {snippet!r} in the user docs"
+
+
+def test_docs_index_links_every_doc() -> None:
+    """docs/README.md links every user and developer doc."""
+    index = (REPO_ROOT / "docs" / "README.md").read_text(encoding="utf-8")
+    for doc in (
+        *USER_DOCS,
         "docs/protocol.md",
         "docs/manual-test.md",
         "docs/releasing.md",
-        "Apache-2.0",
-    )
-    for snippet in required_snippets:
-        assert snippet in readme, f"Missing {snippet!r} in README.md"
+    ):
+        assert Path(doc).name in index, f"docs/README.md does not link to {doc}"
 
 
 def test_changelog_0_0_2_1_entry() -> None:
