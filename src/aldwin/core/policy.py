@@ -880,7 +880,7 @@ def _is_inside_git_dir(path: Path, raw_path: str) -> bool:
     return False
 
 
-def is_build_file(resolved_path: Path, workspace_root: Path) -> bool:
+def is_build_file(resolved_path: Path) -> bool:
     """Return `True` if `resolved_path` is a build or workflow file."""
     fold = sys.platform in ("darwin", "win32")
     name = resolved_path.name
@@ -897,7 +897,6 @@ def is_build_file(resolved_path: Path, workspace_root: Path) -> bool:
             and parts[idx + 2].endswith((".yml", ".yaml"))
         ):
             return True
-    _ = workspace_root
     return False
 
 
@@ -1216,7 +1215,7 @@ def decide(
         if base_tier == "diff":
             if policy.never_grant is None and policy.writes and resolved_paths:
                 target_res = resolved_paths[0][2]
-                if not is_build_file(target_res.path, session.workspace.root):
+                if not is_build_file(target_res.path):
                     file_grant_key = f"file:{target_res.path}"
                     if file_grant_key in session.grants:
                         return Decision(
