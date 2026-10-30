@@ -100,8 +100,8 @@ def test_core_never_imports_protocol_host_client_or_cli() -> None:
     )
 
 
-def test_builtin_tools_returns_exact_six_names(aldwin_home: Path) -> None:
-    """`FR-8`: `builtin_tools()` returns the exact six expected tool names."""
+def test_builtin_tools_match_builtin_tool_names(aldwin_home: Path) -> None:
+    """`FR-8`: `builtin_tools()` returns the expected tool names."""
     tools = builtin_tools(_dummy_ask, home=aldwin_home, secrets=SecretsConfig())
     names = tuple(t.name for t in tools)
     assert names == (
