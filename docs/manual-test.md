@@ -61,7 +61,7 @@ unset OPENAI_API_KEY TAVILY_API_KEY ALDWIN_HOME NO_COLOR
   - Valid key prints: `Checking key… sk-…<last4> ✓`.
   - Prints `Default model: gpt-4o (change any time with /model)` and `Created ~/.aldwin`.
   - `~/.aldwin` has mode `0700`; `~/.aldwin/secrets.yaml` has mode `0600`.
-  - Drops directly into the `› ` chat prompt without printing a second welcome box.
+  - Drops directly into the `❯ ` chat prompt (`> ` with `--plain`) without printing a second welcome box.
 - [ ] Pass / Fail
 
 ### Step 3: Plain question and streamed Markdown answer
@@ -69,7 +69,7 @@ unset OPENAI_API_KEY TAVILY_API_KEY ALDWIN_HOME NO_COLOR
 - **Expected:**
   - Spinner shows `Thinking…` immediately after pressing Enter.
   - Markdown answer streams cleanly into scrollback with syntax-highlighted Python code.
-  - Turn ends with `✓ done · <N>s · 0 tools · <N> tokens`.
+  - Turn ends with `✻ Worked for <N>s`; when tools ran it includes `· <N> tool(s)`, and when token usage is available it includes `· <N> tokens`. Plain mode uses `*` instead of `✻`.
 - [ ] Pass / Fail
 
 ### Step 4: Web search without a Tavily key
@@ -95,8 +95,8 @@ unset OPENAI_API_KEY TAVILY_API_KEY ALDWIN_HOME NO_COLOR
 - **Action:** Ask `Write a detailed 600-word guide to Unix signals.` and press `Esc` while text is streaming.
 - **Expected:**
   - Streaming stops in `< 1 s`.
-  - Partial text remains visible in scrollback followed by `(stopped)` and `✓ done · <N>s · 0 tools (stopped)`.
-  - Prompt `› ` returns immediately.
+  - Partial text remains visible in scrollback, followed by `⎿ Interrupted · tell Aldwin what to do instead` (plain mode: `| Interrupted · tell Aldwin what to do instead`).
+  - Prompt `❯ ` (or `> ` with `--plain`) returns immediately.
 - [ ] Pass / Fail
 
 ### Step 7: Close terminal mid-task, then resume with `continue`
@@ -158,7 +158,7 @@ unset OPENAI_API_KEY TAVILY_API_KEY ALDWIN_HOME NO_COLOR
 
 ### Step 11: `Ctrl-C` once/twice and `Ctrl-D`
 - **Action:**
-  1. At an empty `› ` prompt, press `Ctrl-C` once.
+  1. At an empty `❯ ` prompt (or `> ` with `--plain`), press `Ctrl-C` once.
   2. Press `Ctrl-C` a second time within 2 seconds.
   3. Reopen `aldwin` and press `Ctrl-D` at an empty prompt.
 - **Expected:**
