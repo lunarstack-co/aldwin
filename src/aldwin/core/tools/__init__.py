@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
+from aldwin import __version__
+
 if TYPE_CHECKING:
     from agentling import Tool
 
@@ -26,6 +28,10 @@ if TYPE_CHECKING:
 AskFn = Callable[[str, str], Awaitable[bool]]
 
 MAX_SUMMARY_CHARS: Final[int] = 120
+
+# Kept in one place so the tools cannot drift from each other or from the
+# installed package version.
+USER_AGENT: Final[str] = f"Aldwin/{__version__} (+https://askaldwin.com)"
 
 BUILTIN_TOOL_NAMES: Final[tuple[str, ...]] = (
     "web_search",
@@ -323,6 +329,7 @@ __all__ = [
     "ToolInfo",
     "ToolOutcome",
     "ToolOutput",
+    "USER_AGENT",
     "build_memory_tools",
     "build_persona_tool",
     "builtin_tools",

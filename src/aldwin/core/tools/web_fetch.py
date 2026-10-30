@@ -17,7 +17,7 @@ import httpx
 import trafilatura
 from agentling import Tool
 
-from aldwin.core.tools import ToolOutput
+from aldwin.core.tools import USER_AGENT, ToolOutput
 
 FETCH_TIMEOUT_SECONDS: Final[float] = 10.0
 MAX_FETCH_BYTES: Final[int] = 2 * 1024 * 1024  # 2 MB
@@ -365,7 +365,7 @@ class WebFetchTool(Tool):
         initial_url: str,
     ) -> tuple[str, bytes, str]:
         current_url = initial_url
-        headers = {"User-Agent": "Aldwin/0.0.1 (+https://askaldwin.com)"}
+        headers = {"User-Agent": USER_AGENT}
 
         for hop in range(self._max_redirects + 1):
             current_url = await validate_public_url(

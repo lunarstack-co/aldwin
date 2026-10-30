@@ -23,7 +23,7 @@ from aldwin.core.policy import (
     PolicySession,
     is_blocked_path,
 )
-from aldwin.core.tools import ToolOutput
+from aldwin.core.tools import USER_AGENT, ToolOutput
 from aldwin.core.tools.files import format_size
 from aldwin.core.tools.web_fetch import (
     MAX_REDIRECTS,
@@ -239,7 +239,7 @@ class DownloadFileTool(Tool):
     ) -> tuple[str, httpx.Headers, int]:
         """Follow redirects with SSRF checks; return final URL, headers, status."""
         current_url = initial_url
-        headers = {"User-Agent": "Aldwin/0.0.2 (+https://askaldwin.com)"}
+        headers = {"User-Agent": USER_AGENT}
 
         for hop in range(self._max_redirects + 1):
             current_url = await validate_public_url(
@@ -425,7 +425,7 @@ class DownloadFileTool(Tool):
     ) -> tuple[str, int, str]:
         """Stream GET to `dest`; return `(final_url, bytes_written, content_type)`."""
         current_url = url
-        headers = {"User-Agent": "Aldwin/0.0.2 (+https://askaldwin.com)"}
+        headers = {"User-Agent": USER_AGENT}
         dest.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp_name = tempfile.mkstemp(
             prefix=".aldwin-",

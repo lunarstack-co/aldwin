@@ -10,6 +10,7 @@ import httpx
 import pytest
 from agentling.tools import ToolCallError
 
+from aldwin import __version__
 from aldwin.core.approval_log import ApprovalLogger
 from aldwin.core.policy import (
     DENIAL_TEXT,
@@ -186,6 +187,34 @@ async def test_happy_download(download: SimpleNamespace) -> None:
     assert len(download.asks) == 1
     assert "report.pdf" in download.asks[0].summary
     assert download.asks[0].grantable is False
+
+
+async def test_download_user_agent_matches_installed_version(
+    download: SimpleNamespace,
+) -> None:
+    """HEAD and GET both advertise the installed version."""
+    payload = b"%PDF-1.4 ua"
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers["User-Agent"])
+        headers = {
+            "Content-Type": "application/pdf",
+            "Content-Length": str(len(payload)),
+            "Content-Disposition": 'attachment; filename="ua.pdf"',
+        }
+        if request.method == "HEAD":
+            return httpx.Response(200, headers=headers, request=request)
+        return httpx.Response(200, headers=headers, content=payload, request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        tool = download.wrap(client)
+        result = await tool.call({"url": "https://example.com/ua.pdf"})
+
+    assert result.ok is True
+    assert seen
+    expected = f"Aldwin/{__version__} (+https://askaldwin.com)"
+    assert all(header == expected for header in seen)
 
 
 async def test_no_overwrite(download: SimpleNamespace) -> None:
