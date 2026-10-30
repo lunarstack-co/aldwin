@@ -11,6 +11,7 @@ import httpx
 import pytest
 import trafilatura
 
+from aldwin import __version__
 from aldwin.core.tools import ToolOutput
 from aldwin.core.tools.web_fetch import (
     UNTRUSTED_HEADER,
@@ -34,6 +35,27 @@ async def _public_resolver(host: str, port: int) -> list[str]:
     if host in mapping:
         return mapping[host]
     raise socket.gaierror(f"Unknown host {host}")
+
+
+async def test_user_agent_matches_installed_version() -> None:
+    """The header carries the installed version, not a hard-coded one."""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers["User-Agent"])
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "text/plain; charset=utf-8"},
+            text="ok",
+            request=request,
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        tool = build_web_fetch_tool(client=http_client, resolver=_public_resolver)
+        res = await tool.call({"url": "https://example.com/ua"})
+
+    assert res.ok is True
+    assert seen == [f"Aldwin/{__version__} (+https://askaldwin.com)"]
 
 
 async def test_web_fetch_refuses_non_http_schemes() -> None:
