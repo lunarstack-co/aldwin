@@ -275,3 +275,24 @@ def test_manual_test_doc_exists_and_covers_all_fr11_steps() -> None:
     )
     for fragment in required_fragments:
         assert fragment in text, f"Missing {fragment!r} in docs/manual-test.md"
+
+
+def test_protocol_doc_lists_connector_messages() -> None:
+    """The protocol doc names every connector request, event and error code."""
+    doc = (REPO_ROOT / "docs" / "protocol.md").read_text(encoding="utf-8")
+    assert doc.startswith("# Aldwin protocol (`v2`)")
+    for name in (
+        "connectors.list",
+        "connectors.add",
+        "connectors.remove",
+        "connectors.enable",
+        "connectors.disable",
+        "connectors.reconnect",
+        "connectors.tool_policy",
+        "connectors.trust_hints",
+        "connector.status",
+        "connector.probe",
+        "auth_required",
+        "HOST_EVENT_RE",
+    ):
+        assert f"`{name}`" in doc, name
