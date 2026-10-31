@@ -158,8 +158,8 @@ async def test_list_shows_glyphs_summary_add_and_config_error() -> None:
     out = await _run(client, "")
     assert "connectors.yaml: connectors.x.enabled must be a boolean" in out
     assert "● Fixture  2 tools · reads auto, writes ask" in out
-    assert "✕ GitHub  failed: Couldn't reach x: down. (retrying in 30s)" in out
-    assert "○ Old  disabled" in out
+    assert "✕ GitHub   failed: Couldn't reach x: down. (retrying in 30s)" in out
+    assert "○ Old      disabled" in out
     assert "+ Add a connector…" in out
 
 
@@ -169,7 +169,7 @@ async def test_add_flow_happy_path() -> None:
     assert (
         "Fixture has 2 tools: 1 read (run automatically), 1 write (ask first)." in out
     )
-    assert "Fixture connected. 2 tools are available now." in out
+    assert "✓ Fixture connected.\n    2 tools are available now." in out
     probe, save = client.calls
     assert probe[1]["dry_run"] is True
     assert save[1] == {
@@ -227,7 +227,7 @@ async def test_manage_actions() -> None:
     await _run(client, "1", "2")  # Reconnect
     await _run(client, "1", "5")  # Trust hints off
     out = await _run(client, "1", "4", "2")  # Remove, Yes
-    assert "Remove Fixture and its saved token?" in out
+    assert "Remove Fixture and its saved sign-in?" in out
     await _run(client, "1", "1", "2", "3")  # Tools -> write_thing -> off
     assert client.calls == [
         ("disable", "fixture"),
@@ -238,7 +238,7 @@ async def test_manage_actions() -> None:
     ]
 
 
-async def test_mcp_is_an_alias_and_tools_lists_connectors() -> None:
+async def test_connectors_is_the_only_name_and_tools_lists_connectors() -> None:
     client = FakeConnectorsClient([_info()])
     renderer, buf = _renderer()
     for cmd in ("/connectors", "/mcp"):
@@ -248,7 +248,9 @@ async def test_mcp_is_an_alias_and_tools_lists_connectors() -> None:
             renderer=renderer,
             prompt_line=_answers(""),
         )
-    assert buf.getvalue().count("+ Add a connector…") == 2
+    out = buf.getvalue()
+    assert out.count("+ Add a connector…") == 1
+    assert "Unknown command. Type /help." in out
 
 
 def test_tool_row_shows_connector_and_reason() -> None:

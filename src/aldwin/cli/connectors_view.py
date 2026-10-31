@@ -1,4 +1,4 @@
-"""`/connectors` (and `/mcp`): list, add and manage connectors."""
+"""`/connectors`: list, add and manage connectors."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from typing import Literal, Protocol
 from prompt_toolkit.input import Input
 from rich.text import Text
 
+from aldwin.cli.picker import Row, row_text
 from aldwin.cli.render import ChatRenderer
 from aldwin.client import ProtocolError, sanitize_display_text
 from aldwin.protocol import (
@@ -35,13 +36,20 @@ ToolChoice = Literal["auto", "ask", "off", "default"]
 ADD_LABEL = "+ Add a connector…"
 CUSTOM_LABEL = "Custom URL…"
 _GLYPHS = {
-    "connected": "●",
-    "failed": "✕",
-    "disabled": "○",
-    "connecting": "…",
-    "needs_auth": "!",
+    "connected": ("●", "ok"),
+    "failed": ("✕", "err"),
+    "disabled": ("○", "muted"),
+    "connecting": ("…", "accent"),
+    "needs_auth": ("!", "warn"),
 }
-_AUTH_TAGS = {"oauth": "sign in", "bearer": "token"}
+_AUTH_TAGS = {
+    "oauth": ("sign in", "accent"),
+    "bearer": ("token", "accent"),
+    "none": ("no sign-in", "muted"),
+}
+_TAG_WIDTH = 10
+Outcome = Literal["ok", "warn", "err"]
+_OUTCOME_GLYPHS: dict[Outcome, str] = {"ok": "✓", "warn": "!", "err": "✗"}
 
 
 class ConnectorsClient(Protocol):
@@ -132,10 +140,12 @@ class _View:
     async def run(self) -> None:
         listing = await self.client.connectors_list()
         if listing.error:
-            self._say(listing.error, "warn")
-        labels = [list_label(info) for info in listing.items] + [ADD_LABEL]
-        self._say("Connectors:", "muted")
-        choice = await self._choose(labels)
+            self._gap()
+            self._line(sanitize_display_text(listing.error), "warn")
+        width = max((len(i.title) for i in listing.items), default=0)
+        rows: list[Row] = [connector_row(info, width) for info in listing.items]
+        rows.append([("class:accent", ADD_LABEL)])
+        choice = await self._choose(rows, title="Connectors")
         if choice is None:
             return
         if choice == len(listing.items):
@@ -147,9 +157,8 @@ class _View:
 
     async def add(self, catalog: Sequence[CatalogItem] = ()) -> None:
         if catalog:
-            self._say("Add a connector:", "muted")
-            labels = [catalog_label(item) for item in catalog] + [CUSTOM_LABEL]
-            choice = await self._choose(labels)
+            rows = catalog_rows(catalog, self.console.width)
+            choice = await self._choose(rows, title="Add a connector")
             if choice is None:
                 return
             if choice < len(catalog):
@@ -160,21 +169,22 @@ class _View:
     async def add_from_catalog(self, item: CatalogItem) -> None:
         title = sanitize_display_text(item.title)
         if item.added:
-            self._say(f"{title} is already added. Pick it from the list.", "muted")
+            self._result("ok", f"{title} is already added", "Pick it from /connectors.")
             return
         if item.auth == "none":
+            self._line(f"Connecting {title}…", "muted")
             try:
                 status = await self.client.connectors_add(url=item.url, name=item.name)
             except ProtocolError as exc:
-                self._say(str(exc), "err")
+                self._result("err", f"{title} didn't connect", str(exc))
                 return
             assert isinstance(status, ConnectorStatusEvent)
-            self._say(_status_line(title, status), "ok")
+            self._status_result(title, status)
             return
         await self.sign_in(name=item.name, url=item.url, auth=item.auth)
 
     async def add_custom(self) -> None:
-        url = (await self.prompt_line("Server URL: ")).strip()
+        url = (await self.prompt_line("  Server URL: ")).strip()
         if not url:
             return
         auth: ConnectorAuth = "none"
@@ -187,29 +197,31 @@ class _View:
                 break
             except ProtocolError as exc:
                 if exc.code != "auth_required" or token is not None:
-                    self._say(str(exc), "err")
+                    self._result("err", "Couldn't add that server", str(exc))
                     return
-                self._say(str(exc), "warn")
+                self._line(str(exc), "warn")
                 how = await self._choose(
-                    ["Sign in with your browser", "Use a token", "Cancel"]
+                    ["Sign in with your browser", "Use a token", "Cancel"],
+                    title="How do you sign in?",
                 )
                 if how == 0:
                     await self.sign_in(name=None, url=url)
                     return
                 if how != 1:
                     return
-                token = (await self.prompt_secret("Token (hidden): ")).strip()
+                token = (await self.prompt_secret("  Token (hidden): ")).strip()
                 if not token:
                     return
                 auth = "bearer"
         assert isinstance(probe, ConnectorProbeEvent)
 
-        typed = (await self.prompt_line(f"Name [{probe.name}]: ")).strip()
+        typed = (await self.prompt_line(f"  Name [{probe.name}]: ")).strip()
         name = typed or probe.name
         title = probe.title if name == probe.name else name[:1].upper() + name[1:]
-        self._say(probe_summary(title, probe), "fg")
-        if await self._choose([f"Add {title}", "Cancel"]) != 0:
-            self._say("Nothing added.", "muted")
+        self._gap()
+        self._line(probe_summary(title, probe), "fg")
+        if await self._choose([f"Add {title}", "Cancel"], title=f"Add {title}?") != 0:
+            self._result("warn", "Nothing added")
             return
 
         try:
@@ -217,10 +229,10 @@ class _View:
                 url=url, name=name, auth=auth, token=token
             )
         except ProtocolError as exc:
-            self._say(str(exc), "err")
+            self._result("err", f"{title} didn't connect", str(exc))
             return
         assert isinstance(status, ConnectorStatusEvent)
-        self._say(f"{title} connected. {status.tools} tools are available now.", "ok")
+        self._status_result(title, status)
 
     # --- sign-in ------------------------------------------------------------
 
@@ -236,26 +248,35 @@ class _View:
         answering: asyncio.Task[None] | None = None
         status: ConnectorStatusEvent | None = None
         title = name or "The connector"
+        signed_in = False
         try:
             async for event in self.client.connectors_sign_in(
                 name=name, url=url, auth=auth, no_browser=no_browser
             ):
                 if isinstance(event, ConnectorAuthEvent):
                     title = sanitize_display_text(event.title)
+                    signed_in = event.mode != "token"
                     await _cancel(answering)
                     answering = asyncio.create_task(self._answer(event))
                 elif isinstance(event, ConnectorStatusEvent):
                     status = event
                 elif isinstance(event, NoticeEvent):
-                    self._say(sanitize_display_text(event.message), "muted")
+                    self._line(sanitize_display_text(event.message), "muted")
                 elif isinstance(event, ErrorEvent):
-                    self._say(sanitize_display_text(event.message), "err")
+                    self._result(
+                        "err",
+                        f"{title} didn't connect",
+                        sanitize_display_text(event.message),
+                    )
                 elif isinstance(event, DoneEvent):
                     if event.reason == "stopped":
-                        self._say("Sign-in cancelled.", "warn")
-                        self._say("Run /connectors to try again.", "muted")
+                        self._result(
+                            "warn",
+                            "Sign-in cancelled.",
+                            "Run /connectors to try again.",
+                        )
                     elif status is not None:
-                        self._say(_status_line(title, status), "ok")
+                        self._status_result(title, status, signed_in=signed_in)
         finally:
             await _cancel(answering)
 
@@ -266,23 +287,36 @@ class _View:
             return
         url = sanitize_display_text(event.url or "")
         minutes = max(1, event.expires_in // 60)
-        self._say(f"Sign in to {title}. This link works for {minutes} minutes:", "fg")
-        self._say(url, "fg")
+        self._gap()
+        self._line(f"Sign in to {title}", "bold")
         opened = event.mode == "browser" and await asyncio.to_thread(
             webbrowser.open, event.url or ""
         )
         if opened:
-            self._say("Waiting for you to finish in the browser…", "muted")
+            self._line(
+                "Your browser should open. If it doesn't, open this link "
+                f"(it works for {minutes} minutes):",
+                "muted",
+            )
         else:
-            self._say(
-                "Open the address above in a browser and sign in, then paste "
-                "the address the browser ends on.",
+            self._line(
+                f"Open this link in a browser (it works for {minutes} minutes):",
+                "muted",
+            )
+        self._line(url, "accent")
+        self._gap()
+        if opened:
+            self._line("Waiting for you to finish in the browser…", "muted")
+        else:
+            self._line(
+                "Sign in, then paste the address the browser ends on "
+                "(it starts with http://127.0.0.1).",
                 "muted",
             )
         while True:
             try:
                 raw = await self.prompt_line(
-                    "Paste the address, or press Enter to cancel: "
+                    "  Paste the address, or press Enter to cancel: "
                 )
             except (EOFError, KeyboardInterrupt):
                 raw = ""
@@ -293,15 +327,16 @@ class _View:
                 await self.client.connectors_auth_paste(event.name, raw.strip())
                 return
             except ProtocolError as exc:
-                self._say(str(exc), "warn")
+                self._line(str(exc), "warn")
 
     async def _answer_token(self, event: ConnectorAuthEvent, title: str) -> None:
-        self._say(f"{title} needs a token.", "fg")
+        self._gap()
+        self._line(f"{title} needs a token.", "bold")
         if event.token_help_url:
             help_url = sanitize_display_text(event.token_help_url)
-            self._say(f"Create one at {help_url}", "muted")
+            self._line(f"Create one at {help_url}", "muted")
         try:
-            token = (await self.prompt_secret("Token (hidden): ")).strip()
+            token = (await self.prompt_secret("  Token (hidden): ")).strip()
         except (EOFError, KeyboardInterrupt):
             token = ""
         if not token:
@@ -312,12 +347,13 @@ class _View:
     # --- manage -------------------------------------------------------------
 
     async def manage(self, info: ConnectorInfo) -> None:
+        title = sanitize_display_text(info.title)
         if info.auth == "oauth" and info.status == "needs_auth":
-            self._say(list_label(info), "muted")
-            if await self._choose(["Sign in", "Remove"]) == 0:
+            choice = await self._choose(["Sign in", "Remove"], title=title)
+            if choice == 0:
                 await self.sign_in(name=info.name)
-                return
-            await self._remove(info)
+            elif choice == 1:
+                await self._remove(info)
             return
         trust = "on" if info.trust_read_only_hints else "off"
         actions = [
@@ -329,19 +365,20 @@ class _View:
         ]
         if info.auth == "oauth":
             actions.append("Sign out")
-        self._say(list_label(info), "muted")
-        choice = await self._choose(actions)
+        choice = await self._choose(actions, title=title)
         if choice == 0:
             await self.tools(info)
         elif choice == 1:
             await self.client.connectors_reconnect(info.name)
-            self._say(f"Reconnecting {info.title}…", "muted")
+            self._result("ok", f"Reconnecting {title}…")
         elif choice == 2 and info.enabled:
             await self.client.connectors_disable(info.name)
-            self._say(f"{info.title} disabled.", "muted")
+            self._result(
+                "ok", f"{title} disabled.", "Its tools are off until you enable it."
+            )
         elif choice == 2:
             status = await self.client.connectors_enable(info.name)
-            self._say(_status_line(info.title, status), "muted")
+            self._status_result(title, status)
         elif choice == 3:
             await self._remove(info)
         elif choice == 4:
@@ -349,40 +386,53 @@ class _View:
                 info.name, not info.trust_read_only_hints
             )
             now = "off" if info.trust_read_only_hints else "on"
-            self._say(f"Trust read-only hints: {now}.", "muted")
+            self._result("ok", f"Trust read-only hints: {now}.")
         elif choice == 5:
             await self.client.connectors_logout(info.name)
-            self._say(
-                f"{info.title} signed out. Sign in again from /connectors.", "muted"
+            self._result(
+                "ok",
+                f"{title} signed out.",
+                "Its tools stay listed and ask you to sign in again from /connectors.",
             )
 
     async def _remove(self, info: ConnectorInfo) -> None:
-        self._say(f"Remove {info.title} and its saved token?", "warn")
-        if await self._choose(["No", "Yes"]) == 1:
+        title = sanitize_display_text(info.title)
+        choice = await self._choose(
+            ["No", "Yes"], title=f"Remove {title} and its saved sign-in?"
+        )
+        if choice == 1:
             await self.client.connectors_remove(info.name)
-            self._say(f"{info.title} removed.", "muted")
+            self._result("ok", f"{title} removed.")
 
     async def tools(self, info: ConnectorInfo) -> None:
+        title = sanitize_display_text(info.title)
         if not info.tools:
-            self._say(f"{info.title} has no tools listed yet.", "muted")
+            self._result("warn", f"{title} has no tools listed yet.")
             return
-        choice = await self._choose([tool_label(t) for t in info.tools])
+        width = max(len(t.name) for t in info.tools)
+        choice = await self._choose(
+            [tool_row(t, width) for t in info.tools], title=f"{title} tools"
+        )
         if choice is None:
             return
         tool = info.tools[choice]
         settings: list[ToolChoice] = ["auto", "ask", "off", "default"]
         picked = await self._choose(
-            ["auto (run without asking)", "ask", "off (hide from Aldwin)", "default"]
+            ["auto (run without asking)", "ask", "off (hide from Aldwin)", "default"],
+            title=sanitize_display_text(tool.name),
         )
         if picked is None:
             return
         await self.client.connectors_tool_policy(info.name, tool.name, settings[picked])
-        self._say(f"{tool.name}: {settings[picked]}.", "muted")
+        self._result("ok", f"{sanitize_display_text(tool.name)}: {settings[picked]}.")
 
     # --- helpers ------------------------------------------------------------
 
-    async def _choose(self, labels: Sequence[str]) -> int | None:
-        """Arrow-key picker on a terminal, otherwise a numbered list."""
+    async def _choose(self, rows: Sequence[Row], *, title: str) -> int | None:
+        """Arrow-key picker on a terminal, otherwise a numbered list.
+
+        The picker is erased once used; one line keeps what was chosen.
+        """
         from aldwin.cli.picker import pick_index
 
         interactive = (
@@ -391,49 +441,141 @@ class _View:
             and not self.renderer.plain
         )
         if interactive:
-            return await pick_index(
-                labels, input_dev=self.input_dev, plain=self.renderer.plain
+            choice = await pick_index(
+                rows,
+                input_dev=self.input_dev,
+                plain=self.renderer.plain,
+                header=f"  {title}",
+                erase_when_done=True,
             )
-        for idx, label in enumerate(labels, start=1):
-            self.console.print(Text(f"  {idx}. {label}"))
+            if choice is not None:
+                picked = row_text(rows[choice]).split("  ")[0].strip()
+                self._line(f"{title} › {picked}", "muted")
+            return choice
+        self._gap()
+        self._line(title, "bold")
+        for idx, row in enumerate(rows, start=1):
+            self.console.print(Text(f"  {idx}. {row_text(row)}".rstrip()))
         raw = (await self.prompt_line("Choose a number (Enter to cancel): ")).strip()
-        if raw.isdigit() and 1 <= int(raw) <= len(labels):
+        if raw.isdigit() and 1 <= int(raw) <= len(rows):
             return int(raw) - 1
         return None
 
-    def _say(self, text: str, style: str) -> None:
-        self.console.print(Text(text, style=style))
+    def _gap(self) -> None:
+        self.console.print()
+
+    def _line(self, text: str, style: str) -> None:
+        self.console.print(Text(f"  {text}", style=style))
+
+    def _result(
+        self, outcome: Outcome, headline: str, detail: str | None = None
+    ) -> None:
+        """The end of a flow: a blank line, `✓ headline`, then a muted detail."""
+        self._gap()
+        self.console.print(
+            Text.assemble(
+                ("  " + _OUTCOME_GLYPHS[outcome] + " ", outcome),
+                (headline, "bold"),
+            )
+        )
+        if detail:
+            self.console.print(Text(f"    {detail}", style="muted"))
+
+    def _status_result(
+        self, title: str, status: ConnectorStatusEvent, *, signed_in: bool = False
+    ) -> None:
+        if status.status == "connected":
+            how = "Signed in. " if signed_in else ""
+            self._result(
+                "ok",
+                f"{title} connected.",
+                f"{how}{status.tools} tools are available now.",
+            )
+        elif status.status == "needs_auth":
+            self._result("warn", f"{title} needs sign-in.", "Sign in from /connectors.")
+        else:
+            self._result("err", f"{title}: {status.status}", status.error)
 
 
-def list_label(info: ConnectorInfo) -> str:
-    """`● GitHub  12 tools · reads auto, writes ask`."""
-    glyph = _GLYPHS.get(info.status, "○")
+def connector_row(info: ConnectorInfo, width: int = 0) -> Row:
+    """`● GitHub   12 tools · reads auto, writes ask`, coloured by status."""
+    glyph, glyph_style = _GLYPHS.get(info.status, ("○", "muted"))
+    title = sanitize_display_text(info.title).ljust(width)
     usable = [t for t in info.tools if t.effective != "off"]
-    title = sanitize_display_text(info.title)
     if info.status == "failed":
         detail = f"failed: {info.error or 'not connected'}"
         if info.retry_in_s:
             detail += f" (retrying in {info.retry_in_s}s)"
-        return f"{glyph} {title}  {detail}"
-    if not info.enabled:
-        return f"{glyph} {title}  disabled"
-    if info.status == "needs_auth":
-        return f"{glyph} {title}  needs sign-in"
-    reads = "reads auto" if info.trust_read_only_hints else "reads ask"
-    return f"{glyph} {title}  {len(usable)} tools · {reads}, writes ask"
+        detail_style = "err"
+    elif not info.enabled:
+        detail, detail_style = "disabled", "muted"
+    elif info.status == "needs_auth":
+        detail, detail_style = "needs sign-in", "warn"
+    else:
+        reads = "reads auto" if info.trust_read_only_hints else "reads ask"
+        detail, detail_style = f"{len(usable)} tools · {reads}, writes ask", "muted"
+    return [
+        (f"class:{glyph_style}", f"{glyph} "),
+        ("", title),
+        ("", "  "),
+        (f"class:{detail_style}", sanitize_display_text(detail)),
+    ]
+
+
+def list_label(info: ConnectorInfo) -> str:
+    return row_text(connector_row(info))
+
+
+def catalog_rows(catalog: Sequence[CatalogItem], width: int = 100) -> list[Row]:
+    """The catalogue in three aligned columns, then `Custom URL…`."""
+    title_w = max([len(CUSTOM_LABEL), *(len(i.title) for i in catalog)])
+    room = max(12, width - 2 - title_w - 2 - 3 - _TAG_WIDTH)
+    purposes = [_fit(sanitize_display_text(i.purpose), room) for i in catalog]
+    purpose_w = max((len(p) for p in purposes), default=0)
+    rows: list[Row] = []
+    for item, purpose in zip(catalog, purposes, strict=True):
+        tag, tag_style = (
+            ("✓ added", "ok") if item.added else _AUTH_TAGS.get(item.auth, ("", ""))
+        )
+        rows.append(
+            [
+                (
+                    "class:muted" if item.added else "",
+                    sanitize_display_text(item.title).ljust(title_w),
+                ),
+                ("", "  "),
+                ("class:muted", purpose.ljust(purpose_w)),
+                ("", "   "),
+                (f"class:{tag_style}", tag),
+            ]
+        )
+    rows.append(
+        [
+            ("", CUSTOM_LABEL.ljust(title_w)),
+            ("", "  "),
+            ("class:muted", "any MCP server address"),
+        ]
+    )
+    return rows
 
 
 def catalog_label(item: CatalogItem) -> str:
-    """`Notion  Notes, docs and wikis  [sign in]`, or `✓ added` once added."""
-    title = sanitize_display_text(item.title)
-    purpose = sanitize_display_text(item.purpose)
-    tag = "✓ added" if item.added else _AUTH_TAGS.get(item.auth)
-    return f"{title}  {purpose}" + (f"  [{tag}]" if tag else "")
+    return row_text(catalog_rows([item])[0])
+
+
+def tool_row(tool: ConnectorToolInfo, width: int = 0) -> Row:
+    kind = "read" if tool.read_only else "write"
+    style = {"auto": "ok", "ask": "accent", "off": "muted"}.get(tool.effective, "")
+    return [
+        ("", sanitize_display_text(tool.name).ljust(width)),
+        ("", "  "),
+        ("class:muted", f"{kind} · "),
+        (f"class:{style}" if style else "", tool.effective),
+    ]
 
 
 def tool_label(tool: ConnectorToolInfo) -> str:
-    kind = "read" if tool.read_only else "write"
-    return f"{sanitize_display_text(tool.name)}  {kind} · {tool.effective}"
+    return row_text(tool_row(tool))
 
 
 def probe_summary(title: str, probe: ConnectorProbeEvent) -> str:
@@ -445,10 +587,8 @@ def probe_summary(title: str, probe: ConnectorProbeEvent) -> str:
     )
 
 
-def _status_line(title: str, status: ConnectorStatusEvent) -> str:
-    if status.status == "connected":
-        return f"{title} connected. {status.tools} tools are available now."
-    return f"{title}: {status.status}" + (f" ({status.error})" if status.error else "")
+def _fit(text: str, room: int) -> str:
+    return text if len(text) <= room else text[: room - 1].rstrip() + "…"
 
 
 def _cannot_open_browser() -> bool:

@@ -40,7 +40,6 @@ SLASH_COMMANDS: Final[tuple[tuple[str, str], ...]] = (
     ("/verbose", "Show or hide file previews for this session"),
     ("/tools", "List built-in tools (includes recall, remember, forget)"),
     ("/connectors", "Add and manage connected apps (MCP servers)"),
-    ("/mcp", "Same as /connectors"),
     ("/exit", "Save and exit Aldwin"),
 )
 
@@ -550,7 +549,7 @@ async def handle_slash_command(
         await _render_connector_tools(client, renderer)
         return False
 
-    if cmd in ("/connectors", "/mcp"):
+    if cmd == "/connectors":
         if getattr(client, "connectors_list", None) is None:
             renderer.console.print(Text("Connectors are unavailable.", style="warn"))
             return False
