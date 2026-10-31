@@ -570,8 +570,9 @@ class AldwinHost:
             approval_log=self._approval_log,
         )
         self._agent: Agent = self._build_and_attach_agent(self._model)
-        self._attach_session(
-            restore_session(self._agent, self._stored_session.memory.dump_json())
+        self._agent_session: AgentSession = restore_session(
+            self._agent,
+            self._stored_session.memory.dump_json(),
         )
         self._refresh_skill_state_from_agent()
 
@@ -652,14 +653,6 @@ class AldwinHost:
             host_flags=self._host_flags,
         )
 
-    def _attach_session(self, session: AgentSession) -> None:
-        """Make `session` the live agent session.
-
-        Every rebuild (startup restore, skills reload, new conversation, model
-        switch) goes through here, so per-session wiring is applied in one place.
-        """
-        self._agent_session: AgentSession = session
-
     def _refresh_skill_state_from_agent(self) -> None:
         """Cache catalogue and disk fingerprint after an Agent build."""
         catalogue = getattr(self._agent, "skill_catalogue", None)
@@ -687,7 +680,7 @@ class AldwinHost:
         """Rebuild Agent and migrate Memory after skill changes."""
         raw = self._agent_session.memory.dump_json()
         self._agent = self._build_and_attach_agent(self._model)
-        self._attach_session(restore_session(self._agent, raw))
+        self._agent_session = restore_session(self._agent, raw)
         self._refresh_skill_state_from_agent()
         self._persist_session(interrupted=self._stored_session.meta.interrupted)
 
@@ -814,7 +807,7 @@ class AldwinHost:
         self._policy_session.reset_turn()
         self._todo = []
         self._stored_session = self._session_store.create_new(model=self._model)
-        self._attach_session(new_session(self._agent))
+        self._agent_session = new_session(self._agent)
 
     async def _serve_loop(self) -> None:
         """Receive requests from the transport and dispatch them."""
@@ -1003,7 +996,7 @@ class AldwinHost:
             update_config_model(cleaned, self._home)
 
         self._agent = self._build_and_attach_agent(self._model)
-        self._attach_session(switch_session_model(self._agent_session, self._agent))
+        self._agent_session = switch_session_model(self._agent_session, self._agent)
         self._refresh_skill_state_from_agent()
         self._persist_session(interrupted=self._stored_session.meta.interrupted)
         await scope.done("ok")
