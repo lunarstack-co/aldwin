@@ -9,7 +9,13 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
-from fixtures.mcp_server import LONG_TOOL, PNG_BYTES, FixtureControls, serve_http
+from fixtures.mcp_server import (
+    LONG_TOOL,
+    PNG_BLOCK,
+    PNG_BYTES,
+    FixtureControls,
+    serve_http,
+)
 
 from aldwin.core.connectors.config import ConnectorConfig
 from aldwin.core.connectors.connection import (
@@ -36,7 +42,6 @@ FIXTURE_TOOLS = {
     LONG_TOOL,
     "echo_nullable",
     "fail_thing",
-    "picture",
 }
 
 
@@ -108,7 +113,8 @@ async def test_call_tool_outcomes(fixture_server: FixtureControls) -> None:
         assert failed.is_error is True
         assert "bad input" in failed.error_text
 
-        picture = await conn.call_tool("picture", {})
+        fixture_server.content("read_thing", [PNG_BLOCK])
+        picture = await conn.call_tool("read_thing", {})
         assert picture.binary_parts == [("image/png", PNG_BYTES)]
     finally:
         await conn.close()

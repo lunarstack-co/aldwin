@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 from agentling.tools import ToolCallError, _check_tool
-from fixtures.mcp_server import LONG_TOOL, PNG_BYTES, FixtureControls
+from fixtures.mcp_server import LONG_TOOL, PNG_BLOCK, PNG_BYTES, FixtureControls
 
 from aldwin.core.connectors.config import ConnectorConfig
 from aldwin.core.connectors.connection import McpConnection
@@ -85,10 +85,11 @@ async def test_tool_error_raises_with_server_text(
 
 
 async def test_image_is_saved_privately_and_path_returned(
-    connection: McpConnection, aldwin_home: Path
+    connection: McpConnection, fixture_server: FixtureControls, aldwin_home: Path
 ) -> None:
+    fixture_server.content("read_thing", [PNG_BLOCK])
     tmp = aldwin_home / "tmp"
-    out = await _tool(connection, tmp, "picture").forward()
+    out = await _tool(connection, tmp, "read_thing").forward()
     assert out.startswith("saved image/png to ")
     path = Path(out.removeprefix("saved image/png to "))
     assert path.parent == tmp

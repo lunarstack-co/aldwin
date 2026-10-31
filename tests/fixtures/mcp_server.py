@@ -1,8 +1,8 @@
 """A real MCP server for connector tests, in-process or over HTTP on loopback.
 
-Tools: `read_thing` (read-only hint), `write_thing`, a 70-character name
-(`LONG_TOOL`), `echo_nullable` (a `["string","null"]` argument), `fail_thing`
-(a tool error) and `picture` (an image block).
+Five tools, one read-only: `read_thing` (read-only hint), `write_thing`, a
+70-character name (`LONG_TOOL`), `echo_nullable` (a `["string","null"]`
+argument) and `fail_thing` (a tool error). `FixtureControls` makes it misbehave.
 """
 
 from __future__ import annotations
@@ -30,6 +30,11 @@ NULLABLE_SCHEMA: dict[str, Any] = {
 PNG_BYTES = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 )
+PNG_BLOCK = ImageContent(
+    type="image",
+    data=base64.b64encode(PNG_BYTES).decode("ascii"),
+    mime_type="image/png",
+)
 
 Scope = MutableMapping[str, Any]
 Receive = Callable[[], Awaitable[Scope]]
@@ -39,13 +44,16 @@ Send = Callable[[Scope], Awaitable[None]]
 class FixtureServer(MCPServer):
     """Records each session that lists tools, so `swap_tools` can notify it."""
 
-    def __init__(self) -> None:
+    def __init__(self, controls: FixtureControls) -> None:
         super().__init__("fixture")
+        self.controls = controls
         self.sessions: list[Any] = []
 
     async def _handle_list_tools(self, ctx: Any, params: Any) -> ListToolsResult:
         if ctx.session not in self.sessions:
             self.sessions.append(ctx.session)
+        if self.controls.connect_delay:
+            await asyncio.sleep(self.controls.connect_delay)
         return await super()._handle_list_tools(ctx, params)
 
 
@@ -53,21 +61,46 @@ class FixtureServer(MCPServer):
 class FixtureControls:
     """Switches a test flips to make the fixture misbehave."""
 
-    server: FixtureServer
+    server: FixtureServer = field(init=False)
     bearer: str | None = None
     requests: list[dict[str, str]] = field(default_factory=list)
+    calls: list[str] = field(default_factory=list)
+    connect_delay: float = 0.0
+    expire_next: bool = False
+    _contents: dict[str, list[Any]] = field(default_factory=dict)
+    _delays: dict[str, float] = field(default_factory=dict)
+    _hung: set[str] = field(default_factory=set)
 
     def require_bearer(self, token: str) -> None:
         """Answer 401 to every HTTP request without `Authorization: Bearer <token>`."""
         self.bearer = token
 
+    def delay_connect(self, seconds: float) -> None:
+        """Delay every tool listing, which connecting waits on in both eras."""
+        self.connect_delay = seconds
+
+    def content(self, name: str, blocks: list[Any]) -> None:
+        """Make tool `name` return exactly these content blocks."""
+        self._contents[name] = blocks
+
+    def slow_tool(self, name: str, seconds: float) -> None:
+        self._delays[name] = seconds
+
+    def hang_tool(self, name: str) -> None:
+        """Make tool `name` never answer."""
+        self._hung.add(name)
+
+    def expire_session(self) -> None:
+        """Answer the next HTTP session request with 404 `Session terminated`."""
+        self.expire_next = True
+
     async def swap_tools(self) -> None:
         """Add `new_thing`, remove `write_thing`, and announce it in both eras."""
 
-        def new_thing() -> str:
-            return "new ok"
+        async def new_thing() -> Any:
+            return await self.run("new_thing", "new ok")
 
-        self.server.add_tool(new_thing)
+        self.server.add_tool(new_thing, structured_output=False)
         self.server.remove_tool("write_thing")
         for session in self.server.sessions:
             try:
@@ -76,50 +109,64 @@ class FixtureControls:
                 pass  # 2026-era sessions have no push channel; the bus covers them.
         await self.server._subscriptions.publish(ToolsListChanged())
 
+    async def run(self, name: str, default: Any) -> Any:
+        """Apply this tool's switches, then return its content or `default`."""
+        self.calls.append(name)
+        if name in self._hung:
+            await asyncio.Event().wait()
+        if name in self._delays:
+            await asyncio.sleep(self._delays[name])
+        return self._contents.get(name, default)
+
 
 def build_fixture_server() -> FixtureControls:
-    server = FixtureServer()
+    controls = FixtureControls()
+    server = FixtureServer(controls)
+    controls.server = server
 
-    @server.tool(annotations=ToolAnnotations(read_only_hint=True))
-    def read_thing() -> str:
+    async def read_thing() -> Any:
         """Read something harmless."""
-        return "read ok"
+        return await controls.run("read_thing", "read ok")
 
-    @server.tool()
-    def write_thing(value: str) -> str:
+    async def write_thing(value: str) -> Any:
         """Change something."""
-        return f"wrote {value}"
+        return await controls.run("write_thing", f"wrote {value}")
 
-    def long_tool() -> str:
-        return "long ok"
+    async def long_tool() -> Any:
+        return await controls.run(LONG_TOOL, "long ok")
 
-    server.add_tool(long_tool, name=LONG_TOOL, description="A very long name.")
-
-    @server.tool()
-    def echo_nullable(value: str | None) -> str:
+    async def echo_nullable(value: str | None) -> Any:
         """Echo a value that may be null."""
-        return repr(value)
+        return await controls.run("echo_nullable", repr(value))
+
+    async def fail_thing() -> Any:
+        """Always fails."""
+        await controls.run("fail_thing", None)
+        raise ToolError("bad input")
+
+    server.add_tool(
+        read_thing,
+        annotations=ToolAnnotations(read_only_hint=True),
+        structured_output=False,
+    )
+    server.add_tool(write_thing, structured_output=False)
+    server.add_tool(
+        long_tool,
+        name=LONG_TOOL,
+        description="A very long name.",
+        structured_output=False,
+    )
+    server.add_tool(echo_nullable, structured_output=False)
+    server.add_tool(fail_thing, structured_output=False)
 
     stored = server._tool_manager.get_tool("echo_nullable")
     assert stored is not None
     stored.parameters = NULLABLE_SCHEMA
-
-    @server.tool()
-    def fail_thing() -> str:
-        """Always fails."""
-        raise ToolError("bad input")
-
-    @server.tool()
-    def picture() -> list[ImageContent]:
-        """Return a tiny image."""
-        data = base64.b64encode(PNG_BYTES).decode("ascii")
-        return [ImageContent(type="image", data=data, mime_type="image/png")]
-
-    return FixtureControls(server=server)
+    return controls
 
 
 def _wrap(app: Any, controls: FixtureControls) -> Any:
-    """Add the `/401` and `/html` routes, header recording and the bearer check."""
+    """Add the `/401` and `/html` routes, header recording and the switches."""
 
     async def asgi(scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -136,6 +183,10 @@ def _wrap(app: Any, controls: FixtureControls) -> Any:
             return
         if path == "/html":
             await _respond(send, 200, b"<html>hi</html>", b"text/html; charset=utf-8")
+            return
+        if controls.expire_next and "mcp-session-id" in headers:
+            controls.expire_next = False
+            await _respond(send, 404, b"Session terminated", b"text/plain")
             return
         await app(scope, receive, send)
 
