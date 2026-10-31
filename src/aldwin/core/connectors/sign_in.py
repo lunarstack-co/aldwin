@@ -91,7 +91,7 @@ async def sign_in(
 
     callback: LoopbackCallback | None = None
     try:
-        callback = await LoopbackCallback.bind()
+        callback = await LoopbackCallback.bind(title=config.display_title)
     except SignInError:
         if not no_browser:
             raise

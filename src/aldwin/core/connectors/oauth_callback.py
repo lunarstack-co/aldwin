@@ -18,14 +18,10 @@ from aldwin.core.connectors.oauth_messages import (
     PASTE_WRONG_STATE,
     ports_busy,
 )
+from aldwin.core.connectors.oauth_page import PAGE_HEADERS, PageKind, callback_page
 
 _MAX_REQUEST_BYTES = 8 * 1024
 _READ_TIMEOUT_S = 5.0
-_PAGES = {
-    "ok": "You're signed in. You can close this tab.",
-    "declined": "Sign-in was declined. You can close this tab.",
-    "stale": "This sign-in link has expired. Start again from Aldwin.",
-}
 
 
 @dataclass(frozen=True)
@@ -61,16 +57,21 @@ def parse_redirect_url(url: str, *, expected_state: str) -> CallbackResult:
 class LoopbackCallback:
     """Waits for exactly one browser request carrying the expected `state`."""
 
-    def __init__(self, server: asyncio.Server, port: int) -> None:
+    def __init__(
+        self, server: asyncio.Server, port: int, title: str | None = None
+    ) -> None:
         self._server = server
         self.port = port
+        self._title = title
         self._expected: str | None = None
         self._result: asyncio.Future[CallbackResult] = (
             asyncio.get_running_loop().create_future()
         )
 
     @classmethod
-    async def bind(cls, ports: Sequence[int] = CALLBACK_PORTS) -> LoopbackCallback:
+    async def bind(
+        cls, ports: Sequence[int] = CALLBACK_PORTS, *, title: str | None = None
+    ) -> LoopbackCallback:
         holder: list[LoopbackCallback] = []
 
         async def handle(
@@ -84,7 +85,7 @@ class LoopbackCallback:
                 server = await asyncio.start_server(handle, "127.0.0.1", port)
             except OSError:
                 continue
-            callback = cls(server, port)
+            callback = cls(server, port, title)
             holder.append(callback)
             return callback
         raise SignInError(ports_busy())
@@ -110,12 +111,12 @@ class LoopbackCallback:
             writer.close()
             return
         if len(head) > _MAX_REQUEST_BYTES:
-            await _reply(writer, 431, "stale")
+            await _reply(writer, 431, "stale", self._title)
             return
         method, target = _request_line(head)
         parts = urlsplit(target)
         if method != "GET" or parts.path != CALLBACK_PATH:
-            await _reply(writer, 404, "stale")
+            await _reply(writer, 404, "stale", self._title)
             return
         result = _result_from_query(parts.query)
         if (
@@ -123,9 +124,9 @@ class LoopbackCallback:
             or result.state != self._expected
             or self._result.done()
         ):
-            await _reply(writer, 400, "stale")
+            await _reply(writer, 400, "stale", self._title)
             return
-        await _reply(writer, 200, "declined" if result.error else "ok")
+        await _reply(writer, 200, "declined" if result.error else "ok", self._title)
         self._result.set_result(result)
         self._server.close()
 
@@ -136,14 +137,14 @@ def _request_line(head: bytes) -> tuple[str, str]:
     return (pieces[0], pieces[1]) if len(pieces) >= 2 else ("", "")
 
 
-async def _reply(writer: asyncio.StreamWriter, status: int, page: str) -> None:
-    body = (
-        "<!doctype html><meta charset=utf-8><title>Aldwin</title>"
-        f"<p style='font:16px system-ui;margin:3em'>{_PAGES[page]}</p>"
-    ).encode()
+async def _reply(
+    writer: asyncio.StreamWriter, status: int, page: PageKind, title: str | None
+) -> None:
+    body = callback_page(page, title).encode()
     reason = {200: "OK", 400: "Bad Request", 404: "Not Found", 431: "Too Large"}[status]
+    headers = "".join(f"{name}: {value}\r\n" for name, value in PAGE_HEADERS)
     writer.write(
-        f"HTTP/1.1 {status} {reason}\r\nContent-Type: text/html; charset=utf-8\r\n"
+        f"HTTP/1.1 {status} {reason}\r\n{headers}"
         f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode()
         + body
     )

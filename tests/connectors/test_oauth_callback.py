@@ -139,3 +139,22 @@ def test_parse_redirect_url() -> None:
         "That address has no sign-in code. "
         "Paste the full address your browser ended on."
     )
+
+
+async def test_page_is_branded_self_contained_and_escapes_the_title() -> None:
+    callback = await LoopbackCallback.bind(title="<b>Linear</b>")
+    callback.expect_state("s")
+    try:
+        async with httpx2.AsyncClient() as http:
+            page = await http.get(
+                f"http://127.0.0.1:{callback.port}/callback",
+                params={"code": "c", "state": "s"},
+            )
+    finally:
+        await callback.close()
+    assert "&lt;b&gt;Linear&lt;/b&gt; is connected" in page.text
+    assert "<b>" not in page.text
+    assert page.headers["referrer-policy"] == "no-referrer"
+    assert page.headers["cache-control"] == "no-store"
+    assert "default-src 'none'" in page.headers["content-security-policy"]
+    assert "http://" not in page.text and "https://" not in page.text
