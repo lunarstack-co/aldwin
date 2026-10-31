@@ -3,23 +3,17 @@
 from __future__ import annotations
 
 import os
-import sys
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Final
 
-from prompt_toolkit import PromptSession
-from prompt_toolkit.layout.processors import (
-    Processor,
-    Transformation,
-    TransformationInput,
-)
 from rich.console import Console
 from rich.status import Status
 from rich.text import Text
 
 from aldwin.cli.render import ChatRenderer
-from aldwin.cli.theme import PROMPT_STYLE, filter_canonical_models
+from aldwin.cli.secret_prompt import prompt_input as _default_prompt
+from aldwin.cli.theme import filter_canonical_models
 from aldwin.client import (
     BootstrapResult,
     KeyCheckResult,
@@ -46,40 +40,6 @@ _KEY_ERROR_MESSAGES: Final[dict[KeyCheckResult, str]] = {
         "Can't reach OpenAI to verify your key. Check your connection and try again."
     ),
 }
-
-
-class _HiddenInputProcessor(Processor):
-    """Hides secret input completely without echoing asterisks that wrap lines."""
-
-    def apply_transformation(
-        self,
-        transformation_input: TransformationInput,
-    ) -> Transformation:
-        _ = transformation_input
-        return Transformation(
-            [],
-            source_to_display=lambda _i: 0,
-            display_to_source=lambda _i: 0,
-        )
-
-
-async def _default_prompt(prompt_text: str, is_password: bool) -> str:
-    """Read one line of user input via `PromptSession`, hiding secret characters."""
-    if not sys.stdin.isatty():
-        sys.stdout.write(prompt_text)
-        sys.stdout.flush()
-        line = sys.stdin.readline()
-        if line == "":
-            raise EOFError
-        return line.rstrip("\r\n")
-    processors: list[Processor] | None = (
-        [_HiddenInputProcessor()] if is_password else None
-    )
-    session: PromptSession[str] = PromptSession(
-        style=PROMPT_STYLE,
-        input_processors=processors,
-    )
-    return await session.prompt_async(prompt_text)
 
 
 def needs_onboarding(boot: BootstrapResult) -> bool:

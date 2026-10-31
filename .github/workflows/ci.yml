@@ -56,6 +56,9 @@ jobs:
       - name: Test with coverage (pytest)
         run: uv run pytest --cov=aldwin --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=90
 
+      - name: Connector coverage (core/connectors at 90%)
+        run: uv run pytest tests/connectors -q --cov=aldwin.core.connectors --cov-report=term-missing --cov-fail-under=90
+
       - name: Perf budgets (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: uv run pytest -m perf -q

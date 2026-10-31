@@ -34,6 +34,7 @@ from aldwin.cli.completion import RefreshableCompleter, build_chat_completer
 from aldwin.cli.dock import CTRL_C_QUIT_WINDOW_S, PLACEHOLDER, AldwinPromptSession
 from aldwin.cli.paste import PasteStore
 from aldwin.cli.render import ChatRenderer
+from aldwin.cli.secret_prompt import HiddenInputProcessor
 from aldwin.cli.skill_completer import SkillCache, SkillLexer, extract_skill_tokens
 from aldwin.cli.theme import (
     PLAIN_PROMPT_STYLE,
@@ -776,6 +777,7 @@ async def _chat_loop(
     context_notice_shown = False
     key_check_task: asyncio.Task[None] | None = None
     update_task: asyncio.Task[str | None] | None = None
+    notice_task: asyncio.Task[None] | None = None
 
     def _request_quit() -> None:
         nonlocal quit_requested
@@ -821,18 +823,32 @@ async def _chat_loop(
         on_quit=_request_quit,
     )
 
-    async def _prompt_line(label: str) -> str:
+    async def _prompt_line(label: str, *, hidden: bool = False) -> str:
         sub_output = DummyOutput() if isinstance(input_dev, PipeInput) else output_dev
         sub_session: PromptSession[str] = PromptSession(
             input=input_dev,
             output=sub_output,
             style=PLAIN_PROMPT_STYLE if boot.plain else PROMPT_STYLE,
+            input_processors=[HiddenInputProcessor()] if hidden else None,
         )
         return await sub_session.prompt_async(label)
+
+    async def _prompt_secret(label: str) -> str:
+        return await _prompt_line(label, hidden=True)
+
+    async def _print_host_notices() -> None:
+        """Connector drops and returns, as one dim line each, between turns."""
+        host_events = getattr(client, "host_events", None)
+        if host_events is None:
+            return
+        async for ev in host_events():
+            if isinstance(ev, NoticeEvent):
+                console.print(Text(sanitize_display_text(ev.message), style="muted"))
 
     try:
         hello = await client.connect()
         enable_skills = hello.v >= 2
+        notice_task = asyncio.create_task(_print_host_notices())
         chat_completer.inner = build_chat_completer(
             skill_cache, enable_skills=enable_skills
         )
@@ -974,6 +990,7 @@ async def _chat_loop(
                         prompt_line=_prompt_line,
                         on_reset_tokens=_reset_tokens,
                         input_dev=input_dev,
+                        prompt_secret=_prompt_secret,
                     )
                     if should_exit:
                         break
@@ -1114,6 +1131,9 @@ async def _chat_loop(
         console.print(Text("Saved. See you.", style="muted"))
         return 0
     finally:
+        if notice_task is not None and not notice_task.done():
+            notice_task.cancel()
+            await asyncio.gather(notice_task, return_exceptions=True)
         if update_task is not None and not update_task.done():
             update_task.cancel()
             try:
