@@ -64,7 +64,6 @@ class FixtureControls:
     server: FixtureServer = field(init=False)
     bearer: str | None = None
     requests: list[dict[str, str]] = field(default_factory=list)
-    calls: list[str] = field(default_factory=list)
     connect_delay: float = 0.0
     expire_next: bool = False
     _contents: dict[str, list[Any]] = field(default_factory=dict)
@@ -111,7 +110,6 @@ class FixtureControls:
 
     async def run(self, name: str, default: Any) -> Any:
         """Apply this tool's switches, then return its content or `default`."""
-        self.calls.append(name)
         if name in self._hung:
             await asyncio.Event().wait()
         if name in self._delays:

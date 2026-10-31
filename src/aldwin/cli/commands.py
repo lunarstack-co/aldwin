@@ -394,16 +394,19 @@ async def _render_connector_tools(client: object, renderer: ChatRenderer) -> Non
         return
     if not listing.items:
         return
+    from aldwin.client import sanitize_display_text
+
     console = renderer.console
     console.print(Text("Connectors:", style="muted"))
     grid = Table.grid(padding=(0, 2))
     grid.add_column(style="fg", no_wrap=True)
     grid.add_column(style="muted")
     for info in listing.items:
-        grid.add_row(f"  {info.title}", info.status)
+        grid.add_row(f"  {sanitize_display_text(info.title)}", info.status)
         for tool in info.tools:
             kind = "read" if tool.read_only else "write"
-            grid.add_row(f"    • {tool.name}", f"{kind} · {tool.effective}")
+            name = sanitize_display_text(tool.name)
+            grid.add_row(f"    • {name}", f"{kind} · {tool.effective}")
     console.print(grid)
 
 

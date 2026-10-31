@@ -1,4 +1,4 @@
-"""`/connectors` (and `/mcp`): list, add and manage connectors (`FR-25`, `FR-26`)."""
+"""`/connectors` (and `/mcp`): list, add and manage connectors."""
 
 from __future__ import annotations
 
@@ -246,7 +246,7 @@ def list_label(info: ConnectorInfo) -> str:
 
 def tool_label(tool: ConnectorToolInfo) -> str:
     kind = "read" if tool.read_only else "write"
-    return f"{tool.name}  {kind} · {tool.effective}"
+    return f"{sanitize_display_text(tool.name)}  {kind} · {tool.effective}"
 
 
 def probe_summary(title: str, probe: ConnectorProbeEvent) -> str:

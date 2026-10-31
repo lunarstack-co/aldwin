@@ -1071,6 +1071,11 @@ class AldwinHost:
             except ConnectorError as exc:
                 await scope.error("connector", exc.message)
                 return
+            except asyncio.CancelledError:
+                # Still one terminal event per request, even on shutdown.
+                if not scope.terminated:
+                    await scope.error("internal", "Aldwin is shutting down.")
+                raise
             finally:
                 self._connector_flows.discard(name)
             await scope.done("ok")

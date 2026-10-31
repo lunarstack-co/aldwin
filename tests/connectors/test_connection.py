@@ -314,3 +314,30 @@ def test_outcome_renders_every_content_kind() -> None:
 
     structured = _outcome(CallToolResult(content=[], structured_content={"n": 1}))
     assert structured.text_parts == ['{"n": 1}']
+
+
+@pytest.mark.loopback
+async def test_session_expiry_reports_lost(
+    fixture_server: FixtureControls, fixture_url: str
+) -> None:
+    """A `404 Session terminated` mid-session is a lost session, not a tool error.
+
+    Only 2025-era sessions have an id to expire; 2026-07-28 HTTP is stateless.
+    """
+    events = _Events()
+    conn = McpConnection(
+        _config(f"{fixture_url}/mcp"),
+        auth=None,
+        on_tools_changed=events.on_tools_changed,
+        on_lost=events.on_lost,
+        protocol_mode="legacy",
+    )
+    await conn.open()
+    try:
+        fixture_server.expire_session()
+        with pytest.raises(ConnectorSessionLost) as info:
+            await conn.call_tool("read_thing", {})
+        assert info.value.message == "Fixture disconnected; try again shortly."
+        await asyncio.wait_for(events.lost_event.wait(), 5)
+    finally:
+        await conn.close()

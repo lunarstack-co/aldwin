@@ -57,6 +57,9 @@ class FakeConnectorsClient:
         self.needs_token = False
         self.add_error: ProtocolError | None = None
 
+    def tools_summary(self) -> list[Any]:
+        return []
+
     async def connectors_list(self) -> ConnectorsEvent:
         return ConnectorsEvent(re="r", items=self.items, error=self.error)
 
@@ -276,3 +279,22 @@ def test_tool_grant_reads_yes_for_this_session() -> None:
     )
     options = renderer._approval_chooser_options(event).plain
     assert "Yes for this session" in options
+
+
+async def test_server_tool_names_are_sanitised() -> None:
+    sneaky = ConnectorToolInfo(
+        name="read‮evil", model_name="mcp__fixture__read_evil", effective="ask"
+    )
+    client = FakeConnectorsClient([_info(tools=[sneaky])])
+    out = await _run(client, "1", "1", "")  # open Fixture -> Tools, then cancel
+    assert "‮" not in out
+    assert "readevil" in out
+
+    renderer, buf = _renderer()
+    await handle_slash_command(
+        "/tools",
+        client=client,  # type: ignore[arg-type]
+        renderer=renderer,
+        prompt_line=_answers(),
+    )
+    assert "readevil" in buf.getvalue() and "‮" not in buf.getvalue()

@@ -1,4 +1,5 @@
-"""Connector lifecycle in the host (`FR-13` to `FR-18`, `FR-21`).
+"""Connector lifecycle in the host: start in the background, reconnect with backoff,
+follow tool-list changes, and re-add tools after every session rebuild.
 
 `ConnectorAdmin` changes config and credentials. `ConnectorManager` keeps one
 live connection per enabled connector and keeps the session's tools in step.
@@ -62,7 +63,6 @@ logger = logging.getLogger("aldwin.host.connectors")
 BACKOFF_START_S = 30.0
 BACKOFF_MAX_S = 600.0
 
-Prober = Callable[[ConnectorConfig, Any], Awaitable[list[RemoteToolSpec]]]
 ConnectionFactory = Callable[..., McpConnection]
 
 
@@ -105,12 +105,10 @@ class ConnectorAdmin:
         home: Path,
         store: CredentialStore | None = None,
         *,
-        prober: Prober = probe_connector,
         environ: Mapping[str, str] = os.environ,
     ) -> None:
         self.home = home
         self.store = store or FileCredentialStore(home)
-        self._prober = prober
         self._environ = environ
 
     def load(self) -> ConnectorsLoad:
@@ -130,7 +128,7 @@ class ConnectorAdmin:
     async def probe(
         self, config: ConnectorConfig, token: str | None = None
     ) -> list[RemoteToolSpec]:
-        return await self._prober(config, self.auth_for(config, token))
+        return await probe_connector(config, self.auth_for(config, token))
 
     def save_new(self, config: ConnectorConfig, token: str | None) -> None:
         """Save a new entry (and its token) unless another process took the name."""
@@ -144,27 +142,36 @@ class ConnectorAdmin:
 
     def update(self, name: str, **changes: Any) -> ConnectorConfig:
         """Change fields of one entry and save; returns the new entry."""
-        with connectors_locked(self.home):
-            entries = dict(self._entries_or_raise())
-            current = self._existing(entries, name)
-            updated = ConnectorConfig.model_validate(
-                {**current.model_dump(), **changes}
-            )
-            entries[name] = updated
-            save_connectors(self.home, entries)
-            return updated
+        return self._rewrite(name, lambda _current: changes)
 
     def set_tool_setting(
         self, name: str, tool: str, setting: ToolSetting | Literal["default"]
     ) -> ConnectorConfig:
-        with connectors_locked(self.home):
-            entries = dict(self._entries_or_raise())
-            tools = dict(self._existing(entries, name).tools)
+        def changes(current: ConnectorConfig) -> dict[str, Any]:
+            tools = dict(current.tools)
             if setting == "default":
                 tools.pop(tool, None)
             else:
                 tools[tool] = setting
-        return self.update(name, tools=tools)
+            return {"tools": tools}
+
+        return self._rewrite(name, changes)
+
+    def _rewrite(
+        self, name: str, changes: Callable[[ConnectorConfig], dict[str, Any]]
+    ) -> ConnectorConfig:
+        """Read, change and save one entry under a single lock, so a change
+        another process makes in between is never lost.
+        """
+        with connectors_locked(self.home):
+            entries = dict(self._entries_or_raise())
+            current = self._existing(entries, name)
+            updated = ConnectorConfig.model_validate(
+                {**current.model_dump(), **changes(current)}
+            )
+            entries[name] = updated
+            save_connectors(self.home, entries)
+            return updated
 
     def remove(self, name: str) -> None:
         """Delete the entry and its saved token."""
@@ -257,7 +264,7 @@ class ConnectorManager:
             session.add_tools(tools, replace=True)
 
     async def reconcile(self) -> None:
-        """Pick up changes another process made (`FR-16`); cheap when nothing did."""
+        """Pick up changes another process made; cheap when nothing did."""
         fingerprint = connectors_fingerprint(self.admin.home)
         if fingerprint == self._fingerprint:
             return
@@ -397,7 +404,7 @@ class ConnectorManager:
             identity=credential_identity(self.admin.store.get(config.name)),
         )
         self._live[config.name] = live
-        live.supervisor = asyncio.create_task(self._supervise(live))
+        self._spawn_supervisor(live)
         return live
 
     async def _connect_now(self, config: ConnectorConfig) -> _Live:
@@ -408,18 +415,39 @@ class ConnectorManager:
         )
         self._live[config.name] = live
         connected = await self._attempt(live)
-        live.supervisor = asyncio.create_task(
-            self._supervise(live, wait_first=not connected)
-        )
+        if self._tracked(live):
+            self._spawn_supervisor(live, wait_first=not connected)
         return live
 
+    def _tracked(self, live: _Live) -> bool:
+        """False once `live` was stopped (disabled, removed, restarted)."""
+        return self._live.get(live.config.name) is live
+
+    def _spawn_supervisor(self, live: _Live, *, wait_first: bool = False) -> None:
+        task = asyncio.create_task(self._supervise(live, wait_first=wait_first))
+        task.add_done_callback(lambda done: self._supervisor_ended(live, done))
+        live.supervisor = task
+
+    def _supervisor_ended(self, live: _Live, task: asyncio.Task[None]) -> None:
+        """A supervisor only ends by cancellation or by being stopped; anything
+        else is a bug, so log it and show the connector as failed.
+        """
+        if task.cancelled() or task.exception() is None:
+            return
+        logger.error(
+            "connector %s stopped retrying",
+            live.config.name,
+            exc_info=task.exception(),
+        )
+        live.status, live.error = "failed", "stopped unexpectedly; see aldwin.log"
+
     async def _supervise(self, live: _Live, *, wait_first: bool = False) -> None:
-        """Keep `live` connected: retry after 30 s, doubling up to 10 min (`FR-14`)."""
+        """Keep `live` connected: retry after 30 s, doubling up to 10 min."""
         delay = BACKOFF_START_S
         if wait_first:
             await self._sleep(delay)
             delay = min(delay * 2, BACKOFF_MAX_S)
-        while True:
+        while self._tracked(live):
             if live.connection is None:
                 if not await self._attempt(live, retry_in=delay):
                     await self._sleep(delay)
@@ -445,7 +473,13 @@ class ConnectorManager:
         connection = self._new_connection(live, self.admin.auth_for(live.config))
         try:
             specs = await connection.open()
+            if not self._tracked(live):
+                # Stopped while connecting: don't bring its tools back.
+                await connection.close()
+                return False
         except ConnectorError as exc:
+            if not self._tracked(live):
+                return False
             live.status, live.error, live.retry_in_s = (
                 "failed",
                 exc.message,
@@ -505,7 +539,7 @@ class ConnectorManager:
                 specs = await holder[0].list_tools()
             except ConnectorError:
                 return  # the lost path handles it
-            # The connector may have stopped while we were listing.
+            # The connector may have stopped during the listing.
             if (
                 live.connection is holder[0]
                 and self._live.get(live.config.name) is live

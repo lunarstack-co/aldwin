@@ -564,3 +564,116 @@ async def test_relist_after_stop_does_not_bring_tools_back(
     await asyncio.sleep(0.5)
     assert not any(n.startswith("mcp__") for n in REGISTRY)
     assert not any(n.startswith("mcp__") for n in agent_session.tools)
+
+
+# --- races and failure paths -------------------------------------------------
+
+
+@pytest.mark.parametrize("stop", ["disable", "remove"])
+async def test_stop_during_enable_leaves_nothing_live(
+    aldwin_home: Path,
+    policy_session: PolicySession,
+    recorder: Recorder,
+    agent_session: AgentSession,
+    stop: str,
+) -> None:
+    """A connector stopped while it is still connecting never brings its tools back."""
+    fixture = build_fixture_server()
+    fixture.delay_connect(0.3)
+    save_connectors(
+        aldwin_home,
+        {"fixture": ConnectorConfig(name="fixture", url=FIXTURE_URL, enabled=False)},
+    )
+    mgr = _manager(
+        aldwin_home, policy_session, recorder, _in_process(("fixture", fixture))
+    )
+    await mgr.start()
+    mgr.attach(agent_session)
+    enabling = asyncio.create_task(mgr.enable("fixture"))
+    await asyncio.sleep(0.05)
+    await getattr(mgr, stop)("fixture")
+    await enabling
+    await asyncio.sleep(0.05)
+    assert mgr._live == {}
+    assert not any(n.startswith("mcp__") for n in agent_session.tools)
+    assert not any(n.startswith("mcp__") for n in REGISTRY)
+    await mgr.aclose()
+
+
+async def test_supervisor_failure_is_logged_and_shown(
+    aldwin_home: Path,
+    policy_session: PolicySession,
+    recorder: Recorder,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def broken(config: ConnectorConfig, **kwargs: Any) -> McpConnection:
+        class _Broken(McpConnection):
+            async def open(self, *, timeout: float = 30.0) -> Any:
+                raise RuntimeError("unexpected")
+
+        return _Broken(config, **kwargs)
+
+    save_connectors(
+        aldwin_home, {"fixture": ConnectorConfig(name="fixture", url=FIXTURE_URL)}
+    )
+    mgr = _manager(aldwin_home, policy_session, recorder, broken)
+    await mgr.start()
+    supervisor = mgr._live["fixture"].supervisor
+    assert supervisor is not None
+    await asyncio.gather(supervisor, return_exceptions=True)
+    await asyncio.sleep(0)
+    assert "connector fixture stopped retrying" in caplog.text
+    snap = mgr.snapshots()[0]
+    assert (snap.status, snap.error) == (
+        "failed",
+        "stopped unexpectedly; see aldwin.log",
+    )
+    await mgr.aclose()
+
+
+async def test_backoff_doubles_and_caps_at_ten_minutes(
+    aldwin_home: Path, policy_session: PolicySession, recorder: Recorder
+) -> None:
+    def down(config: ConnectorConfig, **kwargs: Any) -> McpConnection:
+        class _Down(McpConnection):
+            async def open(self, *, timeout: float = 30.0) -> Any:
+                raise ConnectorUnreachable("down.example", "refused")
+
+        return _Down(config, **kwargs)
+
+    sleep = FakeSleep()
+    save_connectors(
+        aldwin_home,
+        {"down": ConnectorConfig(name="down", url="https://down.example/mcp")},
+    )
+    mgr = _manager(aldwin_home, policy_session, recorder, down, sleep=sleep)
+    await mgr.start()
+    for _ in range(6):
+        await sleep.release()
+    await recorder.wait_for(lambda: len(sleep.delays) == 7)
+    assert sleep.delays == [30.0, 60.0, 120.0, 240.0, 480.0, 600.0, 600.0]
+    await mgr.aclose()
+
+
+async def test_name_collision_second_skipped(
+    manager: ConnectorManager,
+    agent_session: AgentSession,
+    fixture_server: FixtureControls,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """`a.b` and `a_b` both become `mcp__fixture__a_b`; the second is skipped."""
+
+    async def first() -> str:
+        return "first"
+
+    async def second() -> str:
+        return "second"
+
+    fixture_server.server.add_tool(first, name="dup.thing", structured_output=False)
+    fixture_server.server.add_tool(second, name="dup_thing", structured_output=False)
+    manager.attach(agent_session)
+    await manager.add(
+        ConnectorConfig(name="fixture", url=FIXTURE_URL), token=None, dry_run=False
+    )
+    assert "mcp__fixture__dup_thing" in agent_session.tools
+    assert "tools collide on mcp__fixture__dup_thing" in caplog.text

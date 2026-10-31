@@ -1,4 +1,4 @@
-"""`aldwin connectors …` shell commands (`FR-27`).
+"""`aldwin connectors …` shell commands.
 
 Exit codes: 0 on success, 1 on a user error (the message is printed), 2 on
 anything unexpected.
