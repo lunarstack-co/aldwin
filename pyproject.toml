@@ -23,7 +23,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "agentling>=0.1,<0.2",
+    "agentling>=0.1.1,<0.2",
     "typer>=0.15.0",
     "rich>=13.9.0",
     "prompt-toolkit>=3.0.48",
@@ -37,6 +37,7 @@ dependencies = [
     "pypdfium2>=4.30.0",
     "beautifulsoup4>=4.12.0",
     "markdownify>=0.14.0",
+    "mcp>=2.3,<3",
 ]
 
 [project.urls]
@@ -87,6 +88,7 @@ markers = [
     "e2e: drives the installed aldwin binary via pexpect against OpenAI",
     "uninitialized_home: do not call ensure_home() in the autouse aldwin_home fixture",
     "perf: performance budget benchmarks (run by hand or on CI)",
+    "loopback: may open sockets to 127.0.0.1 and ::1 (fixture servers)",
 ]
 
 [tool.ruff]

@@ -989,7 +989,7 @@ async def test_policy_edge_branches_and_validation(
     assert "<untrusted" not in trimmed_body
     assert trimmed_sum == "output trimmed · full text saved"
 
-    # PolicyWrappedTool edge cases: non-dict call, validate_arguments hook, timeout,
+    # PolicyWrappedTool edge cases: non-dict call, schema validation, timeout,
     # long command preview, recheck decline, and batch rejection of subsequent calls.
     class _CmdPreviewTool(Tool):
         name = "run_command"
@@ -1000,10 +1000,6 @@ async def test_policy_edge_branches_and_validation(
             "properties": {"command": {"type": "string"}},
             "required": ["command"],
         }
-
-        def validate_arguments(self, command: str) -> None:
-            if command == "invalid_custom":
-                raise ValueError("custom invalid")
 
         async def forward(self, command: str) -> str:  # type: ignore[override]
             return f"ran {command}"
@@ -1019,7 +1015,7 @@ async def test_policy_edge_branches_and_validation(
         await wrapped_cmd.call("not_a_dict")  # type: ignore[arg-type]
 
     with pytest.raises(ToolCallError):
-        await wrapped_cmd.call({"command": "invalid_custom"})
+        await wrapped_cmd.call({})
 
     policy_session.reset_turn()
     short_ok = await wrapped_cmd.call({"command": "echo hi"})
@@ -1349,6 +1345,62 @@ async def test_wrapped_command_saves_full_stdout(
     assert len(saved) == 1
     assert payload in saved[0].read_text(encoding="utf-8")
     assert payload not in str(out)
+
+
+def _typed_list_dir(*, validate: bool) -> Tool:
+    """A `list_dir` stand-in whose `x` must be a string, with validation on or off."""
+
+    class _TypedListDir(Tool):
+        name = "list_dir"
+        description = "List dir"
+        parameters: dict[str, Any] = {
+            "type": "object",
+            "properties": {"x": {"type": "string"}},
+        }
+        validate_arguments = validate
+
+        async def forward(self, x: Any = None) -> str:  # type: ignore[override]
+            return f"got {x!r}"
+
+    return _TypedListDir()
+
+
+async def _always_yes(_req: ApprovalRequest) -> ApprovalAnswer:
+    return ApprovalAnswer("yes", "user")
+
+
+@pytest.mark.parametrize("validate", [True, False])
+def test_wrapper_copies_validate_arguments(
+    policy_session: PolicySession, validate: bool
+) -> None:
+    """`TC-27`: the wrapper mirrors the inner tool's `validate_arguments`."""
+    wrapped = PolicyWrappedTool(
+        _typed_list_dir(validate=validate), session=policy_session, ask=_always_yes
+    )
+    assert wrapped.validate_arguments is validate
+
+
+async def test_wrapper_skips_type_checks_when_inner_opts_out(
+    policy_session: PolicySession,
+) -> None:
+    """`TC-27`: `validate_arguments=False` lets a type mismatch reach `forward()`."""
+    wrapped = PolicyWrappedTool(
+        _typed_list_dir(validate=False), session=policy_session, ask=_always_yes
+    )
+    result = await wrapped.call({"x": None})
+    assert result.ok is True
+    assert "got None" in result
+
+
+async def test_wrapper_validates_when_inner_requires(
+    policy_session: PolicySession,
+) -> None:
+    """`TC-27`: the default still rejects a type mismatch before `forward()`."""
+    wrapped = PolicyWrappedTool(
+        _typed_list_dir(validate=True), session=policy_session, ask=_always_yes
+    )
+    with pytest.raises(ToolCallError):
+        await wrapped.call({"x": None})
 
 
 def test_policy_wrapped_disables_agentling_outer_trim() -> None:

@@ -19,7 +19,7 @@ from fakes.model import FakeModel
 from aldwin.client import AldwinClient
 from aldwin.core.agent import build_agent, new_session
 from aldwin.core.home import ensure_home
-from aldwin.core.policy import ApprovalAnswer, ApprovalRequest
+from aldwin.core.policy import REGISTRY, ApprovalAnswer, ApprovalRequest
 from aldwin.core.settings import AldwinConfig, SecretsConfig
 from aldwin.core.workspace import Workspace
 from aldwin.host import AldwinHost, AskFn, InProcessTransport
@@ -28,6 +28,8 @@ from aldwin.protocol import ApprovalEvent, Event
 
 _ORIG_SOCKET_CONNECT = socket.socket.connect
 _ORIG_SOCKET_CONNECT_EX = socket.socket.connect_ex
+_ORIG_CREATE_CONNECTION = socket.create_connection
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 # Snapshot of the real user home before any test redirects HOME.
 _REAL_USER_HOME = Path.home().resolve()
@@ -135,26 +137,51 @@ def no_network(
     monkeypatch: pytest.MonkeyPatch,
     request: pytest.FixtureRequest,
 ) -> None:
-    """Block outbound `AF_INET`/`AF_INET6` sockets unless marked `live`/`e2e`."""
+    """Block outbound `AF_INET`/`AF_INET6` sockets unless marked `live`/`e2e`.
+
+    Tests marked `loopback` may still reach `127.0.0.1` and `::1` (fixture servers).
+    """
     if _allows_network(request):
         return
+    loopback_ok = "loopback" in request.keywords
+
+    def _allowed(address: Any) -> bool:
+        return (
+            loopback_ok
+            and isinstance(address, tuple)
+            and (address[0] in _LOOPBACK_HOSTS)
+        )
 
     def _blocked_connect(self: socket.socket, address: Any) -> Any:
-        if self.family in (socket.AF_INET, socket.AF_INET6):
+        if self.family in (socket.AF_INET, socket.AF_INET6) and not _allowed(address):
             raise RuntimeError(_NET_ERR)
         return _ORIG_SOCKET_CONNECT(self, address)
 
     def _blocked_connect_ex(self: socket.socket, address: Any) -> int:
-        if self.family in (socket.AF_INET, socket.AF_INET6):
+        if self.family in (socket.AF_INET, socket.AF_INET6) and not _allowed(address):
             raise RuntimeError(_NET_ERR)
         return _ORIG_SOCKET_CONNECT_EX(self, address)
 
-    def _blocked_create_connection(*_args: Any, **_kwargs: Any) -> socket.socket:
-        raise RuntimeError(_NET_ERR)
+    def _blocked_create_connection(
+        address: Any, *args: Any, **kwargs: Any
+    ) -> socket.socket:
+        if not _allowed(address):
+            raise RuntimeError(_NET_ERR)
+        return _ORIG_CREATE_CONNECTION(address, *args, **kwargs)
 
     monkeypatch.setattr(socket.socket, "connect", _blocked_connect)
     monkeypatch.setattr(socket.socket, "connect_ex", _blocked_connect_ex)
     monkeypatch.setattr(socket, "create_connection", _blocked_create_connection)
+
+
+@pytest.fixture(autouse=True)
+def no_runtime_policy_leak() -> Iterator[None]:
+    """Fail a test that leaves a connector (`mcp__`) entry in the policy `REGISTRY`."""
+    yield
+    leaked = sorted(name for name in REGISTRY if name.startswith("mcp__"))
+    for name in leaked:
+        del REGISTRY[name]
+    assert leaked == [], f"runtime policy entries leaked: {leaked}"
 
 
 @pytest.fixture
