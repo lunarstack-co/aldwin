@@ -52,6 +52,29 @@ async def test_no_network_blocks_inet_sockets_and_allows_unix_socketpair() -> No
         s2.close()
 
 
+def test_no_network_blocks_loopback_without_marker() -> None:
+    """Unmarked tests cannot reach a local server either."""
+    with socket.create_server(("127.0.0.1", 0)) as server:
+        with pytest.raises(RuntimeError, match="Network access is disabled"):
+            socket.create_connection(server.getsockname()[:2], timeout=1)
+
+
+@pytest.mark.loopback
+def test_loopback_marker_allows_local_server_only() -> None:
+    """`loopback` tests reach `127.0.0.1`, but outside hosts stay blocked."""
+    with socket.create_server(("127.0.0.1", 0)) as server:
+        with socket.create_connection(server.getsockname()[:2], timeout=1):
+            pass
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            assert sock.connect_ex(server.getsockname()[:2]) == 0
+        finally:
+            sock.close()
+
+    with pytest.raises(RuntimeError, match="Network access is disabled"):
+        socket.create_connection(("93.184.216.34", 80), timeout=0.1)
+
+
 def test_sentinel_autouse_redirects_aldwin_home_and_user_home(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

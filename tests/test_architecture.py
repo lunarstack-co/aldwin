@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import ast
+import re
+import tomllib
 from collections.abc import Sequence
 from pathlib import Path
 
 import yaml
+from packaging.version import Version
 
 from aldwin.core.settings import SecretsConfig
 from aldwin.core.tools import BUILTIN_TOOL_NAMES, builtin_tools
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC_ALDWIN = REPO_ROOT / "src" / "aldwin"
+MCP_MODULES = ("mcp", "mcp_types", "httpx2")
 
 
 async def _dummy_ask(_summary: str, _detail: str = "") -> bool:
@@ -56,8 +60,26 @@ def check_forbidden_imports(
     return violations
 
 
+def mcp_import_violations(root: Path) -> list[str]:
+    """Return files under `root` that import an MCP module outside `core/connectors`.
+
+    Matches real imports only (AST), since doors legitimately say "mcp" in text
+    such as the `/mcp` command.
+    """
+    allowed = root / "core" / "connectors"
+    violations: list[str] = []
+    for path in sorted(root.rglob("*.py")):
+        if path.is_relative_to(allowed):
+            continue
+        imported = _imported_modules(ast.parse(path.read_text(encoding="utf-8")))
+        for target in MCP_MODULES:
+            if any(m == target or m.startswith(f"{target}.") for m in imported):
+                violations.append(f"{path}: forbidden import {target!r}")
+    return violations
+
+
 def test_cli_never_imports_core() -> None:
-    """A door (`aldwin.cli`) must never import `aldwin.core` or Agentling."""
+    """A door (`aldwin.cli`) must never import `aldwin.core`, Agentling or MCP."""
     assert (
         check_forbidden_imports(
             SRC_ALDWIN / "cli",
@@ -65,10 +87,11 @@ def test_cli_never_imports_core() -> None:
         )
         == []
     )
+    assert mcp_import_violations(SRC_ALDWIN / "cli") == []
 
 
 def test_client_never_imports_core_or_agentling() -> None:
-    """The client (`aldwin.client`) must never import `aldwin.core` or Agentling."""
+    """The client must never import `aldwin.core`, Agentling or MCP."""
     assert (
         check_forbidden_imports(
             SRC_ALDWIN / "client",
@@ -76,6 +99,52 @@ def test_client_never_imports_core_or_agentling() -> None:
         )
         == []
     )
+    assert mcp_import_violations(SRC_ALDWIN / "client") == []
+
+
+def test_only_core_connectors_imports_mcp() -> None:
+    """`TC-76`: only `aldwin.core.connectors` imports `mcp`, `mcp_types` or `httpx2`."""
+    assert mcp_import_violations(SRC_ALDWIN) == []
+
+
+def test_mcp_guard_catches_planted_import(tmp_path: Path) -> None:
+    """`TC-76`: an `import mcp` planted in a copy of the host fails the guard."""
+    host = tmp_path / "aldwin" / "host"
+    host.mkdir(parents=True)
+    runner = (SRC_ALDWIN / "host" / "runner.py").read_text(encoding="utf-8")
+    (host / "runner.py").write_text("import mcp\n" + runner, encoding="utf-8")
+    connectors = tmp_path / "aldwin" / "core" / "connectors"
+    connectors.mkdir(parents=True)
+    (connectors / "connection.py").write_text("import mcp\n", encoding="utf-8")
+
+    violations = mcp_import_violations(tmp_path / "aldwin")
+    assert violations == [f"{host / 'runner.py'}: forbidden import 'mcp'"]
+
+
+def test_connector_dependencies_pinned() -> None:
+    """`TC-26`: Agentling 0.1.1 and `mcp` 2.x are pinned and `loopback` is a marker."""
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text("utf-8"))
+    deps = pyproject["project"]["dependencies"]
+    assert "agentling>=0.1.1,<0.2" in deps
+    assert "mcp>=2.3,<3" in deps
+    markers = pyproject["tool"]["pytest"]["ini_options"]["markers"]
+    assert any(m.startswith("loopback:") for m in markers)
+
+    lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text("utf-8"))
+    locked = {p["name"]: p["version"] for p in lock["package"]}
+    assert Version(locked["agentling"]) >= Version("0.1.1")
+
+
+def test_no_private_validate_calls() -> None:
+    """`TC-27`: no private `_validate` calls and no old `validate_arguments` hook."""
+    pattern = re.compile(r"\._validate\(|def validate_arguments\b")
+    hits = [
+        f"{path}:{n}"
+        for path in sorted(SRC_ALDWIN.rglob("*.py"))
+        for n, line in enumerate(path.read_text("utf-8").splitlines(), 1)
+        if pattern.search(line)
+    ]
+    assert hits == []
 
 
 def test_protocol_never_imports_core_or_agentling() -> None:

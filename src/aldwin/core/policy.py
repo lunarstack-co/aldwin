@@ -1447,6 +1447,7 @@ class PolicyWrappedTool(Tool):
         self.name = inner.name
         self.description = inner.description
         self.parameters = inner.parameters
+        self.validate_arguments = inner.validate_arguments
         policy = REGISTRY.get(inner.name)
         self.parallel_safe = policy.parallel_safe if policy is not None else False
         self._exec_timeout = inner.timeout
@@ -1739,10 +1740,7 @@ class PolicyWrappedTool(Tool):
                 )
 
             if policy is not None:
-                self._inner._validate(arguments)
-                validate_args_fn = getattr(self._inner, "validate_arguments", None)
-                if callable(validate_args_fn):
-                    validate_args_fn(**arguments)
+                self._inner.validate(arguments)
 
             if (
                 len(self._session.step_calls) > 1

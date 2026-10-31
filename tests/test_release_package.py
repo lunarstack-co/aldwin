@@ -118,7 +118,7 @@ def test_dependency_ranges_and_lock() -> None:
         (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )
     deps = pyproject_data["project"]["dependencies"]
-    assert "agentling>=0.1,<0.2" in deps
+    assert "agentling>=0.1.1,<0.2" in deps
     assert any(d.startswith("packaging>=") for d in deps)
     for dep in deps:
         assert ">=" in dep, f"{dep!r} has no lower bound"
