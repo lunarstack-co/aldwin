@@ -59,10 +59,14 @@ from aldwin.protocol import (
     ConnectorAuth,
     ConnectorProbeEvent,
     ConnectorsAddRequest,
+    ConnectorsAuthPasteRequest,
+    ConnectorsAuthTokenRequest,
     ConnectorsDisableRequest,
     ConnectorsEnableRequest,
     ConnectorsEvent,
     ConnectorsListRequest,
+    ConnectorsLoginRequest,
+    ConnectorsLogoutRequest,
     ConnectorsReconnectRequest,
     ConnectorsRemoveRequest,
     ConnectorStatusEvent,
@@ -222,8 +226,12 @@ class AldwinClient:
         skills: Sequence[str] = (),
     ) -> AsyncGenerator[Event, None]:
         """Send a `turn` request and yield events until `done` or `error`."""
+        async for event in self._stream(TurnRequest(text=text, skills=list(skills))):
+            yield event
+
+    async def _stream(self, request: Request) -> AsyncGenerator[Event, None]:
+        """Send `request` and yield its events until `done` or `error`."""
         self._ensure_reader()
-        request = TurnRequest(text=text, skills=list(skills))
         queue: asyncio.Queue[Event | None] = asyncio.Queue()
         self._queues[request.id] = queue
         try:
@@ -419,6 +427,52 @@ class AldwinClient:
         if dry_run:
             return await self._one(request, ConnectorProbeEvent)
         return await self._one(request, ConnectorStatusEvent)
+
+    async def connectors_sign_in(
+        self,
+        *,
+        name: str | None,
+        url: str | None = None,
+        title: str | None = None,
+        auth: ConnectorAuth = "oauth",
+        client_id: str | None = None,
+        no_browser: bool = False,
+    ) -> AsyncGenerator[Event, None]:
+        """Add a connector (`url` given) or sign one in again, yielding events
+        until `done` or `error`.
+
+        A `connector.auth` event means the user must act: open its `url`, paste
+        the address the browser ended on (`connectors_auth_paste`), or type a
+        token (`connectors_auth_token`). `stop()` cancels the wait.
+        """
+        if url is None and name is None:
+            raise ValueError("Give `url` to add a connector, or `name` to sign in.")
+        request: Request = (
+            ConnectorsLoginRequest(name=name or "", no_browser=no_browser)
+            if url is None
+            else ConnectorsAddRequest(
+                url=url,
+                name=name,
+                title=title,
+                auth=auth,
+                client_id=client_id,
+                no_browser=no_browser,
+            )
+        )
+        async for event in self._stream(request):
+            yield event
+
+    async def connectors_logout(self, name: str) -> ConnectorStatusEvent:
+        return await self._one(ConnectorsLogoutRequest(name=name), ConnectorStatusEvent)
+
+    async def connectors_auth_paste(self, name: str, redirect_url: str) -> None:
+        """Hand the pasted address to the waiting sign-in; raises on a bad one."""
+        await self._expect_done(
+            ConnectorsAuthPasteRequest(name=name, redirect_url=redirect_url)
+        )
+
+    async def connectors_auth_token(self, name: str, token: str) -> None:
+        await self._expect_done(ConnectorsAuthTokenRequest(name=name, token=token))
 
     async def connectors_enable(self, name: str) -> ConnectorStatusEvent:
         return await self._one(ConnectorsEnableRequest(name=name), ConnectorStatusEvent)

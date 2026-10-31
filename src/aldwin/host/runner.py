@@ -40,13 +40,19 @@ from aldwin.core.agent import (
     switch_session_model,
 )
 from aldwin.core.approval_log import ApprovalLogger, LogTier
+from aldwin.core.connectors.catalog import catalog_entry, load_catalog
 from aldwin.core.connectors.config import (
     ConnectorConfig,
+    OAuthSettings,
     check_name,
     check_url,
     suggest_name,
 )
-from aldwin.core.connectors.errors import ConnectorAuthRequired, ConnectorError
+from aldwin.core.connectors.errors import (
+    ConnectorAuthRequired,
+    ConnectorError,
+    NeedsSignIn,
+)
 from aldwin.core.connectors.policy import tool_call_labels
 from aldwin.core.connectors.state import ConnectorSnapshot
 from aldwin.core.home import home_dir
@@ -90,6 +96,7 @@ from aldwin.core.workspace import (
 )
 from aldwin.host.connectors import (
     AddResult,
+    AuthPrompt,
     ConnectorAdmin,
     ConnectorEvent,
     ConnectorManager,
@@ -108,13 +115,19 @@ from aldwin.protocol import (
     ApprovalAnswer,
     ApprovalEvent,
     ApproveRequest,
+    CatalogItem,
+    ConnectorAuthEvent,
     ConnectorInfo,
     ConnectorProbeEvent,
     ConnectorsAddRequest,
+    ConnectorsAuthPasteRequest,
+    ConnectorsAuthTokenRequest,
     ConnectorsDisableRequest,
     ConnectorsEnableRequest,
     ConnectorsEvent,
     ConnectorsListRequest,
+    ConnectorsLoginRequest,
+    ConnectorsLogoutRequest,
     ConnectorsReconnectRequest,
     ConnectorsRemoveRequest,
     ConnectorStatusEvent,
@@ -624,6 +637,8 @@ class AldwinHost:
         # they are working on, so a second flow for the same name is refused.
         self._connector_tasks: dict[str, asyncio.Task[None]] = {}
         self._connector_flows: set[str] = set()
+        self._connector_flow_names: dict[str, str] = {}
+        self._stopped_flows: set[str] = set()
         self._agent: Agent = self._build_and_attach_agent(self._model)
         self._attach_session(
             restore_session(self._agent, self._stored_session.memory.dump_json())
@@ -928,7 +943,10 @@ class AldwinHost:
 
         if isinstance(
             req,
-            ConnectorsAddRequest | ConnectorsEnableRequest | ConnectorsReconnectRequest,
+            ConnectorsAddRequest
+            | ConnectorsEnableRequest
+            | ConnectorsReconnectRequest
+            | ConnectorsLoginRequest,
         ):
             self._spawn_connector_request(req)
             return
@@ -982,7 +1000,10 @@ class AldwinHost:
                 | ConnectorsRemoveRequest
                 | ConnectorsDisableRequest
                 | ConnectorsToolPolicyRequest
-                | ConnectorsTrustHintsRequest,
+                | ConnectorsTrustHintsRequest
+                | ConnectorsLogoutRequest
+                | ConnectorsAuthPasteRequest
+                | ConnectorsAuthTokenRequest,
             ):
                 await self._handle_connector_request(scope, req)
 
@@ -993,7 +1014,10 @@ class AldwinHost:
         | ConnectorsRemoveRequest
         | ConnectorsDisableRequest
         | ConnectorsToolPolicyRequest
-        | ConnectorsTrustHintsRequest,
+        | ConnectorsTrustHintsRequest
+        | ConnectorsLogoutRequest
+        | ConnectorsAuthPasteRequest
+        | ConnectorsAuthTokenRequest,
     ) -> None:
         """The quick connector requests: they only touch config and the session."""
         try:
@@ -1006,6 +1030,13 @@ class AldwinHost:
                 await self._connectors.set_tool_setting(req.name, req.tool, req.setting)
             elif isinstance(req, ConnectorsTrustHintsRequest):
                 await self._connectors.set_trust_hints(req.name, req.trust)
+            elif isinstance(req, ConnectorsLogoutRequest):
+                snapshot = await self._connectors.sign_out(req.name)
+                await scope.emit(_status_event(req.id, snapshot))
+            elif isinstance(req, ConnectorsAuthPasteRequest):
+                self._connectors.auth_paste(req.name, req.redirect_url)
+            elif isinstance(req, ConnectorsAuthTokenRequest):
+                self._connectors.auth_token(req.name, req.token)
         except ConnectorError as exc:
             await scope.error("connector", exc.message)
             return
@@ -1022,7 +1053,8 @@ class AldwinHost:
         self,
         req: ConnectorsAddRequest
         | ConnectorsEnableRequest
-        | ConnectorsReconnectRequest,
+        | ConnectorsReconnectRequest
+        | ConnectorsLoginRequest,
     ) -> None:
         """Run a long connector flow as an owned task, so `approve` and `stop`
         are still served while it waits on the network.
@@ -1039,7 +1071,8 @@ class AldwinHost:
         scope: RequestScope,
         req: ConnectorsAddRequest
         | ConnectorsEnableRequest
-        | ConnectorsReconnectRequest,
+        | ConnectorsReconnectRequest
+        | ConnectorsLoginRequest,
     ) -> None:
         async with scope:
             try:
@@ -1051,11 +1084,22 @@ class AldwinHost:
                 await scope.error("busy", f"Already connecting {name}.")
                 return
             self._connector_flows.add(name)
+            self._connector_flow_names[req.id] = name
+
+            async def on_auth(prompt: AuthPrompt) -> None:
+                await scope.emit(_auth_event(req.id, prompt))
+
             try:
                 if isinstance(req, ConnectorsAddRequest):
                     result = await self._connectors.add(
-                        _config_from(req, name), token=req.token, dry_run=req.dry_run
+                        _config_from(req, name),
+                        token=req.token,
+                        dry_run=req.dry_run,
+                        no_browser=req.no_browser,
+                        on_auth=on_auth,
                     )
+                    if result.notice is not None:
+                        await scope.emit(NoticeEvent(re=req.id, message=result.notice))
                     if req.dry_run:
                         await scope.emit(_probe_event(req.id, result))
                     else:
@@ -1063,28 +1107,39 @@ class AldwinHost:
                 elif isinstance(req, ConnectorsEnableRequest):
                     snapshot = await self._connectors.enable(name)
                     await scope.emit(_status_event(req.id, snapshot))
+                elif isinstance(req, ConnectorsLoginRequest):
+                    snapshot = await self._connectors.login(
+                        name, no_browser=req.no_browser, on_auth=on_auth
+                    )
+                    await scope.emit(_status_event(req.id, snapshot))
                 else:
                     await self._connectors.reconnect(name)
-            except ConnectorAuthRequired as exc:
+            except (ConnectorAuthRequired, NeedsSignIn) as exc:
                 await scope.error("auth_required", exc.message)
                 return
             except ConnectorError as exc:
                 await scope.error("connector", exc.message)
                 return
             except asyncio.CancelledError:
-                # Still one terminal event per request, even on shutdown.
+                # Still one terminal event per request: `stop` or shutdown.
                 if not scope.terminated:
-                    await scope.error("internal", "Aldwin is shutting down.")
+                    if req.id in self._stopped_flows:
+                        await scope.done("stopped")
+                    else:
+                        await scope.error("internal", "Aldwin is shutting down.")
                 raise
             finally:
                 self._connector_flows.discard(name)
+                self._connector_flow_names.pop(req.id, None)
+                self._stopped_flows.discard(req.id)
             await scope.done("ok")
 
     def _flow_name(
         self,
         req: ConnectorsAddRequest
         | ConnectorsEnableRequest
-        | ConnectorsReconnectRequest,
+        | ConnectorsReconnectRequest
+        | ConnectorsLoginRequest,
     ) -> str:
         """The connector a flow works on; for an add, checked or suggested."""
         if not isinstance(req, ConnectorsAddRequest):
@@ -1097,10 +1152,26 @@ class AldwinHost:
         return req.name
 
     def _connectors_event(self, re_id: str) -> ConnectorsEvent:
+        snapshots = self._connectors.snapshots()
+        added = {s.name for s in snapshots}
         return ConnectorsEvent(
             re=re_id,
-            items=[_connector_info(s) for s in self._connectors.snapshots()],
+            items=[_connector_info(s) for s in snapshots],
             error=self._connectors.load_error,
+            catalog=[
+                CatalogItem(
+                    name=e.name,
+                    title=e.title,
+                    purpose=e.purpose,
+                    url=e.url,
+                    auth=e.auth,
+                    docs_url=e.docs_url,
+                    keywords=list(e.keywords),
+                    token_help_url=e.token_help_url,
+                    added=e.name in added,
+                )
+                for e in load_catalog()
+            ],
         )
 
     async def _emit_connector_event(self, event: ConnectorEvent) -> None:
@@ -1143,6 +1214,17 @@ class AldwinHost:
 
     async def _handle_stop(self, scope: RequestScope) -> None:
         self._approvals.cancel_all()
+        waiting = self._connectors.waiting_for_user()
+        stopped = [
+            task
+            for req_id, task in self._connector_tasks.items()
+            if self._connector_flow_names.get(req_id) in waiting
+        ]
+        for req_id, task in list(self._connector_tasks.items()):
+            if task in stopped:
+                self._stopped_flows.add(req_id)
+                task.cancel()
+        await asyncio.gather(*stopped, return_exceptions=True)
         if self._turn_task is not None and not self._turn_task.done():
             self._agent_session.interrupt()
             self._turn_task.cancel()
@@ -1241,6 +1323,8 @@ class AldwinHost:
                 await self._connectors.reconcile()
             except Exception:
                 logger.exception("connector reconcile failed; continuing the turn")
+            for message in self._connectors.take_auth_notices():
+                await scope.emit(NoticeEvent(re=req.id, message=message))
             self._agent_session._interrupt.clear()
             step_text_chunks: list[str] = []
             streamed_before_tools: str = ""
@@ -1488,12 +1572,34 @@ class AldwinHost:
 
 
 def _config_from(req: ConnectorsAddRequest, name: str) -> ConnectorConfig:
+    auth = "bearer" if req.token or req.token_env else req.auth
+    oauth: OAuthSettings | None = None
+    if auth == "oauth":
+        if req.client_id:
+            oauth = OAuthSettings(client_id=req.client_id)
+        else:
+            entry = catalog_entry(name)
+            if entry is not None and entry.url == req.url:
+                oauth = entry.oauth
     return ConnectorConfig(
         name=name,
         url=req.url,
         title=req.title,
-        auth="bearer" if req.token or req.token_env else req.auth,
+        auth=auth,
         token_env=req.token_env,
+        oauth=oauth,
+    )
+
+
+def _auth_event(re_id: str, prompt: AuthPrompt) -> ConnectorAuthEvent:
+    return ConnectorAuthEvent(
+        re=re_id,
+        name=prompt.name,
+        title=prompt.title,
+        mode=prompt.mode,
+        url=prompt.url,
+        token_help_url=prompt.token_help_url,
+        expires_in=prompt.expires_in,
     )
 
 

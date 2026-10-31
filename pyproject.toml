@@ -84,7 +84,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-m 'not live and not perf and not e2e'"
 markers = [
-    "live: calls the real OpenAI and Tavily APIs (run by hand)",
+    "live: calls real services: OpenAI, Tavily and the catalogue's MCP servers (run by hand)",
     "e2e: drives the installed aldwin binary via pexpect against OpenAI",
     "uninitialized_home: do not call ensure_home() in the autouse aldwin_home fixture",
     "perf: performance budget benchmarks (run by hand or on CI)",

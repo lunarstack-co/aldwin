@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from aldwin.core.connectors.errors import SignInTimedOut
 from aldwin.core.logging import (
     BACKUP_COUNT,
     MAX_LOG_BYTES,
@@ -67,3 +68,42 @@ def test_logging_redacts_accidental_secret_tokens(aldwin_home: Path) -> None:
     assert "tvly-…dcba" in contents
     assert "1234567890" not in contents
     assert "9876543210" not in contents
+
+
+def test_logging_redacts_oauth_codes_and_tokens(aldwin_home: Path) -> None:
+    log_path = setup_logging(aldwin_home)
+    logger = logging.getLogger("aldwin.core.test")
+    logger.warning(
+        "callback http://127.0.0.1:47823/callback?code=c-4417&state=s-0921 "
+        'body {"access_token": "at-5521", "refresh_token": "rt-7730"} '
+        "header Authorization: Bearer at-5521"
+    )
+    try:
+        raise ValueError("token endpoint said code_verifier=v-3319")
+    except ValueError:
+        logger.exception("exchange failed")
+
+    contents = log_path.read_text(encoding="utf-8")
+    for secret in ("c-4417", "s-0921", "at-5521", "rt-7730", "v-3319"):
+        assert secret not in contents
+    assert "code=***" in contents and "Bearer ***" in contents
+
+
+def test_mcp_warnings_go_to_the_log_file_not_the_terminal(
+    aldwin_home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    log_path = setup_logging(aldwin_home)
+    sdk = logging.getLogger("mcp.client.auth.oauth2")
+    sdk.info("discovery chatter")
+    sdk.warning("Token refresh failed: 400")
+    try:
+        raise SignInTimedOut()
+    except SignInTimedOut:
+        sdk.exception("OAuth flow error")
+
+    contents = log_path.read_text(encoding="utf-8")
+    assert "Token refresh failed: 400" in contents
+    assert "discovery chatter" not in contents
+    assert "OAuth flow error" not in contents
+    captured = capsys.readouterr()
+    assert captured.err == "" and captured.out == ""

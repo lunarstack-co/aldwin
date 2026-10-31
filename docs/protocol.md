@@ -84,25 +84,38 @@ Connectors add remote MCP servers whose tools join the conversation. These messa
 | `type` | Fields | Answer |
 |---|---|---|
 | `connectors.list` | *(none)* | `connectors`, then `done` |
-| `connectors.add` | `url`, `name: str \| None` (suggested from the host name when omitted), `title`, `auth: "none" \| "bearer"`, `token` (never in `repr`), `token_env`, `dry_run: bool = False` | Runs in the background. `dry_run`: `connector.probe`, then `done`. Otherwise `connector.status`, then `done`. Nothing is saved on failure. |
+| `connectors.add` | `url`, `name: str \| None` (suggested from the host name when omitted), `title`, `auth: "none" \| "bearer" \| "oauth"`, `token` (never in `repr`), `token_env`, `dry_run: bool = False`, `client_id` (a pre-registered OAuth client), `no_browser: bool = False` | Runs in the background. `dry_run`: `connector.probe`, then `done` (refused for `oauth`). Otherwise `connector.status`, then `done`. `oauth`, or `bearer` with no token, first sends `connector.auth` and waits for the user. Nothing is saved on failure. |
 | `connectors.remove` | `name` | `done` (the saved token is deleted too) |
 | `connectors.enable` | `name` | Runs in the background: `connector.status`, then `done` |
 | `connectors.disable` | `name` | `connector.status`, then `done`; the tools leave the conversation at once |
 | `connectors.reconnect` | `name` | Runs in the background: `done`; the new status follows on the host stream |
 | `connectors.tool_policy` | `name`, `tool` (the server's tool name), `setting: "auto" \| "ask" \| "off" \| "default"` | `connectors`, then `done` |
 | `connectors.trust_hints` | `name`, `trust: bool` | `connectors`, then `done` |
+| `connectors.login` | `name`, `no_browser: bool = False` | Runs in the background: `connector.auth`, then `connector.status`, then `done` |
+| `connectors.logout` | `name` | `connector.status` (`needs_auth`), then `done`. Deletes the local sign-in; nothing is revoked at the server. |
+| `connectors.auth_paste` | `name`, `redirect_url` (never in `repr`) | `done`, or `error(code="connector")` for an address from another sign-in or with no code; the sign-in keeps waiting |
+| `connectors.auth_token` | `name`, `token` (never in `repr`) | `done`; the waiting `connectors.add` carries on with the token |
 
-`connectors.add`, `connectors.enable` and `connectors.reconnect` run as owned tasks, so `approve` and `stop` are still served while they wait on the network. Each still gets exactly one `done` or `error`. A second flow for a name already in progress gets `error(code="busy")`.
+`connectors.add`, `connectors.enable`, `connectors.reconnect` and `connectors.login` run as owned tasks, so `approve`, `stop` and the `auth_*` answers are still served while they wait. Each still gets exactly one `done` or `error`. A second flow for a name already in progress gets `error(code="busy")`. `stop` cancels a flow that is waiting for the user; that flow ends with `done(reason="stopped")` and saves nothing.
 
 ### Events
 
 | `kind` | Fields |
 |---|---|
-| `connectors` | `items: list[ConnectorInfo]`, `error: str \| None` (the `connectors.yaml` problem, when the file is invalid) |
-| `connector.status` | `name`, `status: "connecting" \| "connected" \| "failed" \| "disabled"`, `tools: int`, `error`, `retry_in_s` |
+| `connectors` | `items: list[ConnectorInfo]`, `error: str \| None` (the `connectors.yaml` problem, when the file is invalid), `catalog: list[CatalogItem]` |
+| `connector.status` | `name`, `status: "connecting" \| "connected" \| "failed" \| "disabled" \| "needs_auth"`, `tools: int`, `error`, `retry_in_s` |
+| `connector.auth` | `name`, `title`, `mode: "browser" \| "paste" \| "token"`, `url` (the sign-in address; `null` for `token`), `token_help_url`, `expires_in` (seconds left to answer) |
 | `connector.probe` | `name`, `title`, `tools: list[ConnectorToolInfo]`, `read: int`, `write: int` |
 
 `ConnectorInfo` has `name`, `title`, `url`, `enabled`, `status`, `auth`, `trust_read_only_hints`, `tools`, `error`, `retry_in_s`. `ConnectorToolInfo` has `name`, `model_name` (`mcp__<connector>__<tool>`), `title`, `description`, `read_only`, `setting` (the user's choice, or `null`) and `effective` (`auto`, `ask` or `off`).
+
+`CatalogItem` has `name`, `title`, `purpose`, `url`, `auth`, `docs_url`, `keywords`, `token_help_url` and `added` (already in `connectors.yaml`).
+
+### Sign-in
+
+For `mode = "browser"` the door prints `url` and opens it. Aldwin listens on `127.0.0.1` (port 47823, then 47824, then 47825) for the browser's return. For `mode = "paste"` (or when the browser can't come back) the door asks for the address the browser ended on and sends `connectors.auth_paste`. For `mode = "token"` the door reads a token without echo and sends `connectors.auth_token`. The user has `expires_in` seconds (five minutes) to finish.
+
+A connector whose sign-in has expired or been revoked moves to `needs_auth` without opening a browser. Its tools stay listed and answer `<Title> needs you to sign in again. Ask the user to run /connectors.` The next turn carries one `notice`: `<Title> needs you to sign in again: /connectors.`
 
 `tool_call` and `approval` gained optional `connector`, `connector_title`, `remote_tool` and `reason` (for example `server says read-only`). `GrantScope` gained `"tool"`: "Yes for this session" for one connector tool.
 
@@ -113,4 +126,4 @@ Events not tied to a request, such as `connector.status` and a `notice` when a c
 ### Error codes
 
 - `connector`: a user error, with the message to show as is (`Connector URL must use https:// (got <url>)`, `A connector named <name> already exists`, `That address isn't an MCP server (got text/html).`, `Couldn't reach <host>: <reason>.`, `The server refused the token (401).`).
-- `auth_required`: the server answered 401 and no token was given (`<host> needs a token.`). Ask for a token and retry `connectors.add` with it.
+- `auth_required`: the server answered 401 and no token was given (`<host> needs a token.`). Ask for a token and retry `connectors.add` with it. Also sent when a sign-in is needed and no one can answer it.

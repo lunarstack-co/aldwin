@@ -11,7 +11,7 @@ from aldwin.core.connectors.mcp_tool import RemoteToolSpec
 from aldwin.core.connectors.naming import model_tool_name
 from aldwin.core.connectors.policy import connector_policy
 
-ConnectorStatus = Literal["connecting", "connected", "failed", "disabled"]
+ConnectorStatus = Literal["connecting", "connected", "failed", "disabled", "needs_auth"]
 
 
 @dataclass(frozen=True)
@@ -81,6 +81,8 @@ def format_connectors_block(snapshots: Sequence[ConnectorSnapshot]) -> str:
         line = f"- {snap.name} ({snap.title}): {snap.status}, {usable} tools"
         if snap.status == "failed":
             line += f"; needs attention: {snap.error or 'not connected'}"
+        elif snap.status == "needs_auth":
+            line += "; needs attention: the user must sign in again in /connectors"
         lines.append(line)
     lines.append("</connectors>")
     return "\n".join(lines)

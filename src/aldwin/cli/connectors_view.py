@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
+import asyncio
+import contextlib
+import os
+import webbrowser
+from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from typing import Literal, Protocol
 
 from prompt_toolkit.input import Input
@@ -11,19 +15,33 @@ from rich.text import Text
 from aldwin.cli.render import ChatRenderer
 from aldwin.client import ProtocolError, sanitize_display_text
 from aldwin.protocol import (
+    CatalogItem,
     ConnectorAuth,
+    ConnectorAuthEvent,
     ConnectorInfo,
     ConnectorProbeEvent,
     ConnectorsEvent,
     ConnectorStatusEvent,
     ConnectorToolInfo,
+    DoneEvent,
+    ErrorEvent,
+    Event,
+    NoticeEvent,
 )
 
 PromptLine = Callable[[str], Awaitable[str]]
 ToolChoice = Literal["auto", "ask", "off", "default"]
 
 ADD_LABEL = "+ Add a connector…"
-_GLYPHS = {"connected": "●", "failed": "✕", "disabled": "○", "connecting": "…"}
+CUSTOM_LABEL = "Custom URL…"
+_GLYPHS = {
+    "connected": "●",
+    "failed": "✕",
+    "disabled": "○",
+    "connecting": "…",
+    "needs_auth": "!",
+}
+_AUTH_TAGS = {"oauth": "sign in", "bearer": "token"}
 
 
 class ConnectorsClient(Protocol):
@@ -42,6 +60,25 @@ class ConnectorsClient(Protocol):
         token_env: str | None = None,
         dry_run: bool = False,
     ) -> ConnectorProbeEvent | ConnectorStatusEvent: ...
+
+    def connectors_sign_in(
+        self,
+        *,
+        name: str | None,
+        url: str | None = None,
+        title: str | None = None,
+        auth: ConnectorAuth = "oauth",
+        client_id: str | None = None,
+        no_browser: bool = False,
+    ) -> AsyncGenerator[Event, None]: ...
+
+    async def connectors_logout(self, name: str) -> ConnectorStatusEvent: ...
+
+    async def connectors_auth_paste(self, name: str, redirect_url: str) -> None: ...
+
+    async def connectors_auth_token(self, name: str, token: str) -> None: ...
+
+    async def stop(self) -> DoneEvent | ErrorEvent: ...
 
     async def connectors_enable(self, name: str) -> ConnectorStatusEvent: ...
 
@@ -102,13 +139,41 @@ class _View:
         if choice is None:
             return
         if choice == len(listing.items):
-            await self.add()
+            await self.add(listing.catalog)
         else:
             await self.manage(listing.items[choice])
 
     # --- add ----------------------------------------------------------------
 
-    async def add(self) -> None:
+    async def add(self, catalog: Sequence[CatalogItem] = ()) -> None:
+        if catalog:
+            self._say("Add a connector:", "muted")
+            labels = [catalog_label(item) for item in catalog] + [CUSTOM_LABEL]
+            choice = await self._choose(labels)
+            if choice is None:
+                return
+            if choice < len(catalog):
+                await self.add_from_catalog(catalog[choice])
+                return
+        await self.add_custom()
+
+    async def add_from_catalog(self, item: CatalogItem) -> None:
+        title = sanitize_display_text(item.title)
+        if item.added:
+            self._say(f"{title} is already added. Pick it from the list.", "muted")
+            return
+        if item.auth == "none":
+            try:
+                status = await self.client.connectors_add(url=item.url, name=item.name)
+            except ProtocolError as exc:
+                self._say(str(exc), "err")
+                return
+            assert isinstance(status, ConnectorStatusEvent)
+            self._say(_status_line(title, status), "ok")
+            return
+        await self.sign_in(name=item.name, url=item.url, auth=item.auth)
+
+    async def add_custom(self) -> None:
         url = (await self.prompt_line("Server URL: ")).strip()
         if not url:
             return
@@ -125,6 +190,14 @@ class _View:
                     self._say(str(exc), "err")
                     return
                 self._say(str(exc), "warn")
+                how = await self._choose(
+                    ["Sign in with your browser", "Use a token", "Cancel"]
+                )
+                if how == 0:
+                    await self.sign_in(name=None, url=url)
+                    return
+                if how != 1:
+                    return
                 token = (await self.prompt_secret("Token (hidden): ")).strip()
                 if not token:
                     return
@@ -149,9 +222,103 @@ class _View:
         assert isinstance(status, ConnectorStatusEvent)
         self._say(f"{title} connected. {status.tools} tools are available now.", "ok")
 
+    # --- sign-in ------------------------------------------------------------
+
+    async def sign_in(
+        self,
+        *,
+        name: str | None,
+        url: str | None = None,
+        auth: ConnectorAuth = "oauth",
+    ) -> None:
+        """Run a sign-in (or token) flow, answering each `connector.auth` event."""
+        no_browser = _cannot_open_browser()
+        answering: asyncio.Task[None] | None = None
+        status: ConnectorStatusEvent | None = None
+        title = name or "The connector"
+        try:
+            async for event in self.client.connectors_sign_in(
+                name=name, url=url, auth=auth, no_browser=no_browser
+            ):
+                if isinstance(event, ConnectorAuthEvent):
+                    title = sanitize_display_text(event.title)
+                    await _cancel(answering)
+                    answering = asyncio.create_task(self._answer(event))
+                elif isinstance(event, ConnectorStatusEvent):
+                    status = event
+                elif isinstance(event, NoticeEvent):
+                    self._say(sanitize_display_text(event.message), "muted")
+                elif isinstance(event, ErrorEvent):
+                    self._say(sanitize_display_text(event.message), "err")
+                elif isinstance(event, DoneEvent):
+                    if event.reason == "stopped":
+                        self._say("Sign-in cancelled.", "warn")
+                        self._say("Run /connectors to try again.", "muted")
+                    elif status is not None:
+                        self._say(_status_line(title, status), "ok")
+        finally:
+            await _cancel(answering)
+
+    async def _answer(self, event: ConnectorAuthEvent) -> None:
+        title = sanitize_display_text(event.title)
+        if event.mode == "token":
+            await self._answer_token(event, title)
+            return
+        url = sanitize_display_text(event.url or "")
+        minutes = max(1, event.expires_in // 60)
+        self._say(f"Sign in to {title}. This link works for {minutes} minutes:", "fg")
+        self._say(url, "fg")
+        opened = event.mode == "browser" and await asyncio.to_thread(
+            webbrowser.open, event.url or ""
+        )
+        if opened:
+            self._say("Waiting for you to finish in the browser…", "muted")
+        else:
+            self._say(
+                "Open the address above in a browser and sign in, then paste "
+                "the address the browser ends on.",
+                "muted",
+            )
+        while True:
+            try:
+                raw = await self.prompt_line(
+                    "Paste the address, or press Enter to cancel: "
+                )
+            except (EOFError, KeyboardInterrupt):
+                raw = ""
+            if not raw.strip():
+                await self.client.stop()
+                return
+            try:
+                await self.client.connectors_auth_paste(event.name, raw.strip())
+                return
+            except ProtocolError as exc:
+                self._say(str(exc), "warn")
+
+    async def _answer_token(self, event: ConnectorAuthEvent, title: str) -> None:
+        self._say(f"{title} needs a token.", "fg")
+        if event.token_help_url:
+            help_url = sanitize_display_text(event.token_help_url)
+            self._say(f"Create one at {help_url}", "muted")
+        try:
+            token = (await self.prompt_secret("Token (hidden): ")).strip()
+        except (EOFError, KeyboardInterrupt):
+            token = ""
+        if not token:
+            await self.client.stop()
+            return
+        await self.client.connectors_auth_token(event.name, token)
+
     # --- manage -------------------------------------------------------------
 
     async def manage(self, info: ConnectorInfo) -> None:
+        if info.auth == "oauth" and info.status == "needs_auth":
+            self._say(list_label(info), "muted")
+            if await self._choose(["Sign in", "Remove"]) == 0:
+                await self.sign_in(name=info.name)
+                return
+            await self._remove(info)
+            return
         trust = "on" if info.trust_read_only_hints else "off"
         actions = [
             "Tools",
@@ -160,6 +327,8 @@ class _View:
             "Remove",
             f"Trust read-only hints: {trust}",
         ]
+        if info.auth == "oauth":
+            actions.append("Sign out")
         self._say(list_label(info), "muted")
         choice = await self._choose(actions)
         if choice == 0:
@@ -174,16 +343,24 @@ class _View:
             status = await self.client.connectors_enable(info.name)
             self._say(_status_line(info.title, status), "muted")
         elif choice == 3:
-            self._say(f"Remove {info.title} and its saved token?", "warn")
-            if await self._choose(["No", "Yes"]) == 1:
-                await self.client.connectors_remove(info.name)
-                self._say(f"{info.title} removed.", "muted")
+            await self._remove(info)
         elif choice == 4:
             await self.client.connectors_trust_hints(
                 info.name, not info.trust_read_only_hints
             )
             now = "off" if info.trust_read_only_hints else "on"
             self._say(f"Trust read-only hints: {now}.", "muted")
+        elif choice == 5:
+            await self.client.connectors_logout(info.name)
+            self._say(
+                f"{info.title} signed out. Sign in again from /connectors.", "muted"
+            )
+
+    async def _remove(self, info: ConnectorInfo) -> None:
+        self._say(f"Remove {info.title} and its saved token?", "warn")
+        if await self._choose(["No", "Yes"]) == 1:
+            await self.client.connectors_remove(info.name)
+            self._say(f"{info.title} removed.", "muted")
 
     async def tools(self, info: ConnectorInfo) -> None:
         if not info.tools:
@@ -240,8 +417,18 @@ def list_label(info: ConnectorInfo) -> str:
         return f"{glyph} {title}  {detail}"
     if not info.enabled:
         return f"{glyph} {title}  disabled"
+    if info.status == "needs_auth":
+        return f"{glyph} {title}  needs sign-in"
     reads = "reads auto" if info.trust_read_only_hints else "reads ask"
     return f"{glyph} {title}  {len(usable)} tools · {reads}, writes ask"
+
+
+def catalog_label(item: CatalogItem) -> str:
+    """`Notion  Notes, docs and wikis  [sign in]`, or `✓ added` once added."""
+    title = sanitize_display_text(item.title)
+    purpose = sanitize_display_text(item.purpose)
+    tag = "✓ added" if item.added else _AUTH_TAGS.get(item.auth)
+    return f"{title}  {purpose}" + (f"  [{tag}]" if tag else "")
 
 
 def tool_label(tool: ConnectorToolInfo) -> str:
@@ -262,3 +449,16 @@ def _status_line(title: str, status: ConnectorStatusEvent) -> str:
     if status.status == "connected":
         return f"{title} connected. {status.tools} tools are available now."
     return f"{title}: {status.status}" + (f" ({status.error})" if status.error else "")
+
+
+def _cannot_open_browser() -> bool:
+    # Over SSH a browser would open on the far machine, if anywhere.
+    return bool(os.environ.get("SSH_CONNECTION"))
+
+
+async def _cancel(task: asyncio.Task[None] | None) -> None:
+    if task is None or task.done():
+        return
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task

@@ -705,10 +705,20 @@ async def connectors_add_command(
     url: str,
     *,
     token_env: str | None = None,
+    client_id: str | None = None,
     home: Path | None = None,
 ) -> dict[str, Any]:
-    """Probe a server, then save it. Nothing is saved when the probe fails."""
-    from aldwin.core.connectors.config import ConnectorConfig, check_name, check_url
+    """Probe a server, then save it. Nothing is saved when the probe fails.
+
+    With `client_id` the connector signs in through the browser, which needs a
+    person, so it is saved unchecked; `connectors_login_command` signs it in.
+    """
+    from aldwin.core.connectors.config import (
+        ConnectorConfig,
+        OAuthSettings,
+        check_name,
+        check_url,
+    )
     from aldwin.core.connectors.errors import ConnectorError
     from aldwin.core.connectors.state import tool_infos
     from aldwin.host.connectors import ConnectorAdmin
@@ -717,6 +727,15 @@ async def connectors_add_command(
     try:
         check_url(url)
         check_name(name, admin.load().entries)
+        if client_id:
+            config = ConnectorConfig(
+                name=name,
+                url=url,
+                auth="oauth",
+                oauth=OAuthSettings(client_id=client_id),
+            )
+            admin.save_new(config, None)
+            return _connector_row(config)
         config = ConnectorConfig(
             name=name,
             url=url,
@@ -732,6 +751,104 @@ async def connectors_add_command(
     row["read"] = sum(1 for t in infos if t.effective == "auto")
     row["write"] = sum(1 for t in infos if t.effective == "ask")
     return row
+
+
+async def connectors_login_command(
+    name: str,
+    *,
+    paste: bool,
+    show: Callable[[str], None],
+    read_line: Callable[[str], Awaitable[str]],
+    open_browser: Callable[[str], bool],
+    home: Path | None = None,
+) -> dict[str, Any]:
+    """Sign a connector in through the browser and save the sign-in.
+
+    A running Aldwin picks the new sign-in up on its next turn.
+    """
+    from aldwin.core.connectors.connection import McpConnection
+    from aldwin.core.connectors.errors import ConnectorError
+    from aldwin.core.connectors.oauth_messages import SIGN_IN_TIMEOUT_S
+    from aldwin.core.connectors.sign_in import SignInWait, sign_in
+    from aldwin.host.connectors import ConnectorAdmin
+
+    admin = ConnectorAdmin(_resolve_home(home))
+    load = admin.load()
+    if load.error is not None:
+        raise ConnectorCommandError(load.error)
+    found = load.entries.get(name)
+    if found is None:
+        raise ConnectorCommandError(f"No connector named {name}.")
+    config = found
+    title = config.display_title
+    if config.auth != "oauth":
+        raise ConnectorCommandError(f"{title} doesn't use browser sign-in.")
+
+    wait = SignInWait(name)
+    readers: list[asyncio.Task[None]] = []
+
+    async def read_pastes() -> None:
+        while True:
+            raw = (await read_line("Paste the address: ")).strip()
+            try:
+                wait.paste(raw)
+                return
+            except ConnectorError as exc:
+                show(exc.message)
+
+    async def on_auth_url(url: str) -> None:
+        minutes = int(SIGN_IN_TIMEOUT_S // 60)
+        show(f"Sign in to {title}. This link works for {minutes} minutes:")
+        show(sanitize_display_text(url))
+        if not paste and open_browser(url):
+            show("Waiting for you to finish in the browser…")
+            return
+        show(
+            "Open the address above in a browser and sign in, then paste the "
+            "address the browser ends on."
+        )
+        readers.append(asyncio.create_task(read_pastes()))
+
+    async def ignore(*_args: Any) -> None:
+        return None
+
+    try:
+        signed = await sign_in(
+            config,
+            admin.store,
+            cimd_url=load.oauth_client_metadata_url,
+            no_browser=paste,
+            wait=wait,
+            on_auth_url=on_auth_url,
+            connect=lambda provider: McpConnection(
+                config, auth=provider, on_tools_changed=ignore, on_lost=ignore
+            ),
+        )
+    except ConnectorError as exc:
+        raise ConnectorCommandError(exc.message) from None
+    finally:
+        for task in readers:
+            task.cancel()
+        await asyncio.gather(*readers, return_exceptions=True)
+    if signed is None:
+        return {**_connector_row(admin.update(name, auth="none")), "tools_count": None}
+    await signed.connection.close()
+    return {**_connector_row(config), "tools_count": len(signed.specs)}
+
+
+def connectors_logout_command(name: str, *, home: Path | None = None) -> None:
+    """Delete a connector's sign-in. Nothing is revoked at the server."""
+    from aldwin.host.connectors import ConnectorAdmin
+
+    admin = ConnectorAdmin(_resolve_home(home))
+    config = admin.load().entries.get(name)
+    if config is None:
+        raise ConnectorCommandError(f"No connector named {name}.")
+    if config.auth != "oauth":
+        raise ConnectorCommandError(
+            f"{config.display_title} doesn't use browser sign-in."
+        )
+    admin.sign_out(name)
 
 
 def connectors_remove_command(name: str, *, home: Path | None = None) -> None:

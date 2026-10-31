@@ -193,9 +193,8 @@ unset OPENAI_API_KEY TAVILY_API_KEY ALDWIN_HOME NO_COLOR
 Needs network access and, for GitHub, a token in `GITHUB_TOKEN` (a fine-grained token with read access to one repository is enough).
 
 1. In a chat, type `/connectors`. The list shows only `+ Add a connector…`. Pick it.
-2. At `Server URL:` paste `https://mcp.context7.com/mcp`. Accept the suggested name `context7`.
-3. Check the summary reads `Context7 has N tools: … read (run automatically), … write (ask first).`, then pick `Add Context7`.
-   - Expect: `Context7 connected. N tools are available now.`
+2. The catalogue lists nine apps, `Notion` first and `Custom URL…` last. Browser sign-in apps are tagged `[sign in]`, GitHub `[token]`, and `Context7` has no tag. Pick `Context7`.
+3. Expect: `Context7 connected. N tools are available now.` (To try the probe summary, pick `Custom URL…` instead and paste `https://mcp.context7.com/mcp`.)
 4. Ask: "Using Context7, find the docs for next.js routing."
    - Expect: a tool row `⚙ Context7 · resolve-library-id …  auto · server says read-only` and no approval prompt.
 5. In a shell: `aldwin connectors add github --url https://api.githubcopilot.com/mcp/ --token-env GITHUB_TOKEN`.
@@ -211,6 +210,34 @@ Needs network access and, for GitHub, a token in `GITHUB_TOKEN` (a fine-grained 
 10. `/connectors → Github → Remove → Yes`.
     - Expect: `aldwin connectors list --json` shows only `context7`, and `~/.aldwin/credentials/mcp/` has no `github.json`.
 11. Check that no token was written anywhere else: `grep -r "$GITHUB_TOKEN" ~/.aldwin` prints nothing.
+
+### Step 15: Connectors: sign in with your browser
+
+Needs network access and a Linear and a Notion account (free plans work).
+
+1. `/connectors → + Add a connector… → Linear`.
+   - Expect: `Sign in to Linear. This link works for 5 minutes:`, the address on the next line, and your browser opening it. Under it, `Paste the address, or press Enter to cancel:`.
+2. Approve in the browser.
+   - Expect: the tab says `You're signed in. You can close this tab.` and the terminal prints `Linear connected. N tools are available now.`
+3. `ls -l ~/.aldwin/credentials/mcp/linear.json`.
+   - Expect: `-rw-------`.
+4. Ask: "Using Linear, list my teams."
+   - Expect: a `Linear` tool row and an answer.
+5. `/connectors → + Add a connector… → Notion`, then press Enter at the paste prompt without using the browser.
+   - Expect: `Sign-in cancelled.` and `Run /connectors to try again.`; `/connectors` does not list Notion.
+6. In a shell: `aldwin connectors login linear --paste`. Open the printed address, approve, copy the address the browser ends on (it starts `http://127.0.0.1:47823/callback`) and paste it.
+   - Expect: `Linear signed in: N tools.` Pasting something else first prints `That address has no sign-in code. Paste the full address your browser ended on.` and asks again.
+7. `/connectors → Linear → Sign out`.
+   - Expect: `Linear signed out. Sign in again from /connectors.` The list shows `! Linear  needs sign-in`. Ask a Linear question: Aldwin says you need to sign in again with /connectors, and no browser opens.
+8. Quit and start `aldwin` again, then send any message.
+   - Expect: one dim line `Linear needs you to sign in again: /connectors.` on the first turn only.
+9. `/connectors → Linear → Sign in`, approve in the browser.
+   - Expect: `Linear connected.`
+10. `/connectors → + Add a connector… → GitHub` (remove it first if Step 14 left it).
+    - Expect: `GitHub needs a token.`, `Create one at https://github.com/settings/personal-access-tokens/new` and a hidden `Token (hidden):` prompt. Paste `$GITHUB_TOKEN`'s value; expect `GitHub connected.`
+11. Over SSH (or with `SSH_CONNECTION=x aldwin`), add Notion.
+    - Expect: no browser opens; the address is printed with `Open the address above in a browser and sign in, then paste the address the browser ends on.`
+12. Check that no token or code was written outside the credentials folder: `grep -rlE "access_token|refresh_token|code=" ~/.aldwin --exclude-dir=credentials` prints nothing.
 
 ## 3. Manual test run log template (`FR-12`)
 

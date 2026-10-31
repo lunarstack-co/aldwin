@@ -31,6 +31,8 @@ CREDENTIAL_VERSION = 1
 class CredentialStore(Protocol):
     """Where connector secrets are kept. The OS keychain can implement this later."""
 
+    @property
+    def directory(self) -> Path: ...
     def get(self, name: str) -> dict[str, Any] | None: ...
     def set(self, name: str, data: dict[str, Any]) -> None: ...
     def delete(self, name: str) -> None: ...
@@ -41,6 +43,12 @@ class FileCredentialStore:
 
     def __init__(self, home: Path) -> None:
         self._dir = credentials_dir(home)
+
+    @property
+    def directory(self) -> Path:
+        """The folder holding the files (created 0700 on first write)."""
+        self._ensure_dir()
+        return self._dir
 
     def get(self, name: str) -> dict[str, Any] | None:
         path = self._path(name)
@@ -117,4 +125,8 @@ def credential_identity(data: dict[str, Any] | None) -> tuple[Any, ...] | None:
     if kind == "bearer":
         token = str(data.get("token", ""))
         return ("bearer", hashlib.sha256(token.encode("utf-8")).hexdigest())
+    if kind == "oauth":
+        # A refresh rewrites tokens only; who signed in (issuer, client) is what counts.
+        client_info = data.get("client_info") or {}
+        return ("oauth", data.get("issuer"), client_info.get("client_id"))
     return (str(kind),)

@@ -213,6 +213,18 @@ async def fixture_url(fixture_server: Any) -> AsyncIterator[str]:
 
 
 @pytest.fixture
+async def oauth_server() -> AsyncIterator[Any]:
+    """A running OAuth authorization server with the fixture MCP server at `/mcp`.
+
+    Tests using it need `@pytest.mark.loopback`.
+    """
+    from fixtures.oauth_server import OAuthFixture, serve_oauth
+
+    async with serve_oauth(OAuthFixture()) as fixture:
+        yield fixture
+
+
+@pytest.fixture
 def canary_env(monkeypatch: pytest.MonkeyPatch) -> str:
     """Put the canary value in the process environment; return the constant."""
     monkeypatch.setenv("ALDWIN_CANARY", CANARY)

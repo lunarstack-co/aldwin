@@ -42,8 +42,9 @@ ErrorCode = Literal[
     "connector",
     "auth_required",
 ]
-ConnectorStatus = Literal["connecting", "connected", "failed", "disabled"]
-ConnectorAuth = Literal["none", "bearer"]
+ConnectorStatus = Literal["connecting", "connected", "failed", "disabled", "needs_auth"]
+ConnectorAuth = Literal["none", "bearer", "oauth"]
+AuthMode = Literal["browser", "paste", "token"]
 ToolSetting = Literal["auto", "ask", "off"]
 
 # `re` for events not tied to a request, such as a connector dropping.
@@ -209,6 +210,8 @@ class ConnectorsAddRequest(RequestBase):
     token: str | None = Field(default=None, repr=False)
     token_env: str | None = None
     dry_run: bool = False
+    client_id: str | None = None  # a pre-registered OAuth client ID
+    no_browser: bool = False  # the door cannot open a browser (for example over SSH)
 
 
 class _ConnectorNameRequest(RequestBase):
@@ -247,6 +250,33 @@ class ConnectorsToolPolicyRequest(_ConnectorNameRequest):
     setting: Literal["auto", "ask", "off", "default"]
 
 
+class ConnectorsLoginRequest(_ConnectorNameRequest):
+    """Sign an OAuth connector in again; runs in the background like an add."""
+
+    type: Literal["connectors.login"] = "connectors.login"
+    no_browser: bool = False
+
+
+class ConnectorsLogoutRequest(_ConnectorNameRequest):
+    """Delete a connector's sign-in; its status becomes `needs_auth`."""
+
+    type: Literal["connectors.logout"] = "connectors.logout"
+
+
+class ConnectorsAuthPasteRequest(_ConnectorNameRequest):
+    """The address the browser ended on, for a waiting sign-in."""
+
+    type: Literal["connectors.auth_paste"] = "connectors.auth_paste"
+    redirect_url: str = Field(min_length=1, repr=False)
+
+
+class ConnectorsAuthTokenRequest(_ConnectorNameRequest):
+    """A token for a sign-in waiting in token mode."""
+
+    type: Literal["connectors.auth_token"] = "connectors.auth_token"
+    token: str = Field(min_length=1, repr=False)
+
+
 class ConnectorsTrustHintsRequest(_ConnectorNameRequest):
     """Trust (or stop trusting) the server's read-only hints."""
 
@@ -271,7 +301,11 @@ Request = Annotated[
     | ConnectorsDisableRequest
     | ConnectorsReconnectRequest
     | ConnectorsToolPolicyRequest
-    | ConnectorsTrustHintsRequest,
+    | ConnectorsTrustHintsRequest
+    | ConnectorsLoginRequest
+    | ConnectorsLogoutRequest
+    | ConnectorsAuthPasteRequest
+    | ConnectorsAuthTokenRequest,
     Field(discriminator="type"),
 ]
 
@@ -429,12 +463,41 @@ class ConnectorInfo(BaseModel):
     retry_in_s: int | None = None
 
 
+class CatalogItem(BaseModel):
+    """One app a user can add from the built-in catalogue."""
+
+    name: str
+    title: str
+    purpose: str
+    url: str
+    auth: ConnectorAuth
+    docs_url: str
+    keywords: list[str] = Field(default_factory=list)
+    token_help_url: str | None = None
+    added: bool = False
+
+
 class ConnectorsEvent(EventBase):
-    """Every connector, plus the `connectors.yaml` error when the file is invalid."""
+    """Every connector, the catalogue, and the `connectors.yaml` error if any."""
 
     kind: Literal["connectors"] = "connectors"
     items: list[ConnectorInfo] = Field(default_factory=list)
     error: str | None = None
+    catalog: list[CatalogItem] = Field(default_factory=list)
+
+
+class ConnectorAuthEvent(EventBase):
+    """A flow needs the user: open `url` (browser), paste the return address
+    (paste), or type a token (token). `expires_in` is the seconds left to answer.
+    """
+
+    kind: Literal["connector.auth"] = "connector.auth"
+    name: str
+    title: str
+    mode: AuthMode
+    url: str | None = None
+    token_help_url: str | None = None
+    expires_in: int = 0
 
 
 class ConnectorStatusEvent(EventBase):
@@ -482,6 +545,7 @@ Event = Annotated[
     | ConnectorsEvent
     | ConnectorStatusEvent
     | ConnectorProbeEvent
+    | ConnectorAuthEvent
     | DoneEvent
     | ErrorEvent,
     Field(discriminator="kind"),

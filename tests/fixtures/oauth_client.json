@@ -1,0 +1,18 @@
+{
+  "client_id": "https://askaldwin.com/oauth/client.json",
+  "client_name": "Aldwin",
+  "client_uri": "https://askaldwin.com",
+  "logo_uri": "https://askaldwin.com/oauth/logo.png",
+  "application_type": "native",
+  "redirect_uris": [
+    "http://127.0.0.1:47823/callback",
+    "http://127.0.0.1:47824/callback",
+    "http://127.0.0.1:47825/callback",
+    "http://localhost:47823/callback",
+    "http://localhost:47824/callback",
+    "http://localhost:47825/callback"
+  ],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "none"
+}

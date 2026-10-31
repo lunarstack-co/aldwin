@@ -184,7 +184,13 @@ async def test_add_flow_asks_for_a_token_on_401() -> None:
     client = FakeConnectorsClient()
     client.needs_token = True
     out = await _run(
-        client, "1", "https://fixture.example/mcp", "mine", "1", secret="canary-7f3a"
+        client,
+        "1",
+        "https://fixture.example/mcp",
+        "2",
+        "mine",
+        "1",
+        secret="canary-7f3a",
     )
     assert "fixture.example needs a token." in out
     assert "Mine connected." in out

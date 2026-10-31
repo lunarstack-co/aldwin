@@ -25,6 +25,7 @@ from pydantic import (
 )
 
 from aldwin.core.connectors.errors import ConnectorConfigError
+from aldwin.core.connectors.oauth_messages import DEFAULT_CLIENT_METADATA_URL
 from aldwin.core.home import FILE_MODE, atomic_write
 
 logger = logging.getLogger("aldwin.core.connectors.config")
@@ -37,7 +38,7 @@ _NAME_RE = re.compile(NAME_PATTERN)
 _LOCAL_HOSTS: Final[frozenset[str]] = frozenset({"localhost", "127.0.0.1"})
 _GENERIC_LABELS: Final[frozenset[str]] = frozenset({"mcp", "api", "www", "server"})
 
-AuthKind = Literal["none", "bearer"]
+AuthKind = Literal["none", "bearer", "oauth"]
 ToolSetting = Literal["auto", "ask", "off"]
 
 _EXPECTED_BY_ERROR: Final[dict[str, str]] = {
@@ -53,6 +54,14 @@ _EXPECTED_BY_ERROR: Final[dict[str, str]] = {
 _logged_errors: set[str] = set()
 
 
+class OAuthSettings(BaseModel):
+    """Browser sign-in settings for one connector."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    client_id: StrictStr | None = None  # a pre-registered client ID
+
+
 class ConnectorConfig(BaseModel):
     """One connector entry. The YAML key is `name`; the file never holds a secret."""
 
@@ -66,6 +75,7 @@ class ConnectorConfig(BaseModel):
     token_env: StrictStr | None = None
     trust_read_only_hints: StrictBool = True
     tools: dict[str, ToolSetting] = Field(default_factory=dict)
+    oauth: OAuthSettings | None = None
 
     @field_validator("tools", mode="before")
     @classmethod
@@ -96,6 +106,8 @@ class ConnectorsLoad:
 
     entries: dict[str, ConnectorConfig] = field(default_factory=dict)
     error: str | None = None
+    # The CIMD client ID; self-hosters point it at their own copy.
+    oauth_client_metadata_url: str = DEFAULT_CLIENT_METADATA_URL
 
 
 def connectors_path(home: Path) -> Path:
@@ -120,6 +132,12 @@ def load_connectors(home: Path) -> ConnectorsLoad:
     if not isinstance(parsed, dict):
         return _invalid("connectors.yaml: the file must be a mapping")
 
+    metadata_url = parsed.get("oauth_client_metadata_url", DEFAULT_CLIENT_METADATA_URL)
+    if not _is_https_url(metadata_url):
+        return _invalid(
+            "connectors.yaml: oauth_client_metadata_url must be an https URL"
+        )
+
     raw = parsed.get("connectors") or {}
     if not isinstance(raw, dict):
         return _invalid("connectors.yaml: connectors must be a mapping")
@@ -132,11 +150,18 @@ def load_connectors(home: Path) -> ConnectorsLoad:
             entries[str(name)] = ConnectorConfig.model_validate({**body, "name": name})
         except ValidationError as exc:
             return _invalid(_describe(str(name), exc))
-    return ConnectorsLoad(entries=entries)
+    return ConnectorsLoad(entries=entries, oauth_client_metadata_url=metadata_url)
 
 
 def save_connectors(home: Path, entries: Mapping[str, ConnectorConfig]) -> None:
-    """Write all entries atomically with mode 0600, keyed by name."""
+    """Write all entries atomically with mode 0600, keyed by name.
+
+    A custom `oauth_client_metadata_url` already in the file is kept.
+    """
+    header: dict[str, Any] = {"version": FILE_VERSION}
+    metadata_url = load_connectors(home).oauth_client_metadata_url
+    if metadata_url != DEFAULT_CLIENT_METADATA_URL:
+        header["oauth_client_metadata_url"] = metadata_url
     body: dict[str, Any] = {}
     for name, config in sorted(entries.items()):
         data = config.model_dump(exclude={"name"}, exclude_none=True)
@@ -144,11 +169,18 @@ def save_connectors(home: Path, entries: Mapping[str, ConnectorConfig]) -> None:
             del data["tools"]
         body[name] = data
     text = yaml.safe_dump(
-        {"version": FILE_VERSION, "connectors": body},
+        {**header, "connectors": body},
         sort_keys=False,
         allow_unicode=True,
     )
     atomic_write(connectors_path(home), text)
+
+
+def _is_https_url(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    parts = urlsplit(value)
+    return parts.scheme == "https" and bool(parts.hostname)
 
 
 def is_valid_name(name: str) -> bool:
