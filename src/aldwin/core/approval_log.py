@@ -25,7 +25,7 @@ REDACTED_PLACEHOLDER: Final[str] = "‹redacted›"
 LogTier = Literal["auto", "diff", "ask"]
 LogDecision = Literal["auto", "asked", "blocked"]
 LogAnswer = Literal["yes", "yes_session", "no", "none"]
-LogSource = Literal["rule", "grant", "user", "no_approver", "error"]
+LogSource = Literal["rule", "grant", "user", "no_approver", "error", "hint"]
 
 # Shared secret patterns for panel redaction, audit logging, and memory scrubbing:
 # - sk-[A-Za-z0-9_-]{20,} (OpenAI / Anthropic keys)
@@ -152,6 +152,7 @@ class ApprovalLogger:
         source: LogSource,
         reason: str | None = None,
         session_id: str | None = None,
+        connector: str | None = None,
     ) -> bool:
         """Append one redacted JSON record to `approvals.jsonl`.
 
@@ -179,6 +180,7 @@ class ApprovalLogger:
             "answer": answer,
             "source": source,
             "reason": redact_secrets(reason) if reason else None,
+            "connector": connector,
         }
         line = json.dumps(record_obj, ensure_ascii=False)
 

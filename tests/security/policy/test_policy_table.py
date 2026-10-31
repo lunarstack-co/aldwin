@@ -104,6 +104,13 @@ def test_policy_registry_matches_pinned_table(aldwin_home: Path) -> None:
     assert remember_tier({"text": "new note"}) == "auto"
     assert remember_tier({"text": "updated", "replace": "id_1"}) == "diff"
 
+    # `TC-77`: built-ins never use the connector-only fields.
+    for policy in REGISTRY.values():
+        assert policy.connector is None
+        assert policy.auto_reason is None
+        assert policy.session_grant is False
+        assert policy.untrusted_source is None
+
     # Mutating one tier in a copy of REGISTRY must fail the table comparison
     mutated = dict(REGISTRY)
     mutated["read_file"] = replace(REGISTRY["read_file"], tier="ask")

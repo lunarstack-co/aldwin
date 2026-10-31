@@ -193,6 +193,26 @@ def workspace(tmp_path: Path, aldwin_home: Path) -> Workspace:
 
 
 @pytest.fixture
+def fixture_server() -> Any:
+    """A fresh fixture MCP server (`FixtureControls`), for in-process use."""
+    from fixtures.mcp_server import build_fixture_server
+
+    return build_fixture_server()
+
+
+@pytest.fixture
+async def fixture_url(fixture_server: Any) -> AsyncIterator[str]:
+    """`fixture_server` over HTTP on loopback; the base URL (MCP is at `/mcp`).
+
+    Tests using it need `@pytest.mark.loopback`.
+    """
+    from fixtures.mcp_server import serve_http
+
+    async with serve_http(fixture_server) as url:
+        yield url
+
+
+@pytest.fixture
 def canary_env(monkeypatch: pytest.MonkeyPatch) -> str:
     """Put the canary value in the process environment; return the constant."""
     monkeypatch.setenv("ALDWIN_CANARY", CANARY)

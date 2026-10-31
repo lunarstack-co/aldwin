@@ -111,6 +111,7 @@ def test_approval_log_records_all_decisions_and_redacts_secrets(
         "answer",
         "source",
         "reason",
+        "connector",
     }
     for rec in records:
         assert set(rec.keys()) == expected_keys
