@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -413,3 +414,82 @@ def test_tc46_tool_event_preview_fields() -> None:
     assert round_result.preview == "1\trow"
     assert round_result.summary == "Read a.txt · lines 1–1 of 1"
     assert round_result.v == 2
+
+
+# --- connectors (`FR-23`) ----------------------------------------------------
+
+
+def _connector_messages() -> list[Any]:
+    from aldwin.protocol import (
+        ConnectorInfo,
+        ConnectorProbeEvent,
+        ConnectorsAddRequest,
+        ConnectorsDisableRequest,
+        ConnectorsEnableRequest,
+        ConnectorsEvent,
+        ConnectorsListRequest,
+        ConnectorsReconnectRequest,
+        ConnectorsRemoveRequest,
+        ConnectorStatusEvent,
+        ConnectorsToolPolicyRequest,
+        ConnectorsTrustHintsRequest,
+        ConnectorToolInfo,
+    )
+
+    tool = ConnectorToolInfo(
+        name="read_thing",
+        model_name="mcp__fixture__read_thing",
+        read_only=True,
+        effective="auto",
+    )
+    return [
+        ConnectorsListRequest(),
+        ConnectorsAddRequest(url="https://x.example/mcp", token="t", dry_run=True),
+        ConnectorsRemoveRequest(name="x"),
+        ConnectorsEnableRequest(name="x"),
+        ConnectorsDisableRequest(name="x"),
+        ConnectorsReconnectRequest(name="x"),
+        ConnectorsToolPolicyRequest(name="x", tool="t", setting="default"),
+        ConnectorsTrustHintsRequest(name="x", trust=False),
+        ConnectorsEvent(
+            re="r",
+            items=[ConnectorInfo(name="x", title="X", url="https://x", tools=[tool])],
+            error="connectors.yaml: connectors must be a mapping",
+        ),
+        ConnectorStatusEvent(re="host", name="x", status="failed", retry_in_s=30),
+        ConnectorProbeEvent(re="r", name="x", title="X", tools=[tool], read=1),
+    ]
+
+
+@pytest.mark.parametrize(
+    "message", _connector_messages(), ids=lambda m: type(m).__name__
+)
+def test_connector_messages_round_trip(message: Any) -> None:
+    parsed = parse_message(message.model_dump_json())
+    assert parsed == message
+
+
+def test_old_tool_call_json_still_parses() -> None:
+    raw = '{"v":2,"type":"event","re":"r","kind":"tool_call","call_id":"c","name":"x"}'
+    event = parse_event(raw)
+    assert isinstance(event, ToolCallEvent)
+    assert (event.connector, event.reason) == (None, None)
+
+
+def test_connector_token_is_hidden_from_repr() -> None:
+    from aldwin.protocol import ConnectorsAddRequest
+
+    req = ConnectorsAddRequest(url="https://x.example/mcp", token="sk-canary-123")
+    assert "sk-canary-123" not in repr(req)
+    assert "sk-canary-123" not in str(req)
+
+
+def test_tool_grant_scope_and_new_error_codes() -> None:
+    from aldwin.protocol import HOST_EVENT_RE
+
+    approval = ApprovalEvent(re="r", approval_id="a", summary="s", grant_scope="tool")
+    assert parse_event(approval.model_dump_json()) == approval
+    for code in ("connector", "auth_required"):
+        error = ErrorEvent(re="r", code=code, message="m")
+        assert parse_event(error.model_dump_json()) == error
+    assert HOST_EVENT_RE == "host"

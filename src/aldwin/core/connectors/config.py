@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import fcntl
 import logging
+import os
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Literal
@@ -22,7 +25,7 @@ from pydantic import (
 )
 
 from aldwin.core.connectors.errors import ConnectorConfigError
-from aldwin.core.home import atomic_write
+from aldwin.core.home import FILE_MODE, atomic_write
 
 logger = logging.getLogger("aldwin.core.connectors.config")
 
@@ -151,6 +154,24 @@ def save_connectors(home: Path, entries: Mapping[str, ConnectorConfig]) -> None:
 def is_valid_name(name: str) -> bool:
     """True when `name` matches `^[a-z0-9][a-z0-9_-]{0,29}$`."""
     return _NAME_RE.fullmatch(name) is not None
+
+
+@contextmanager
+def connectors_locked(home: Path) -> Iterator[None]:
+    """Hold an exclusive lock for a read-modify-write of `connectors.yaml`.
+
+    Another process adding the same name waits, then sees the first one's entry.
+    """
+    home.mkdir(parents=True, exist_ok=True)
+    fd = os.open(
+        home / f"{CONNECTORS_FILENAME}.lock", os.O_RDWR | os.O_CREAT, FILE_MODE
+    )
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
 
 
 def check_name(name: str, existing: Iterable[str]) -> None:

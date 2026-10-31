@@ -23,7 +23,7 @@ MAX_APPROVAL_REASON_CHARS: Final[int] = 280
 
 ApprovalAnswer = Literal["yes", "yes_session", "no"]
 ApprovalTier = Literal["ask", "diff"]
-GrantScope = Literal["file", "folder"]
+GrantScope = Literal["file", "folder", "tool"]
 HistoryRole = Literal["user", "assistant", "tool"]
 DoneReason = Literal["answered", "stopped", "max_steps", "ok"]
 TodoStatus = Literal["pending", "in_progress", "done", "dropped"]
@@ -39,7 +39,15 @@ ErrorCode = Literal[
     "rate_limited",
     "not_found",
     "internal",
+    "connector",
+    "auth_required",
 ]
+ConnectorStatus = Literal["connecting", "connected", "failed", "disabled"]
+ConnectorAuth = Literal["none", "bearer"]
+ToolSetting = Literal["auto", "ask", "off"]
+
+# `re` for events not tied to a request, such as a connector dropping.
+HOST_EVENT_RE: Final[str] = "host"
 
 
 def _new_request_id() -> str:
@@ -184,6 +192,68 @@ class TodoGetRequest(RequestBase):
     type: Literal["todo.get"] = "todo.get"
 
 
+class ConnectorsListRequest(RequestBase):
+    """List connectors; answered with a `connectors` event."""
+
+    type: Literal["connectors.list"] = "connectors.list"
+
+
+class ConnectorsAddRequest(RequestBase):
+    """Add a connector, or with `dry_run` only probe it and report its tools."""
+
+    type: Literal["connectors.add"] = "connectors.add"
+    url: str = Field(min_length=1)
+    name: str | None = None
+    title: str | None = None
+    auth: ConnectorAuth = "none"
+    token: str | None = Field(default=None, repr=False)
+    token_env: str | None = None
+    dry_run: bool = False
+
+
+class _ConnectorNameRequest(RequestBase):
+    name: str = Field(min_length=1)
+
+
+class ConnectorsRemoveRequest(_ConnectorNameRequest):
+    """Delete a connector and its saved token."""
+
+    type: Literal["connectors.remove"] = "connectors.remove"
+
+
+class ConnectorsEnableRequest(_ConnectorNameRequest):
+    """Turn a connector on and connect it."""
+
+    type: Literal["connectors.enable"] = "connectors.enable"
+
+
+class ConnectorsDisableRequest(_ConnectorNameRequest):
+    """Turn a connector off; its tools leave the conversation at once."""
+
+    type: Literal["connectors.disable"] = "connectors.disable"
+
+
+class ConnectorsReconnectRequest(_ConnectorNameRequest):
+    """Drop and reopen a connector's session."""
+
+    type: Literal["connectors.reconnect"] = "connectors.reconnect"
+
+
+class ConnectorsToolPolicyRequest(_ConnectorNameRequest):
+    """Set one server tool to `auto`, `ask` or `off`, or back to its `default`."""
+
+    type: Literal["connectors.tool_policy"] = "connectors.tool_policy"
+    tool: str = Field(min_length=1)
+    setting: Literal["auto", "ask", "off", "default"]
+
+
+class ConnectorsTrustHintsRequest(_ConnectorNameRequest):
+    """Trust (or stop trusting) the server's read-only hints."""
+
+    type: Literal["connectors.trust_hints"] = "connectors.trust_hints"
+    trust: bool
+
+
 Request = Annotated[
     HelloRequest
     | TurnRequest
@@ -193,7 +263,15 @@ Request = Annotated[
     | SetModelRequest
     | SkillsListRequest
     | SkillsShowRequest
-    | TodoGetRequest,
+    | TodoGetRequest
+    | ConnectorsListRequest
+    | ConnectorsAddRequest
+    | ConnectorsRemoveRequest
+    | ConnectorsEnableRequest
+    | ConnectorsDisableRequest
+    | ConnectorsReconnectRequest
+    | ConnectorsToolPolicyRequest
+    | ConnectorsTrustHintsRequest,
     Field(discriminator="type"),
 ]
 
@@ -225,6 +303,10 @@ class ToolCallEvent(EventBase):
     name: str = Field(min_length=1)
     args_preview: str = ""
     summary: str = ""
+    connector: str | None = None
+    connector_title: str | None = None
+    remote_tool: str | None = None
+    reason: str | None = None
 
 
 class ToolResultEvent(EventBase):
@@ -251,6 +333,10 @@ class ApprovalEvent(EventBase):
     grant_scope: GrantScope | None = None
     digest: str = ""
     risky: list[str] = Field(default_factory=list)
+    connector: str | None = None
+    connector_title: str | None = None
+    remote_tool: str | None = None
+    reason: str | None = None
 
 
 class TodoUpdatedEvent(EventBase):
@@ -316,6 +402,63 @@ class DoneEvent(EventBase):
     max_steps: int | None = None
 
 
+class ConnectorToolInfo(BaseModel):
+    """One server tool as a door shows it."""
+
+    name: str
+    model_name: str
+    title: str | None = None
+    description: str = ""
+    read_only: bool = False
+    setting: ToolSetting | None = None
+    effective: ToolSetting = "ask"
+
+
+class ConnectorInfo(BaseModel):
+    """One connector as a door lists it."""
+
+    name: str
+    title: str
+    url: str
+    enabled: bool = True
+    status: ConnectorStatus = "disabled"
+    auth: ConnectorAuth = "none"
+    trust_read_only_hints: bool = True
+    tools: list[ConnectorToolInfo] = Field(default_factory=list)
+    error: str | None = None
+    retry_in_s: int | None = None
+
+
+class ConnectorsEvent(EventBase):
+    """Every connector, plus the `connectors.yaml` error when the file is invalid."""
+
+    kind: Literal["connectors"] = "connectors"
+    items: list[ConnectorInfo] = Field(default_factory=list)
+    error: str | None = None
+
+
+class ConnectorStatusEvent(EventBase):
+    """A connector's status changed."""
+
+    kind: Literal["connector.status"] = "connector.status"
+    name: str
+    status: ConnectorStatus
+    tools: int = 0
+    error: str | None = None
+    retry_in_s: int | None = None
+
+
+class ConnectorProbeEvent(EventBase):
+    """The dry-run result of `connectors.add`: what the server offers."""
+
+    kind: Literal["connector.probe"] = "connector.probe"
+    name: str
+    title: str
+    tools: list[ConnectorToolInfo] = Field(default_factory=list)
+    read: int = 0
+    write: int = 0
+
+
 class ErrorEvent(EventBase):
     """Terminal failure event ending a request."""
 
@@ -336,6 +479,9 @@ Event = Annotated[
     | NoticeEvent
     | HistoryEvent
     | StatusEvent
+    | ConnectorsEvent
+    | ConnectorStatusEvent
+    | ConnectorProbeEvent
     | DoneEvent
     | ErrorEvent,
     Field(discriminator="kind"),

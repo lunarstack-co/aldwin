@@ -339,6 +339,7 @@ def build_agent(
     on_retry: RetryCallback | None = None,
     session_id_getter: Callable[[], str] | None = None,
     host_flags: dict[str, bool] | None = None,
+    connectors_block: Callable[[], str] | None = None,
 ) -> Agent:
     """Assemble Aldwin's `Agent` from `config`, `secrets`, and `ask`."""
     import aldwin
@@ -442,6 +443,7 @@ def build_agent(
         root,
         config.limits,
         workspace=ws_for_context,
+        connectors_block=connectors_block,
     )
 
     agent = Agent(

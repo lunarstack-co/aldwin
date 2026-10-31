@@ -155,6 +155,7 @@ def build_system_message(
     os_name: str | None = None,
     persona_reader: Callable[[Path, int], str] | None = None,
     memory_builder: Callable[[Path, LimitsConfig], str] | None = None,
+    connectors_block: Callable[[], str] | None = None,
 ) -> str:
     """Assemble the complete system prompt content for one model call."""
     read_persona_fn = persona_reader or read_persona
@@ -181,6 +182,9 @@ def build_system_message(
     if memory_text:
         sections.append(memory_text)
     sections.append(env_text)
+    connectors_text = connectors_block() if connectors_block is not None else ""
+    if connectors_text:
+        sections.append(connectors_text)
     return "\n\n".join(sections)
 
 
@@ -192,13 +196,15 @@ def build_context(
     now_fn: Callable[[], datetime] | None = None,
     persona_reader: Callable[[Path, int], str] | None = None,
     memory_builder: Callable[[Path, LimitsConfig], str] | None = None,
+    connectors_block: Callable[[], str] | None = None,
 ) -> Callable[[list[ChatMessage]], list[ChatMessage]]:
     """Build the Agentling `context_manager` hook for `home` and `limits`.
 
     On every model call:
     1. Replaces `messages[0]` with Agentling's instructions (which already
        include the skill catalog) + `## Persona` + `<memory>` + `<environment>`
-       and the `<untrusted id="…">` prompt rule.
+       (+ `<connectors>` when any are enabled) and the `<untrusted id="…">`
+       prompt rule.
     2. Keeps only the last `limits.context_exchanges` user turns and everything
        after the earliest kept user turn.
     3. Extends the kept window backward if needed so an assistant tool call is
@@ -234,6 +240,7 @@ def build_context(
             os_name=cached_os,
             persona_reader=persona_reader,
             memory_builder=memory_builder,
+            connectors_block=connectors_block,
         )
         system_message = ChatMessage(role="system", content=sys_content)
         kept_conversation = _trim_conversation(

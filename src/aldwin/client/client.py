@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, Callable, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Sequence
 from pathlib import Path
-from typing import Final
+from typing import Final, Literal, TypeVar
 
 from aldwin.host.in_process import (
     BootstrapResult,
@@ -46,10 +46,23 @@ from aldwin.host.in_process import (
     whats_new_due,
 )
 from aldwin.protocol import (
+    HOST_EVENT_RE,
     MIN_SUPPORTED_VERSION,
     PROTOCOL_VERSION,
     ApprovalAnswer,
     ApproveRequest,
+    ConnectorAuth,
+    ConnectorProbeEvent,
+    ConnectorsAddRequest,
+    ConnectorsDisableRequest,
+    ConnectorsEnableRequest,
+    ConnectorsEvent,
+    ConnectorsListRequest,
+    ConnectorsReconnectRequest,
+    ConnectorsRemoveRequest,
+    ConnectorStatusEvent,
+    ConnectorsToolPolicyRequest,
+    ConnectorsTrustHintsRequest,
     DoneEvent,
     ErrorCode,
     ErrorEvent,
@@ -68,6 +81,8 @@ from aldwin.protocol import (
     TodoUpdatedEvent,
     TurnRequest,
 )
+
+_E = TypeVar("_E", bound=Event)
 
 
 def bootstrap(
@@ -366,6 +381,108 @@ class AldwinClient:
                     return body_event
         finally:
             self._queues.pop(request.id, None)
+
+    async def connectors_list(self) -> ConnectorsEvent:
+        """Every connector, plus the `connectors.yaml` error if the file is bad."""
+        return await self._one(ConnectorsListRequest(), ConnectorsEvent)
+
+    async def connectors_add(
+        self,
+        *,
+        url: str,
+        name: str | None = None,
+        title: str | None = None,
+        auth: ConnectorAuth = "none",
+        token: str | None = None,
+        token_env: str | None = None,
+        dry_run: bool = False,
+    ) -> ConnectorProbeEvent | ConnectorStatusEvent:
+        """Probe (`dry_run`) or add a connector.
+
+        Raises `ProtocolError` with `code="auth_required"` when the server needs
+        a token, or `code="connector"` with the message to show.
+        """
+        request = ConnectorsAddRequest(
+            url=url,
+            name=name,
+            title=title,
+            auth=auth,
+            token=token,
+            token_env=token_env,
+            dry_run=dry_run,
+        )
+        if dry_run:
+            return await self._one(request, ConnectorProbeEvent)
+        return await self._one(request, ConnectorStatusEvent)
+
+    async def connectors_enable(self, name: str) -> ConnectorStatusEvent:
+        return await self._one(ConnectorsEnableRequest(name=name), ConnectorStatusEvent)
+
+    async def connectors_disable(self, name: str) -> ConnectorStatusEvent:
+        return await self._one(
+            ConnectorsDisableRequest(name=name), ConnectorStatusEvent
+        )
+
+    async def connectors_remove(self, name: str) -> None:
+        await self._expect_done(ConnectorsRemoveRequest(name=name))
+
+    async def connectors_reconnect(self, name: str) -> None:
+        """Reconnect; the new status arrives on `host_events()`."""
+        await self._expect_done(ConnectorsReconnectRequest(name=name))
+
+    async def connectors_tool_policy(
+        self, name: str, tool: str, setting: Literal["auto", "ask", "off", "default"]
+    ) -> ConnectorsEvent:
+        request = ConnectorsToolPolicyRequest(name=name, tool=tool, setting=setting)
+        return await self._one(request, ConnectorsEvent)
+
+    async def connectors_trust_hints(self, name: str, trust: bool) -> ConnectorsEvent:
+        request = ConnectorsTrustHintsRequest(name=name, trust=trust)
+        return await self._one(request, ConnectorsEvent)
+
+    async def host_events(self) -> AsyncIterator[Event]:
+        """Events not tied to a request, such as a connector dropping or returning."""
+        self._ensure_reader()
+        queue: asyncio.Queue[Event | None] = asyncio.Queue()
+        self._queues[HOST_EVENT_RE] = queue
+        try:
+            while True:
+                event = await queue.get()
+                if event is None:
+                    return
+                yield event
+        finally:
+            self._queues.pop(HOST_EVENT_RE, None)
+
+    async def _one(self, request: Request, kind: type[_E]) -> _E:
+        """Send `request` and return its one `kind` event once it is `done`."""
+        self._ensure_reader()
+        queue: asyncio.Queue[Event | None] = asyncio.Queue()
+        self._queues[request.id] = queue
+        found: _E | None = None
+        try:
+            await self._transport.send(request)
+            while True:
+                event = await queue.get()
+                if event is None:
+                    raise ProtocolError(
+                        f"Transport closed before {request.type!r} completed."
+                    )
+                if isinstance(event, kind):
+                    found = event
+                elif isinstance(event, ErrorEvent):
+                    raise ProtocolError(event.message, code=event.code)
+                elif isinstance(event, DoneEvent):
+                    if found is None:
+                        raise ProtocolError(f"{request.type!r} sent no result.")
+                    return found
+        finally:
+            self._queues.pop(request.id, None)
+
+    async def _expect_done(self, request: Request) -> None:
+        terminal = await self._request_terminal(request)
+        if isinstance(terminal, ErrorEvent):
+            raise ProtocolError(terminal.message, code=terminal.code)
 
     def tools_summary(self) -> list[ToolInfo]:
         """Return built-in tools descriptors for `/tools`."""
