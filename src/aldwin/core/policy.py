@@ -49,7 +49,7 @@ from aldwin.core.workspace import (
 logger = logging.getLogger("aldwin.core.policy")
 
 Tier = Literal["auto", "diff", "ask"]
-Source = Literal["rule", "grant", "user", "no_approver", "error"]
+Source = Literal["rule", "grant", "user", "no_approver", "error", "hint"]
 DecisionKind = Literal["auto", "ask", "diff", "deny"]
 
 MAX_REASON_CHARS: Final[int] = 280
@@ -71,6 +71,11 @@ class ToolPolicy:
     writes: bool = False
     never_grant: str | None = None
     parallel_safe: bool = True
+    # Connector entries only; built-ins keep these defaults.
+    connector: str | None = None
+    auto_reason: str | None = None
+    session_grant: bool = False
+    untrusted_source: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +102,7 @@ class ApprovalRequest:
     grant_key: str | None
     risky: tuple[str, ...]
     digest: str
+    connector: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -665,6 +671,9 @@ class PolicySession:
         self.workspace: Workspace = workspace or Workspace(home=home)
         self.grants: set[str] = set()
         self.granted_folders: set[Path] = set()
+        # Every wrapped tool in this session, shared so batch approval sees
+        # connector tools added after the agent was built.
+        self.peer_tools: dict[str, Tool] = {}
         self.read_files: dict[Path, int] = {}
         self.turn_denials: int = 0
         self.on_circuit_breaker = on_circuit_breaker
@@ -689,7 +698,7 @@ class PolicySession:
         return self.workspace.mark_read(path, session=self)
 
     def add_grant(self, grant_key: str) -> None:
-        """Store a `file:<path>` or `folder:<path>` grant in memory."""
+        """Store a `file:`, `folder:` or `tool:` grant in memory (never saved)."""
         self.grants.add(grant_key)
         if grant_key.startswith("folder:"):
             folder_path = Path(grant_key.removeprefix("folder:"))
@@ -768,6 +777,28 @@ def verify_registered_tools(tools: Iterable[Tool]) -> None:
             raise PolicyError(
                 f'tool "{tool_obj.name}" has no policy entry in core/policy.py'
             )
+
+
+RUNTIME_PREFIX: Final[str] = "mcp__"
+
+
+def register_runtime_policy(policy: ToolPolicy) -> None:
+    """Add a connector tool's entry to `REGISTRY` at runtime.
+
+    Only `mcp__` names are accepted, so a runtime entry can never replace a
+    built-in tool's policy.
+    """
+    if not policy.name.startswith(RUNTIME_PREFIX):
+        raise PolicyError(
+            f'runtime policy "{policy.name}" must start with {RUNTIME_PREFIX!r}'
+        )
+    REGISTRY[policy.name] = policy
+
+
+def unregister_runtime_policy(name: str) -> None:
+    """Remove a connector tool's entry. Unknown names are ignored."""
+    if name.startswith(RUNTIME_PREFIX):
+        REGISTRY.pop(name, None)
 
 
 def sanitize_display_text(text: str) -> str:
@@ -1206,10 +1237,28 @@ def decide(
                 )
 
         if base_tier == "auto":
+            if policy.auto_reason is not None:
+                return Decision(kind="auto", source="hint", reason=policy.auto_reason)
             return Decision(
                 kind="auto",
                 source="rule",
                 reason="auto tier",
+            )
+
+        if base_tier == "ask" and policy.session_grant:
+            tool_grant_key = f"tool:{tool_name}"
+            if tool_grant_key in session.grants:
+                return Decision(
+                    kind="auto",
+                    source="grant",
+                    reason=f"granted tool: {tool_name}",
+                )
+            return Decision(
+                kind="ask",
+                source="rule",
+                reason=f"Approve {tool_name}",
+                grantable=True,
+                grant_key=tool_grant_key,
             )
 
         if base_tier == "diff":
@@ -1573,7 +1622,13 @@ class PolicyWrappedTool(Tool):
                 answer=answer,
                 source=source,
                 reason=reason,
+                connector=self._connector,
             )
+
+    @property
+    def _connector(self) -> str | None:
+        policy = REGISTRY.get(self.name)
+        return policy.connector if policy is not None else None
 
     async def evaluate_for_step(
         self,
@@ -1663,6 +1718,7 @@ class PolicyWrappedTool(Tool):
             grant_key=decision.grant_key if decision.grantable else None,
             risky=merged_risky,
             digest=digest,
+            connector=self._connector,
         )
         ans = await self._ask(req)
         if ans.answer == "yes_session" and decision.grantable and decision.grant_key:
@@ -1808,14 +1864,23 @@ class PolicyWrappedTool(Tool):
             del row_summary
             raise ToolCallError(final_msg) from exc
 
+        untrusted_source = policy.untrusted_source if policy is not None else None
         exec_started = time.monotonic()
-        if self._exec_timeout is not None and self._exec_timeout != float("inf"):
-            raw_output = await asyncio.wait_for(
-                self._inner.forward(**arguments),
-                timeout=self._exec_timeout,
-            )
-        else:
-            raw_output = await self._inner.forward(**arguments)
+        try:
+            if self._exec_timeout is not None and self._exec_timeout != float("inf"):
+                raw_output = await asyncio.wait_for(
+                    self._inner.forward(**arguments),
+                    timeout=self._exec_timeout,
+                )
+            else:
+                raw_output = await self._inner.forward(**arguments)
+        except ToolCallError as exc:
+            if untrusted_source is None:
+                raise
+            # Server-written error text is as untrusted as its output.
+            raise ToolCallError(
+                wrap_untrusted(str(exc), tool=untrusted_source)
+            ) from exc
         elapsed_ms = max(0, int((time.monotonic() - exec_started) * 1000))
 
         if isinstance(raw_output, ToolOutput):
@@ -1840,8 +1905,8 @@ class PolicyWrappedTool(Tool):
             raw_text,
             max_chars=self._raw_max_output_chars,
             call_id=call_id,
-            tool=self.name,
-            target=target_str,
+            tool=untrusted_source or self.name,
+            target="" if untrusted_source else target_str,
             summary=summary,
             home=self._session.home,
             wrap=should_wrap,
@@ -1914,6 +1979,7 @@ class PolicyWrappedTool(Tool):
             grant_key=decision.grant_key if decision.grantable else None,
             risky=reask_risky,
             digest=current_digest,
+            connector=self._connector,
         )
         ans = await self._ask(reask_req)
         if ans.answer == "no":
@@ -2114,8 +2180,14 @@ def wrap_tools_with_policy(
     session: PolicySession,
     ask: PolicyAskFn,
     approval_log: ApprovalLogger | None = None,
+    join: bool = False,
 ) -> list[Tool]:
-    """Verify `tools` against `REGISTRY` and wrap in `PolicyWrappedTool`."""
+    """Verify `tools` against `REGISTRY` and wrap in `PolicyWrappedTool`.
+
+    By default the tools form the session's whole peer set. With `join=True`
+    they are added to the existing set instead (connector tools arriving while a
+    session is live).
+    """
     tool_list = list(tools)
     verify_registered_tools(tool_list)
     wrapped_list: list[PolicyWrappedTool] = [
@@ -2129,7 +2201,10 @@ def wrap_tools_with_policy(
         )
         for tool_obj in tool_list
     ]
-    peer_map: dict[str, Tool] = {t.name: t for t in wrapped_list}
+    if not join:
+        session.peer_tools = {}
+    peer_map = session.peer_tools
+    peer_map.update({t.name: t for t in wrapped_list})
     for t in wrapped_list:
         t._peer_tools = peer_map
     return list(wrapped_list)
@@ -2158,6 +2233,7 @@ __all__ = [
     "PreApprovedOutcome",
     "REGISTRY",
     "RISKY_PATTERNS",
+    "RUNTIME_PREFIX",
     "SECRET_PATTERNS",
     "Source",
     "StepCallItem",
@@ -2181,9 +2257,11 @@ __all__ = [
     "match_hardline",
     "normalise_command",
     "redact_secrets",
+    "register_runtime_policy",
     "remember_tier",
     "sanitize_display_text",
     "trim_tool_output",
+    "unregister_runtime_policy",
     "verify_registered_tools",
     "wrap_tools_with_policy",
     "wrap_untrusted",
