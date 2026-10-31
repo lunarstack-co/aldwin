@@ -393,10 +393,7 @@ def test_aldwin_tmp_exception_and_git_and_build_files(
         assert d_build.kind == "diff", build_path
         assert d_build.grantable is False, build_path
         assert d_build.grant_key is None, build_path
-        assert is_build_file(
-            policy_session.workspace.root / build_path,
-            policy_session.workspace.root,
-        )
+        assert is_build_file(policy_session.workspace.root / build_path)
 
 
 def test_hardline_blocked_paths_nfkc_and_risky_commands(
