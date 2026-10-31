@@ -28,7 +28,9 @@ from aldwin.protocol import (
     ConnectorProbeEvent,
     ConnectorStatusEvent,
     DoneEvent,
+    ErrorEvent,
     ToolCallEvent,
+    ToolResultEvent,
 )
 
 FIXTURE_URL = "https://fixture.example/mcp"
@@ -324,3 +326,63 @@ async def test_turn_still_answers_when_a_connector_is_down(rig: Rig) -> None:
     rig.model.add_turns(final("still here"))
     events = await collect(rig.client.turn("hi"))
     assert isinstance(events[-1], DoneEvent)
+
+
+async def test_stop_host_mid_add_sends_one_terminal(
+    fake_model: FakeModel, aldwin_home: Path
+) -> None:
+    """Shutting down during an add still ends that request with exactly one error."""
+    fixture = build_fixture_server()
+    fixture.delay_connect(2.0)
+    transport = InProcessTransport()
+    host = AldwinHost(
+        transport,
+        agent_builder=lambda name, ask: build_agent(
+            AldwinConfig(model=name),
+            SecretsConfig(),
+            ask,
+            home=aldwin_home,
+            model=fake_model,
+        ),
+    )
+    host._connectors._connection_factory = _factory(fixture)
+    sent: list[Any] = []
+    original = transport.send_event
+
+    async def record(event: Any) -> None:
+        sent.append(event)
+        await original(event)
+
+    transport.send_event = record  # type: ignore[method-assign]
+    await host.start()
+    client = AldwinClient(transport.connect())
+    await client.connect()
+    adding = asyncio.create_task(client.connectors_add(url=FIXTURE_URL))
+    await asyncio.sleep(0.1)
+    await host.stop_host()
+    with pytest.raises(ProtocolError):
+        await adding
+    await client.close()
+
+    shutdown = [
+        e
+        for e in sent
+        if isinstance(e, ErrorEvent) and e.message == "Aldwin is shutting down."
+    ]
+    assert len(shutdown) == 1 and shutdown[0].code == "internal"
+    same_request = [
+        e
+        for e in sent
+        if isinstance(e, DoneEvent | ErrorEvent) and e.re == shutdown[0].re
+    ]
+    assert same_request == shutdown
+
+
+async def test_calling_a_disabled_connectors_tool_does_not_crash(rig: Rig) -> None:
+    await _add(rig)
+    await rig.client.connectors_disable("fixture")
+    rig.model.add_turns(tool_call("mcp__fixture__read_thing", {}), final("recovered"))
+    events = await collect(rig.client.turn("read it"))
+    assert isinstance(events[-1], DoneEvent)
+    results = [e for e in events if isinstance(e, ToolResultEvent)]
+    assert results and results[0].ok is False

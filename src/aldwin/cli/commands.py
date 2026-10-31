@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
-from typing import Final, Protocol
+from typing import Final, Protocol, cast
 
 from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.document import Document
@@ -39,6 +39,8 @@ SLASH_COMMANDS: Final[tuple[tuple[str, str], ...]] = (
     ("/workspace", "Show or switch the workspace folder"),
     ("/verbose", "Show or hide file previews for this session"),
     ("/tools", "List built-in tools (includes recall, remember, forget)"),
+    ("/connectors", "Add and manage connected apps (MCP servers)"),
+    ("/mcp", "Same as /connectors"),
     ("/exit", "Save and exit Aldwin"),
 )
 
@@ -381,6 +383,33 @@ def _render_tools(client: SlashCommandClient, renderer: ChatRenderer) -> None:
     console.print(grid)
 
 
+async def _render_connector_tools(client: object, renderer: ChatRenderer) -> None:
+    """The `/tools` Connectors section: each connector's tools and their setting."""
+    list_fn = getattr(client, "connectors_list", None)
+    if list_fn is None:
+        return
+    try:
+        listing = await list_fn()
+    except ProtocolError:
+        return
+    if not listing.items:
+        return
+    from aldwin.client import sanitize_display_text
+
+    console = renderer.console
+    console.print(Text("Connectors:", style="muted"))
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(style="fg", no_wrap=True)
+    grid.add_column(style="muted")
+    for info in listing.items:
+        grid.add_row(f"  {sanitize_display_text(info.title)}", info.status)
+        for tool in info.tools:
+            kind = "read" if tool.read_only else "write"
+            name = sanitize_display_text(tool.name)
+            grid.add_row(f"    • {name}", f"{kind} · {tool.effective}")
+    console.print(grid)
+
+
 async def handle_slash_command(
     line: str,
     *,
@@ -389,6 +418,7 @@ async def handle_slash_command(
     prompt_line: Callable[[str], Awaitable[str]],
     on_reset_tokens: Callable[[], None] | None = None,
     input_dev: Input | None = None,
+    prompt_secret: Callable[[str], Awaitable[str]] | None = None,
 ) -> bool:
     """Execute a `/command` line.
 
@@ -517,6 +547,26 @@ async def handle_slash_command(
 
     if cmd == "/tools":
         _render_tools(client, renderer)
+        await _render_connector_tools(client, renderer)
+        return False
+
+    if cmd in ("/connectors", "/mcp"):
+        if getattr(client, "connectors_list", None) is None:
+            renderer.console.print(Text("Connectors are unavailable.", style="warn"))
+            return False
+        from aldwin.cli.connectors_view import (
+            ConnectorsClient,
+            handle_connectors_command,
+        )
+        from aldwin.cli.secret_prompt import prompt_secret as default_secret
+
+        await handle_connectors_command(
+            client=cast(ConnectorsClient, client),
+            renderer=renderer,
+            prompt_line=prompt_line,
+            prompt_secret=prompt_secret or default_secret,
+            input_dev=input_dev,
+        )
         return False
 
     if cmd == "/exit":

@@ -1,4 +1,4 @@
-"""Connector tools as Agentling `Tool`s (`FR-6`)."""
+"""Connector tools as Agentling `Tool`s."""
 
 from __future__ import annotations
 

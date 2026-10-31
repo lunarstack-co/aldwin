@@ -225,6 +225,9 @@ def test_ci_workflow_runs_matrix_and_uploads_coverage() -> None:
     )
     assert any("pytest -m perf" in r for r in runs)
     assert any(
+        "--cov=aldwin.core.connectors" in r and "--cov-fail-under=90" in r for r in runs
+    ), "TC-80: the connectors package keeps its own 90% gate"
+    assert any(
         step.get("uses") == "actions/upload-artifact@v4"
         and step.get("with", {}).get("path") == "coverage.xml"
         for step in steps
@@ -296,3 +299,9 @@ def test_protocol_doc_lists_connector_messages() -> None:
         "HOST_EVENT_RE",
     ):
         assert f"`{name}`" in doc, name
+
+
+def test_manual_test_doc_has_connectors_section() -> None:
+    doc = (REPO_ROOT / "docs" / "manual-test.md").read_text(encoding="utf-8")
+    assert "### Step 14: Connectors (MCP)" in doc
+    assert "aldwin connectors add github" in doc

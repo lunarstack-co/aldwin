@@ -3,6 +3,26 @@
 Maps product requirements for 0.0.2 tools, policy, security, and demos to tests.
 Coverage floor: CI `--cov-fail-under=90` overall; aim ≥85% line on `core/`/`host/` and full branch coverage on `policy.py` / `workspace.py` (held by existing suites plus `tests/security/policy/`).
 
+## Connectors (ENG-478)
+
+| Area | Requirement | Primary tests |
+| -- | -- | -- |
+| Config, checks, fingerprint | FR-1, FR-3, FR-16 | `tests/connectors/test_config.py` |
+| Credentials | FR-2, NFR security | `tests/connectors/test_credentials.py`, `tests/security/test_connector_secrets.py` |
+| Naming | FR-7, TC-06 | `tests/connectors/test_naming.py`, `tests/connectors/test_manager.py` |
+| Transport, probe, error messages | FR-5, FR-26, TC-12 | `tests/connectors/test_connection.py` |
+| Tool adapter | FR-6, TC-07 | `tests/connectors/test_mcp_tool.py` |
+| Policy: hint, grants, untrusted, breaker | FR-8 to FR-12, TC-02 to TC-05 | `tests/connectors/test_connector_policy.py`, `tests/integration/test_connectors_host.py` |
+| Manager lifecycle, reconnect, list_changed, cross-process | FR-13 to FR-18, TC-01, TC-08, TC-09, TC-11 | `tests/connectors/test_manager.py` |
+| Agentling 0.1.1 fixes, session rebuilds | FR-19 to FR-21, TC-10 | `tests/test_policy.py`, `tests/integration/test_connectors_host.py` |
+| Context block | FR-22 | `tests/connectors/test_state.py`, `tests/integration/test_connectors_host.py` |
+| Protocol and client | FR-23, FR-24 | `tests/test_protocol.py`, `tests/integration/test_connectors_host.py` |
+| `/connectors`, rows, `/tools` | FR-25, FR-26, FR-28 | `tests/cli/test_connectors_view.py` |
+| Shell commands | FR-27, TC-14 | `tests/cli/test_connectors_cmd.py` |
+| Token never leaks | NFR security, TC-13 | `tests/security/test_connector_secrets.py` |
+| Budgets, architecture | NFR performance and architecture | `tests/perf/test_connectors_budget.py`, `tests/test_architecture.py` |
+| Manual run | TC-15 | `docs/manual-test.md` Step 14 |
+
 ## Security, policy, e2e, perf (this change)
 
 | Area | Requirement | Primary tests |

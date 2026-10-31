@@ -1,4 +1,4 @@
-"""One long-lived MCP session per connector (`FR-5`), plus the add-flow probe.
+"""One long-lived MCP session per connector, plus the dry-run probe for adding one.
 
 `mcp` is imported inside functions: importing it costs about 200 ms, which must
 not land on Aldwin's startup path. (`httpx2` is already loaded by Agentling.)

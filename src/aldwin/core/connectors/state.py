@@ -1,4 +1,4 @@
-"""Connector status as plain data, and the `<connectors>` context block (`FR-22`)."""
+"""Connector status as plain data, and the `<connectors>` system-message block."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from typing import Literal
 
 from aldwin.core.connectors.config import AuthKind, ConnectorConfig, ToolSetting
 from aldwin.core.connectors.mcp_tool import RemoteToolSpec
+from aldwin.core.connectors.naming import model_tool_name
 from aldwin.core.connectors.policy import connector_policy
 
 ConnectorStatus = Literal["connecting", "connected", "failed", "disabled"]
@@ -46,8 +47,6 @@ def tool_infos(
     config: ConnectorConfig, specs: Sequence[RemoteToolSpec]
 ) -> tuple[ConnectorToolInfo, ...]:
     """Describe each server tool as the user sees it: read or write, and its setting."""
-    from aldwin.core.connectors.naming import model_tool_name
-
     infos: list[ConnectorToolInfo] = []
     for spec in specs:
         policy = connector_policy(config, spec)

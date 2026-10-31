@@ -133,6 +133,15 @@ def main(
         raise typer.Exit(code=exit_code)
 
 
+def _add_connectors_app() -> None:
+    from aldwin.cli.connectors_cmd import connectors_app
+
+    app.add_typer(connectors_app, name="connectors")
+
+
+_add_connectors_app()
+
+
 @app.command("skills")
 def skills_cmd() -> None:
     """List default and user skills with source labels."""

@@ -7,6 +7,9 @@
 | `aldwin` | Open the interactive chat and resume the latest conversation |
 | `aldwin setup` | Configure or update API keys and the default model |
 | `aldwin skills` | List default and user skills from the terminal (same catalogue as `/skills`) |
+| `aldwin connectors list [--json]` | List connectors (connected apps over MCP) |
+| `aldwin connectors add <name> --url <url> [--token-env VAR]` | Check an MCP server and save it as a connector |
+| `aldwin connectors remove\|enable\|disable <name>` | Delete, turn on, or turn off a connector |
 | `aldwin uninstall` | Remove Aldwin (see [Uninstall](#uninstall)) |
 | `aldwin --plain` | Disable ANSI colours, live animations, and the terminal bell (also enabled by `NO_COLOR=1`) |
 | `aldwin --debug` | Enable `DEBUG`-level event logging in `~/.aldwin/logs/aldwin.log` |
@@ -30,7 +33,8 @@ Type `/` at the prompt for autocomplete:
 | `/todo` | Show the current multi-step task checklist for this session |
 | `/workspace` | Show the workspace folder, or switch it with `/workspace <path>` |
 | `/verbose` | Show or hide up to 12 preview lines under file-tool rows for this session |
-| `/tools` | List built-in tools and which ones require approval |
+| `/tools` | List built-in tools and which ones require approval, then each connector's tools |
+| `/connectors` (or `/mcp`) | Add a connector by URL, or manage one: its tools, reconnect, turn off, remove |
 | `/exit` | Save the current session and exit |
 
 ## Keyboard shortcuts

@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from pydantic import SecretStr
 
@@ -634,6 +634,11 @@ async def open_in_process_client(
 
 
 __all__ = [
+    "ConnectorCommandError",
+    "connectors_add_command",
+    "connectors_remove_command",
+    "connectors_set_enabled",
+    "connectors_summary",
     "BootstrapResult",
     "ClientBootstrapError",
     "ClientTransport",
@@ -674,3 +679,98 @@ __all__ = [
     "update_available_nudge",
     "whats_new_due",
 ]
+
+
+class ConnectorCommandError(Exception):
+    """A connector shell command failed with a message to show the user."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+def connectors_summary(home: Path | None = None) -> list[dict[str, Any]]:
+    """Every saved connector as plain data, for `aldwin connectors list`."""
+    from aldwin.host.connectors import ConnectorAdmin
+
+    admin = ConnectorAdmin(_resolve_home(home))
+    load = admin.load()
+    if load.error is not None:
+        raise ConnectorCommandError(load.error)
+    return [_connector_row(config) for config in load.entries.values()]
+
+
+async def connectors_add_command(
+    name: str,
+    url: str,
+    *,
+    token_env: str | None = None,
+    home: Path | None = None,
+) -> dict[str, Any]:
+    """Probe a server, then save it. Nothing is saved when the probe fails."""
+    from aldwin.core.connectors.config import ConnectorConfig, check_name, check_url
+    from aldwin.core.connectors.errors import ConnectorError
+    from aldwin.core.connectors.state import tool_infos
+    from aldwin.host.connectors import ConnectorAdmin
+
+    admin = ConnectorAdmin(_resolve_home(home))
+    try:
+        check_url(url)
+        check_name(name, admin.load().entries)
+        config = ConnectorConfig(
+            name=name,
+            url=url,
+            auth="bearer" if token_env else "none",
+            token_env=token_env,
+        )
+        specs = await admin.probe(config)
+        admin.save_new(config, None)
+    except ConnectorError as exc:
+        raise ConnectorCommandError(exc.message) from None
+    infos = tool_infos(config, specs)
+    row = _connector_row(config)
+    row["read"] = sum(1 for t in infos if t.effective == "auto")
+    row["write"] = sum(1 for t in infos if t.effective == "ask")
+    return row
+
+
+def connectors_remove_command(name: str, *, home: Path | None = None) -> None:
+    """Delete a connector and its saved token."""
+    from aldwin.core.connectors.errors import ConnectorError
+    from aldwin.host.connectors import ConnectorAdmin
+
+    try:
+        ConnectorAdmin(_resolve_home(home)).remove(name)
+    except ConnectorError as exc:
+        raise ConnectorCommandError(exc.message) from None
+
+
+def connectors_set_enabled(
+    name: str, enabled: bool, *, home: Path | None = None
+) -> dict[str, Any]:
+    """Turn a connector on or off; running Aldwins pick it up on their next turn."""
+    from aldwin.core.connectors.errors import ConnectorError
+    from aldwin.host.connectors import ConnectorAdmin
+
+    try:
+        config = ConnectorAdmin(_resolve_home(home)).update(name, enabled=enabled)
+    except ConnectorError as exc:
+        raise ConnectorCommandError(exc.message) from None
+    return _connector_row(config)
+
+
+def _connector_row(config: Any) -> dict[str, Any]:
+    return {
+        "name": config.name,
+        "title": config.display_title,
+        "url": config.url,
+        "enabled": config.enabled,
+        "auth": config.auth,
+        "token_env": config.token_env,
+        "trust_read_only_hints": config.trust_read_only_hints,
+        "tools": dict(config.tools),
+    }
+
+
+def _resolve_home(home: Path | None) -> Path:
+    return (home if home is not None else home_dir()).expanduser().resolve()

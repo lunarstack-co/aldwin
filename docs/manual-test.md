@@ -188,6 +188,30 @@ unset OPENAI_API_KEY TAVILY_API_KEY ALDWIN_HOME NO_COLOR
 
 ---
 
+### Step 14: Connectors (MCP): Context7 without auth, GitHub with a token
+
+Needs network access and, for GitHub, a token in `GITHUB_TOKEN` (a fine-grained token with read access to one repository is enough).
+
+1. In a chat, type `/connectors`. The list shows only `+ Add a connector…`. Pick it.
+2. At `Server URL:` paste `https://mcp.context7.com/mcp`. Accept the suggested name `context7`.
+3. Check the summary reads `Context7 has N tools: … read (run automatically), … write (ask first).`, then pick `Add Context7`.
+   - Expect: `Context7 connected. N tools are available now.`
+4. Ask: "Using Context7, find the docs for next.js routing."
+   - Expect: a tool row `⚙ Context7 · resolve-library-id …  auto · server says read-only` and no approval prompt.
+5. In a shell: `aldwin connectors add github --url https://api.githubcopilot.com/mcp/ --token-env GITHUB_TOKEN`.
+   - Expect: `Github added: …` and exit code `0` (`echo $?`).
+6. Open a **second** terminal and run `aldwin`. Type `/connectors`.
+   - Expect: both `Context7` and `Github` listed as `●` connected.
+7. Ask something that makes a GitHub write call (for example "create an issue titled test in <repo>").
+   - Expect: an approval panel `Github wants to run <tool>`, labelled `write · external`, with `No` selected and the choices `No`, `Yes`, `Yes for this session`. Answer `No`.
+8. `/connectors → Github → Tools`: set a write tool to `off`.
+   - Expect: Aldwin no longer offers that tool (ask it to use the tool; it says it can't).
+9. Turn the network off for a minute.
+   - Expect: a dim line `Github disconnected; retrying.` and, after the network returns, `Github reconnected.`
+10. `/connectors → Github → Remove → Yes`.
+    - Expect: `aldwin connectors list --json` shows only `context7`, and `~/.aldwin/credentials/mcp/` has no `github.json`.
+11. Check that no token was written anywhere else: `grep -r "$GITHUB_TOKEN" ~/.aldwin` prints nothing.
+
 ## 3. Manual test run log template (`FR-12`)
 
 Copy and paste the filled-in template below as a comment on Linear ticket **ENG-384** for each platform tested (`macOS` and `Linux`):

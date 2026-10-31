@@ -1,4 +1,4 @@
-"""Policy entries for connector tools (`FR-8` to `FR-11`)."""
+"""Policy entries for connector tools: read-only hints, per-tool settings, grants."""
 
 from __future__ import annotations
 

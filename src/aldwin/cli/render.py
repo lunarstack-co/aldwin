@@ -123,6 +123,13 @@ _HUMAN_TOOL_LABELS: Final[dict[str, str]] = {
 }
 
 
+def connector_row_label(event: ToolCallEvent) -> str:
+    """`⚙ <Connector> · <tool>` for a connector tool row."""
+    title = sanitize_display_text(event.connector_title or event.connector or "")
+    tool = sanitize_display_text(event.remote_tool or event.name)
+    return f"⚙ {title} · {tool}"
+
+
 def human_tool_label(tool_name: str) -> str:
     """Return a short human label for a tool identifier (never the raw id alone)."""
     return _HUMAN_TOOL_LABELS.get(tool_name, tool_name.replace("_", " "))
@@ -586,6 +593,8 @@ class ChatRenderer:
         if event.grantable:
             if event.grant_scope == "folder":
                 options.append(("yes_session", "Yes, for this folder this session"))
+            elif event.grant_scope == "tool":
+                options.append(("yes_session", "Yes for this session"))
             else:
                 options.append(("yes_session", "Yes, for this session"))
 
@@ -686,6 +695,8 @@ class TurnRenderer:
         self._token_estimate: int = 0
         self._tool_count: int = 0
         self._pending_tools: dict[str, tuple[str, str, str]] = {}
+        # Connector rows: call id -> (`⚙ <Title> · <tool>`, policy reason).
+        self._connector_rows: dict[str, tuple[str, str | None]] = {}
         self._printed_pending_ids: set[str] = set()
         self._markdown_buffer: str = ""
         self._has_printed_text: bool = False
@@ -967,6 +978,10 @@ class TurnRenderer:
 
         display_args = format_display_args(event.args_preview, tool_name=event.name)
         summary = sanitize_display_text(event.summary.strip())
+        if event.connector:
+            label = connector_row_label(event)
+            self._connector_rows[event.call_id] = (label, event.reason)
+            summary = f"{label}  {display_args}".rstrip()
         self._pending_tools[event.call_id] = (event.name, display_args, summary)
 
         if self.plain or not self.console.is_interactive:
@@ -1006,6 +1021,11 @@ class TurnRenderer:
         duration_ms = event.duration_ms
         summary = sanitize_display_text(clean_tool_summary(tool_name, event.summary))
         label = human_tool_label(tool_name)
+        connector_row = self._connector_rows.pop(event.call_id, None)
+        if connector_row is not None:
+            label, reason = connector_row
+            if reason and event.ok:
+                summary = f"auto · {reason}" + (f" · {summary}" if summary else "")
         include_args = bool(display_args) and not was_printed_pending
         # Hide sub-1s noise (`0.0s`) from the permanent row.
         show_duration = duration_ms >= 1000

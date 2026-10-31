@@ -191,7 +191,7 @@ async def test_slash_completer_and_inspect_commands() -> None:
     assert all(c.display_meta for c in all_items)
 
     m_items = list(completer.get_completions(Document("/m"), CompleteEvent()))
-    assert [c.text for c in m_items] == ["/model", "/memory"]
+    assert [c.text for c in m_items] == ["/model", "/memory", "/mcp"]
 
     none_items = list(completer.get_completions(Document("hello"), CompleteEvent()))
     assert none_items == []
