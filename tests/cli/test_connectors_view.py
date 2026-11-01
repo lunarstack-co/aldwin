@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import io
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Any
 
 import pytest
@@ -20,6 +20,9 @@ from aldwin.protocol import (
     ConnectorsEvent,
     ConnectorStatusEvent,
     ConnectorToolInfo,
+    DoneEvent,
+    ErrorEvent,
+    Event,
     ToolCallEvent,
     ToolResultEvent,
 )
@@ -106,6 +109,23 @@ class FakeConnectorsClient:
         self.calls.append(("trust_hints", name, trust))
         return ConnectorsEvent(re="r", items=self.items)
 
+    # Sign-in is faked in `test_connectors_sign_in.py`; these tests never reach it.
+    async def connectors_sign_in(self, **kw: Any) -> AsyncGenerator[Event, None]:
+        raise AssertionError(f"unexpected sign-in: {kw}")
+        yield  # pragma: no cover - makes this an async generator
+
+    async def connectors_logout(self, name: str) -> ConnectorStatusEvent:
+        raise AssertionError(f"unexpected sign-out: {name}")
+
+    async def connectors_auth_paste(self, name: str, redirect_url: str) -> None:
+        raise AssertionError(f"unexpected paste: {name}")
+
+    async def connectors_auth_token(self, name: str, token: str) -> None:
+        raise AssertionError(f"unexpected token: {name}")
+
+    async def stop(self) -> DoneEvent | ErrorEvent:
+        return DoneEvent(re="r", reason="ok")
+
 
 def _renderer() -> tuple[ChatRenderer, io.StringIO]:
     buf = io.StringIO()
@@ -158,8 +178,8 @@ async def test_list_shows_glyphs_summary_add_and_config_error() -> None:
     out = await _run(client, "")
     assert "connectors.yaml: connectors.x.enabled must be a boolean" in out
     assert "● Fixture  2 tools · reads auto, writes ask" in out
-    assert "✕ GitHub  failed: Couldn't reach x: down. (retrying in 30s)" in out
-    assert "○ Old  disabled" in out
+    assert "✕ GitHub   failed: Couldn't reach x: down. (retrying in 30s)" in out
+    assert "○ Old      disabled" in out
     assert "+ Add a connector…" in out
 
 
@@ -169,7 +189,7 @@ async def test_add_flow_happy_path() -> None:
     assert (
         "Fixture has 2 tools: 1 read (run automatically), 1 write (ask first)." in out
     )
-    assert "Fixture connected. 2 tools are available now." in out
+    assert "✓ Fixture connected.\n    2 tools are available now." in out
     probe, save = client.calls
     assert probe[1]["dry_run"] is True
     assert save[1] == {
@@ -184,7 +204,13 @@ async def test_add_flow_asks_for_a_token_on_401() -> None:
     client = FakeConnectorsClient()
     client.needs_token = True
     out = await _run(
-        client, "1", "https://fixture.example/mcp", "mine", "1", secret="canary-7f3a"
+        client,
+        "1",
+        "https://fixture.example/mcp",
+        "2",
+        "mine",
+        "1",
+        secret="canary-7f3a",
     )
     assert "fixture.example needs a token." in out
     assert "Mine connected." in out
@@ -221,7 +247,7 @@ async def test_manage_actions() -> None:
     await _run(client, "1", "2")  # Reconnect
     await _run(client, "1", "5")  # Trust hints off
     out = await _run(client, "1", "4", "2")  # Remove, Yes
-    assert "Remove Fixture and its saved token?" in out
+    assert "Remove Fixture and its saved sign-in?" in out
     await _run(client, "1", "1", "2", "3")  # Tools -> write_thing -> off
     assert client.calls == [
         ("disable", "fixture"),
@@ -232,7 +258,7 @@ async def test_manage_actions() -> None:
     ]
 
 
-async def test_mcp_is_an_alias_and_tools_lists_connectors() -> None:
+async def test_connectors_is_the_only_name_and_tools_lists_connectors() -> None:
     client = FakeConnectorsClient([_info()])
     renderer, buf = _renderer()
     for cmd in ("/connectors", "/mcp"):
@@ -242,7 +268,9 @@ async def test_mcp_is_an_alias_and_tools_lists_connectors() -> None:
             renderer=renderer,
             prompt_line=_answers(""),
         )
-    assert buf.getvalue().count("+ Add a connector…") == 2
+    out = buf.getvalue()
+    assert out.count("+ Add a connector…") == 1
+    assert "Unknown command. Type /help." in out
 
 
 def test_tool_row_shows_connector_and_reason() -> None:

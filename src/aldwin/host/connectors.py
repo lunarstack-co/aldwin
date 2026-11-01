@@ -1,23 +1,26 @@
 """Connector lifecycle in the host: start in the background, reconnect with backoff,
-follow tool-list changes, and re-add tools after every session rebuild.
+follow tool-list changes, and offer tools to the model on demand.
 
 `ConnectorAdmin` changes config and credentials. `ConnectorManager` keeps one
-live connection per enabled connector and keeps the session's tools in step.
+live connection per enabled connector, indexes every usable tool, and offers
+the model only `find_connector_tools` plus the tools it has loaded through it.
 """
 
 from __future__ import annotations
 
 import asyncio
+import itertools
 import logging
 import os
-from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from agentling import AgentSession, Tool
 
 from aldwin.core.approval_log import ApprovalLogger
+from aldwin.core.connectors.catalog import catalog_entry
 from aldwin.core.connectors.config import (
     ConnectorConfig,
     ConnectorsLoad,
@@ -32,6 +35,7 @@ from aldwin.core.connectors.config import (
 from aldwin.core.connectors.connection import (
     BearerAuth,
     McpConnection,
+    NeedsSignInCaller,
     build_auth,
     probe_connector,
 )
@@ -41,8 +45,24 @@ from aldwin.core.connectors.credentials import (
     bearer_credential,
     credential_identity,
 )
-from aldwin.core.connectors.errors import ConnectorConfigError, ConnectorError
-from aldwin.core.connectors.mcp_tool import McpTool, RemoteToolSpec
+from aldwin.core.connectors.errors import (
+    ConnectorAuthRejected,
+    ConnectorAuthRequired,
+    ConnectorConfigError,
+    ConnectorError,
+    NeedsSignIn,
+    SignInTimedOut,
+)
+from aldwin.core.connectors.index import IndexedTool, ToolIndex
+from aldwin.core.connectors.mcp_tool import McpTool, RemoteToolSpec, ToolCaller
+from aldwin.core.connectors.oauth_messages import (
+    DEFAULT_CLIENT_METADATA_URL,
+    SIGN_IN_TIMEOUT_S,
+    needs_sign_in,
+    needs_sign_in_notice,
+    no_sign_in_needed,
+    nothing_waiting,
+)
 from aldwin.core.connectors.policy import connector_policy
 from aldwin.core.connectors.state import (
     ConnectorSnapshot,
@@ -57,13 +77,52 @@ from aldwin.core.policy import (
     unregister_runtime_policy,
     wrap_tools_with_policy,
 )
+from aldwin.core.tools.connector_tools import (
+    LoadResult,
+    build_find_connector_tools_tool,
+)
 
 logger = logging.getLogger("aldwin.host.connectors")
 
 BACKOFF_START_S = 30.0
 BACKOFF_MAX_S = 600.0
 
+if TYPE_CHECKING:
+    # Type-only: importing sign-in at runtime would load `mcp` at startup.
+    from aldwin.core.connectors.sign_in import SignedIn, SignInWait
+
 ConnectionFactory = Callable[..., McpConnection]
+
+# OpenAI rejects a request that offers the model more than 128 tools; the
+# loaded-tool cap keeps every turn well under that.
+MAX_MODEL_TOOLS = 128
+DEFAULT_LOADED_CAP = 40
+_CONNECTOR_TOOL_PREFIX = "mcp__"
+AuthMode = Literal["browser", "paste", "token"]
+
+
+@dataclass(frozen=True)
+class AuthPrompt:
+    """A flow needs the user; the host turns this into a `connector.auth` event."""
+
+    name: str
+    title: str
+    mode: AuthMode
+    url: str | None
+    token_help_url: str | None
+    expires_in: int
+
+
+OnAuth = Callable[[AuthPrompt], Awaitable[None]]
+
+
+@dataclass
+class _AuthWait:
+    """One flow waiting for the user: a sign-in (browser or paste) or a token."""
+
+    mode: AuthMode
+    sign_in: SignInWait | None = None
+    token: asyncio.Future[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -81,6 +140,7 @@ class AddResult:
 
     config: ConnectorConfig
     snapshot: ConnectorSnapshot
+    notice: str | None = None
 
     @property
     def tool_count(self) -> int:
@@ -173,6 +233,10 @@ class ConnectorAdmin:
             save_connectors(self.home, entries)
             return updated
 
+    def sign_out(self, name: str) -> None:
+        """Forget a connector's sign-in (local only; nothing is revoked)."""
+        self.store.delete(name)
+
     def remove(self, name: str) -> None:
         """Delete the entry and its saved token."""
         with connectors_locked(self.home):
@@ -209,6 +273,7 @@ class _Live:
     tools: dict[str, Tool] = field(default_factory=dict)
     was_connected: bool = False
     lost: asyncio.Event = field(default_factory=asyncio.Event)
+    lost_error: ConnectorError | None = None
     supervisor: asyncio.Task[None] | None = None
 
 
@@ -229,6 +294,7 @@ class ConnectorManager:
         emit: Callable[[ConnectorEvent], Awaitable[None]],
         connection_factory: ConnectionFactory = default_connection_factory,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        loaded_cap: int = DEFAULT_LOADED_CAP,
     ) -> None:
         self.admin = admin
         self._policy_session = policy_session
@@ -242,6 +308,21 @@ class ConnectorManager:
         self._live: dict[str, _Live] = {}
         self._fingerprint: tuple[int, ...] | None = None
         self.load_error: str | None = None
+        self._cimd_url = DEFAULT_CLIENT_METADATA_URL
+        self._auth_waits: dict[str, _AuthWait] = {}
+        self._turn_notices: list[str] = []
+        self._index = ToolIndex()
+        self._loaded_cap = loaded_cap
+        # Loaded tools by model name: the connector and the tick last used at.
+        self._loaded: dict[str, tuple[str, int]] = {}
+        self._tick = itertools.count()
+        [self._finder] = wrap_tools_with_policy(
+            [build_find_connector_tools_tool(index=self._index, load=self.load)],
+            session=policy_session,
+            ask=ask,
+            approval_log=approval_log,
+            join=True,
+        )
 
     # --- lifecycle ----------------------------------------------------------
 
@@ -249,19 +330,23 @@ class ConnectorManager:
         """Start every enabled connector in the background and return at once."""
         load = self.admin.load()
         self.load_error = load.error
+        self._cimd_url = load.oauth_client_metadata_url
         self._configs = dict(load.entries)
         self._fingerprint = connectors_fingerprint(self.admin.home)
         for config in self._configs.values():
             if config.enabled:
-                self._start_live(config)
+                await self._begin(config)
 
     def attach(self, session: AgentSession) -> None:
-        """Use `session` from now on and add every connector tool to it."""
+        """Use `session` from now on; the loaded set carries over to it."""
         self._session = session
-        tools = [t for live in self._live.values() for t in live.tools.values()]
-        self._join_peers(tools)
-        if tools:
-            session.add_tools(tools, replace=True)
+        self._join_peers(
+            [
+                self._finder,
+                *(t for live in self._live.values() for t in live.tools.values()),
+            ]
+        )
+        self._offer()
 
     async def reconcile(self) -> None:
         """Pick up changes another process made; cheap when nothing did."""
@@ -273,6 +358,7 @@ class ConnectorManager:
         self.load_error = load.error
         if load.error is not None:
             return  # keep what runs until the file is valid again
+        self._cimd_url = load.oauth_client_metadata_url
         old, new = self._configs, dict(load.entries)
         self._configs = new
         for name in old.keys() - new.keys():
@@ -283,12 +369,12 @@ class ConnectorManager:
                 await self._stop_live(name)
                 continue
             if live is None:
-                self._start_live(config)
+                await self._begin(config)
                 continue
             identity = credential_identity(self.admin.store.get(name))
             if config != live.config or identity != live.identity:
                 await self._stop_live(name)
-                self._start_live(config)
+                await self._begin(config)
 
     async def aclose(self, *, timeout: float = 5.0) -> None:
         """Stop every connector; a session that hangs past `timeout` is abandoned."""
@@ -301,36 +387,311 @@ class ConnectorManager:
     # --- requests -----------------------------------------------------------
 
     async def add(
-        self, config: ConnectorConfig, *, token: str | None, dry_run: bool
+        self,
+        config: ConnectorConfig,
+        *,
+        token: str | None,
+        dry_run: bool,
+        no_browser: bool = False,
+        on_auth: OnAuth | None = None,
     ) -> AddResult:
-        """Probe (`dry_run`) or connect and save. Nothing is saved on failure."""
+        """Probe (`dry_run`) or connect and save. Nothing is saved on failure.
+
+        An `oauth` connector signs in through the browser; a `bearer` one with no
+        token asks for it through `on_auth` (token mode).
+        """
         self.admin.check_new(config)
+        if config.auth == "oauth":
+            if dry_run:
+                raise ConnectorConfigError(
+                    f"{config.display_title} signs in through the browser, so it "
+                    "can't be checked before adding. Add it to sign in."
+                )
+            return await self._add_with_sign_in(config, no_browser, on_auth)
         if dry_run:
             specs = await self._probe(config, token)
             return AddResult(config, self._snapshot_of(config, "connected", specs))
 
         live = _Live(config=config)
         await self._emit(ConnectorEvent("status", self._snapshot(live)))
-        connection = self._new_connection(live, self.admin.auth_for(config, token))
-        specs = await connection.open()
+        while True:
+            connection = self._new_connection(live, self.admin.auth_for(config, token))
+            try:
+                specs = await connection.open()
+                break
+            except ConnectorAuthRequired:
+                if on_auth is None or token is not None or config.auth != "bearer":
+                    raise
+                token = await self._ask_token(config, on_auth)
         try:
             self.admin.save_new(config, token)
         except ConnectorError:
             await connection.close()
             raise
-        self._configs[config.name] = config
-        self._fingerprint = connectors_fingerprint(self.admin.home)
-        live.identity = credential_identity(self.admin.store.get(config.name))
-        self._live[config.name] = live
-        await self._on_connected(live, connection, specs)
-        live.supervisor = asyncio.create_task(self._supervise(live))
+        await self._adopt(live, connection, specs)
         return AddResult(config, self._snapshot(live))
+
+    async def _add_with_sign_in(
+        self, config: ConnectorConfig, no_browser: bool, on_auth: OnAuth | None
+    ) -> AddResult:
+        if on_auth is None:
+            raise NeedsSignIn(needs_sign_in(config.display_title))
+        live = _Live(config=config)
+        await self._emit(ConnectorEvent("status", self._snapshot(live)))
+        signed = await self._sign_in(live, no_browser, on_auth)
+        if signed is None:
+            plain = config.model_copy(update={"auth": "none", "oauth": None})
+            added = await self.add(plain, token=None, dry_run=False)
+            return replace(added, notice=no_sign_in_needed(config.display_title))
+        try:
+            self.admin.save_new(config, None)
+        except ConnectorError:
+            await signed.connection.close()
+            self.admin.sign_out(config.name)
+            raise
+        await self._adopt(live, signed.connection, signed.specs)
+        return AddResult(config, self._snapshot(live))
+
+    async def _adopt(
+        self, live: _Live, connection: McpConnection, specs: list[RemoteToolSpec]
+    ) -> None:
+        """Make a freshly connected, freshly saved connector live."""
+        name = live.config.name
+        self._configs[name] = live.config
+        self._fingerprint = connectors_fingerprint(self.admin.home)
+        live.identity = credential_identity(self.admin.store.get(name))
+        self._live[name] = live
+        await self._on_connected(live, connection, specs)
+        self._spawn_supervisor(live)
+
+    async def login(
+        self, name: str, *, no_browser: bool = False, on_auth: OnAuth
+    ) -> ConnectorSnapshot:
+        """Sign an `oauth` connector in again."""
+        config = self._require(name)
+        if config.auth != "oauth":
+            raise ConnectorConfigError(
+                f"{config.display_title} doesn't use browser sign-in."
+            )
+        if not config.enabled:
+            raise ConnectorConfigError(
+                f"{config.display_title} is turned off. Enable it first."
+            )
+        previous = self._live.get(name)
+        specs = list(previous.specs) if previous is not None else []
+        await self._stop_live(name)
+        live = _Live(config=config, specs=specs)
+        self._live[name] = live
+        await self._emit(ConnectorEvent("status", self._snapshot(live)))
+        try:
+            signed = await self._sign_in(live, no_browser, on_auth)
+        except BaseException:
+            if self._live.get(name) is live:
+                await self._to_needs_auth(live, notice=False)
+            raise
+        if signed is None:
+            config = self.admin.update(name, auth="none")
+            self._configs[name] = config
+            await self._stop_live(name)
+            return self._snapshot(await self._connect_now(config))
+        live.identity = credential_identity(self.admin.store.get(name))
+        self._fingerprint = connectors_fingerprint(self.admin.home)
+        await self._on_connected(live, signed.connection, signed.specs)
+        self._spawn_supervisor(live)
+        return self._snapshot(live)
+
+    async def sign_out(self, name: str) -> ConnectorSnapshot:
+        """Delete the sign-in; the tools stay and say to sign in again."""
+        config = self._require(name)
+        if config.auth != "oauth":
+            raise ConnectorConfigError(
+                f"{config.display_title} doesn't use browser sign-in."
+            )
+        previous = self._live.get(name)
+        specs = list(previous.specs) if previous is not None else []
+        await self._stop_live(name)
+        self.admin.sign_out(name)
+        self._fingerprint = connectors_fingerprint(self.admin.home)
+        live = _Live(config=config, specs=specs)
+        self._live[name] = live
+        await self._to_needs_auth(live, notice=False)
+        return self._snapshot(live)
+
+    def auth_paste(self, name: str, redirect_url: str) -> None:
+        """Hand a pasted address to a waiting sign-in."""
+        wait = self._auth_waits.get(name)
+        if wait is None or wait.sign_in is None:
+            raise ConnectorConfigError(nothing_waiting(name))
+        wait.sign_in.paste(redirect_url)
+
+    def auth_token(self, name: str, token: str) -> None:
+        """Hand a token to a flow waiting in token mode."""
+        wait = self._auth_waits.get(name)
+        if wait is None or wait.token is None or wait.token.done():
+            raise ConnectorConfigError(nothing_waiting(name))
+        wait.token.set_result(token)
+
+    def waiting_for_user(self) -> set[str]:
+        """Connectors whose flow is waiting on the user (browser, paste or token)."""
+        return set(self._auth_waits)
+
+    def take_turn_notices(self) -> list[str]:
+        """Each connector that newly needs sign-in, once."""
+        notices, self._turn_notices = self._turn_notices, []
+        return notices
+
+    # --- tools on demand ----------------------------------------------------
+
+    def load(self, tools: Sequence[IndexedTool]) -> LoadResult:
+        """Offer `tools` from the model's next call on; `find_connector_tools`
+        calls this. Over the cap, the least recently used loaded tools go first.
+        """
+        available = self._available()
+        new: list[IndexedTool] = []
+        for tool in tools:
+            if tool.model_name not in available:
+                continue
+            if tool.model_name in self._loaded:
+                self.note_tool_used(tool.model_name)
+            else:
+                new.append(tool)
+        cap = self._cap()
+        new, skipped = new[:cap], new[cap:]
+        evicted = self._evict(keep=cap - len(new))
+        for tool in new:
+            self._loaded[tool.model_name] = (tool.connector, next(self._tick))
+        self._offer()
+        loaded = [t for t in tools if t.model_name in self._loaded]
+        return LoadResult(loaded=loaded, evicted=evicted, skipped=skipped)
+
+    def note_tool_used(self, model_name: str) -> None:
+        """Keep a tool the model just called away from the eviction end."""
+        entry = self._loaded.get(model_name)
+        if entry is not None:
+            self._loaded[model_name] = (entry[0], next(self._tick))
+
+    def reset_loaded(self) -> None:
+        """A new conversation starts with no connector tools loaded."""
+        self._loaded.clear()
+        self._offer()
+
+    def _available(self) -> dict[str, Tool]:
+        return {n: t for live in self._live.values() for n, t in live.tools.items()}
+
+    def _cap(self) -> int:
+        """How many connector tools may be loaded: the configured cap, or less
+        when the built-ins leave less room under the model's limit."""
+        session = self._session
+        others = 0
+        if session is not None:
+            others = sum(
+                1 for n in session.tools if not n.startswith(_CONNECTOR_TOOL_PREFIX)
+            )
+            if self._finder.name not in session.tools:
+                others += 1
+        return max(0, min(self._loaded_cap, MAX_MODEL_TOOLS - others))
+
+    def _evict(self, *, keep: int) -> list[str]:
+        evicted: list[str] = []
+        while len(self._loaded) > keep:
+            oldest = min(self._loaded, key=lambda name: self._loaded[name][1])
+            del self._loaded[oldest]
+            evicted.append(oldest)
+        return evicted
+
+    def _offer(self) -> None:
+        """Make the session's connector tools exactly the finder plus the loaded set.
+
+        A loaded tool keeps its place while its connector is reconnecting, so a
+        dropped connection does not make the model find everything again.
+        """
+        session = self._session
+        if session is None:
+            return
+        available = self._available()
+        for name, (connector, _tick) in list(self._loaded.items()):
+            live = self._live.get(connector)
+            reconnecting = live is not None and not live.tools
+            if name not in available and not reconnecting:
+                del self._loaded[name]
+        self._evict(keep=self._cap())
+        wanted = {name: available[name] for name in self._loaded if name in available}
+        wanted[self._finder.name] = self._finder
+        stale = [
+            n
+            for n in session.tools
+            if n.startswith(_CONNECTOR_TOOL_PREFIX) and n not in wanted
+        ]
+        session.add_tools(wanted.values(), replace=True)
+        if stale:
+            session.remove_tools(stale)
+
+    async def _sign_in(
+        self, live: _Live, no_browser: bool, on_auth: OnAuth
+    ) -> SignedIn | None:
+        from aldwin.core.connectors.sign_in import SignInWait, sign_in
+
+        config = live.config
+        mode: AuthMode = "paste" if no_browser else "browser"
+        wait = SignInWait(config.name)
+        self._auth_waits[config.name] = _AuthWait(mode, sign_in=wait)
+
+        async def show(url: str) -> None:
+            await on_auth(
+                AuthPrompt(
+                    name=config.name,
+                    title=config.display_title,
+                    mode=mode,
+                    url=url,
+                    token_help_url=None,
+                    expires_in=int(SIGN_IN_TIMEOUT_S),
+                )
+            )
+
+        try:
+            return await sign_in(
+                config,
+                self.admin.store,
+                cimd_url=self._cimd_url,
+                no_browser=no_browser,
+                wait=wait,
+                on_auth_url=show,
+                connect=lambda provider: self._new_connection(live, provider),
+            )
+        finally:
+            self._auth_waits.pop(config.name, None)
+
+    async def _ask_token(self, config: ConnectorConfig, on_auth: OnAuth) -> str:
+        """Token mode: ask the user for a token and wait for `auth_token`."""
+        future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+        self._auth_waits[config.name] = _AuthWait("token", token=future)
+        entry = catalog_entry(config.name)
+        try:
+            await on_auth(
+                AuthPrompt(
+                    name=config.name,
+                    title=config.display_title,
+                    mode="token",
+                    url=None,
+                    token_help_url=entry.token_help_url if entry else None,
+                    expires_in=int(SIGN_IN_TIMEOUT_S),
+                )
+            )
+            try:
+                async with asyncio.timeout(SIGN_IN_TIMEOUT_S):
+                    return await future
+            except TimeoutError:
+                raise SignInTimedOut() from None
+        finally:
+            self._auth_waits.pop(config.name, None)
 
     async def enable(self, name: str) -> ConnectorSnapshot:
         config = self.admin.update(name, enabled=True)
         self._configs[name] = config
         self._fingerprint = connectors_fingerprint(self.admin.home)
         await self._stop_live(name)
+        if self._needs_sign_in_at_start(config):
+            return self._snapshot(await self._begin(config))
         live = await self._connect_now(config)
         return self._snapshot(live)
 
@@ -398,6 +759,18 @@ class ConnectorManager:
             raise ConnectorConfigError(f"No connector named {name}.")
         return self._configs[name]
 
+    def _needs_sign_in_at_start(self, config: ConnectorConfig) -> bool:
+        return config.auth == "oauth" and self.admin.store.get(config.name) is None
+
+    async def _begin(self, config: ConnectorConfig) -> _Live:
+        """Start a connector; an `oauth` one never signed in waits for the user."""
+        if self._needs_sign_in_at_start(config):
+            live = _Live(config=config)
+            self._live[config.name] = live
+            await self._to_needs_auth(live, notice=True)
+            return live
+        return self._start_live(config)
+
     def _start_live(self, config: ConnectorConfig) -> _Live:
         live = _Live(
             config=config,
@@ -406,6 +779,27 @@ class ConnectorManager:
         self._live[config.name] = live
         self._spawn_supervisor(live)
         return live
+
+    def _needs_person(self, live: _Live, error: ConnectorError | None) -> bool:
+        if isinstance(error, NeedsSignIn):
+            return True
+        return live.config.auth == "oauth" and isinstance(
+            error, ConnectorAuthRejected | ConnectorAuthRequired
+        )
+
+    async def _to_needs_auth(self, live: _Live, *, notice: bool) -> None:
+        """Stop connecting: only the user can fix this. The tools stay and say so."""
+        connection, live.connection = live.connection, None
+        if connection is not None:
+            await connection.close()
+        live.status, live.error, live.retry_in_s = "needs_auth", None, None
+        if live.specs:
+            self._apply(
+                live, live.specs, caller=NeedsSignInCaller(live.config.display_title)
+            )
+        if notice:
+            self._turn_notices.append(needs_sign_in_notice(live.config.display_title))
+        await self._emit(ConnectorEvent("status", self._snapshot(live)))
 
     async def _connect_now(self, config: ConnectorConfig) -> _Live:
         """Try to connect now; if that fails, keep retrying in the background."""
@@ -450,12 +844,18 @@ class ConnectorManager:
         while self._tracked(live):
             if live.connection is None:
                 if not await self._attempt(live, retry_in=delay):
+                    if live.status == "needs_auth":
+                        return
                     await self._sleep(delay)
                     delay = min(delay * 2, BACKOFF_MAX_S)
                     continue
                 delay = BACKOFF_START_S
             await live.lost.wait()
             live.lost.clear()
+            if self._needs_person(live, live.lost_error):
+                self._remove_tools(live)
+                await self._to_needs_auth(live, notice=True)
+                return
             await self._drop(live, retry_in=delay)
             await self._emit(
                 ConnectorEvent(
@@ -479,6 +879,9 @@ class ConnectorManager:
                 return False
         except ConnectorError as exc:
             if not self._tracked(live):
+                return False
+            if self._needs_person(live, exc):
+                await self._to_needs_auth(live, notice=True)
                 return False
             live.status, live.error, live.retry_in_s = (
                 "failed",
@@ -530,6 +933,7 @@ class ConnectorManager:
         async def on_lost(error: ConnectorError) -> None:
             if holder and live.connection is holder[0]:
                 live.error = error.message
+                live.lost_error = error
                 live.lost.set()
 
         async def on_tools_changed() -> None:
@@ -555,11 +959,19 @@ class ConnectorManager:
         holder.append(connection)
         return connection
 
-    def _apply(self, live: _Live, specs: list[RemoteToolSpec]) -> None:
+    def _apply(
+        self,
+        live: _Live,
+        specs: list[RemoteToolSpec],
+        *,
+        caller: ToolCaller | None = None,
+    ) -> None:
         """Make the session's tools match `specs` for this connector."""
         live.specs = list(specs)
-        assert live.connection is not None
+        connection: ToolCaller | None = caller or live.connection
+        assert connection is not None
         fresh: dict[str, Tool] = {}
+        indexed: list[IndexedTool] = []
         for spec in specs:
             policy = connector_policy(live.config, spec)
             if policy is None:
@@ -576,8 +988,18 @@ class ConnectorManager:
             fresh[policy.name] = McpTool(
                 connector=live.config,
                 spec=spec,
-                connection=live.connection,
+                connection=connection,
                 tmp_dir=self.admin.home / "tmp",
+            )
+            indexed.append(
+                IndexedTool(
+                    connector=live.config.name,
+                    title=live.config.display_title,
+                    name=spec.name,
+                    model_name=policy.name,
+                    description=spec.description,
+                    auto=policy.tier == "auto",
+                )
             )
         wrapped = wrap_tools_with_policy(
             fresh.values(),
@@ -588,10 +1010,8 @@ class ConnectorManager:
         )
         gone = set(live.tools) - set(fresh)
         live.tools = {t.name: t for t in wrapped}
-        if self._session is not None:
-            self._session.add_tools(wrapped, replace=True)
-            present = [n for n in gone if n in self._session.tools]
-            self._session.remove_tools(present)
+        self._index.replace(live.config.name, indexed)
+        self._offer()
         self._forget(gone)
 
     def _reconfigured(self, config: ConnectorConfig) -> None:
@@ -630,9 +1050,8 @@ class ConnectorManager:
     def _remove_tools(self, live: _Live) -> None:
         names = set(live.tools)
         live.tools = {}
-        if self._session is not None:
-            present = [n for n in names if n in self._session.tools]
-            self._session.remove_tools(present)
+        self._index.drop(live.config.name)
+        self._offer()
         self._forget(names)
 
     def _forget(self, names: set[str]) -> None:

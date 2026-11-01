@@ -26,6 +26,7 @@ from aldwin.core.connectors.errors import (
     ConnectorNotMcp,
     ConnectorSessionLost,
     ConnectorUnreachable,
+    SignInError,
 )
 from aldwin.core.connectors.mcp_tool import RemoteToolSpec, ToolCallOutcome
 
@@ -63,6 +64,10 @@ def build_auth(
     config: ConnectorConfig, store: CredentialStore, environ: Mapping[str, str]
 ) -> httpx2.Auth | None:
     """The auth to send for `config`, or `None` when it has no token."""
+    if config.auth == "oauth":
+        from aldwin.core.connectors.oauth import background_provider
+
+        return background_provider(config, store)
     token = resolve_bearer_token(config, store, environ)
     if token is None:
         return None
@@ -284,12 +289,24 @@ class McpConnection:
 
     def _classify(self, exc: BaseException) -> ConnectorError:
         """Turn whatever the SDK raised into one user-facing error."""
+        from mcp.client.auth.exceptions import OAuthFlowError, OAuthRegistrationError
         from mcp.shared.exceptions import MCPError
+
+        from aldwin.core.connectors.oauth_messages import (
+            issuer_mismatch,
+            registration_refused,
+        )
 
         leaves = list(_leaves(exc))
         for leaf in leaves:
             if isinstance(leaf, ConnectorError):
                 return leaf
+        title = self.config.display_title
+        for leaf in leaves:
+            if isinstance(leaf, OAuthRegistrationError):
+                return SignInError(registration_refused(title, self.config.name))
+            if isinstance(leaf, OAuthFlowError):
+                return SignInError(issuer_mismatch(title))
         status, content_type = self._last_response or (0, "")
         if status == 401:
             if self._auth is not None:
@@ -407,3 +424,23 @@ def _leaves(exc: BaseException) -> list[BaseException]:
     if isinstance(exc, BaseExceptionGroup):
         return [leaf for sub in exc.exceptions for leaf in _leaves(sub)]
     return [exc]
+
+
+class NeedsSignInCaller:
+    """Stands in for a connection while a connector needs sign-in.
+
+    The tools stay registered, so the model gets a clear sentence instead of an
+    unknown-tool error, and nothing touches the network.
+    """
+
+    def __init__(self, title: str) -> None:
+        self._title = title
+
+    async def call_tool(
+        self, name: str, arguments: dict[str, Any], *, timeout: float = CALL_TIMEOUT_S
+    ) -> ToolCallOutcome:
+        from aldwin.core.connectors.oauth_messages import needs_sign_in_tool_error
+
+        return ToolCallOutcome(
+            text_parts=[needs_sign_in_tool_error(self._title)], is_error=True
+        )

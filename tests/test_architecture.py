@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import ast
 import re
+import subprocess
+import sys
 import tomllib
 from collections.abc import Sequence
 from pathlib import Path
@@ -119,6 +121,21 @@ def test_mcp_guard_catches_planted_import(tmp_path: Path) -> None:
 
     violations = mcp_import_violations(tmp_path / "aldwin")
     assert violations == [f"{host / 'runner.py'}: forbidden import 'mcp'"]
+
+
+def test_startup_never_loads_mcp_or_sign_in() -> None:
+    """Sign-in code and the `mcp` SDK load only when a connector needs them."""
+    probe = (
+        "import sys, aldwin.cli.main, aldwin.host.runner, aldwin.client\n"
+        "lazy = ('mcp', 'mcp_types', 'aldwin.core.connectors.oauth',\n"
+        "        'aldwin.core.connectors.sign_in',\n"
+        "        'aldwin.core.connectors.token_storage')\n"
+        "print(sorted(m for m in sys.modules if m in lazy or m.startswith('mcp.')))\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+    )
+    assert result.stdout.strip() == "[]"
 
 
 def test_connector_dependencies_pinned() -> None:
@@ -297,6 +314,12 @@ def test_protocol_doc_lists_connector_messages() -> None:
         "connector.probe",
         "auth_required",
         "HOST_EVENT_RE",
+        "connectors.login",
+        "connectors.logout",
+        "connectors.auth_paste",
+        "connectors.auth_token",
+        "connector.auth",
+        "needs_auth",
     ):
         assert f"`{name}`" in doc, name
 
@@ -305,3 +328,5 @@ def test_manual_test_doc_has_connectors_section() -> None:
     doc = (REPO_ROOT / "docs" / "manual-test.md").read_text(encoding="utf-8")
     assert "### Step 14: Connectors (MCP)" in doc
     assert "aldwin connectors add github" in doc
+    assert "### Step 15: Connectors: sign in with your browser" in doc
+    assert "aldwin connectors login linear --paste" in doc

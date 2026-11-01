@@ -45,3 +45,25 @@ class ConnectorAuthRejected(ConnectorError):
 
 class ConnectorSessionLost(ConnectorError):
     """An open session ended: a transport error or `Session terminated`."""
+
+
+class SignInError(ConnectorError):
+    """Browser sign-in could not finish. The message ends with what to do next."""
+
+
+class NeedsSignIn(SignInError):
+    """Only a person can fix this (a 401 that one refresh did not cure)."""
+
+
+class SignInCancelled(SignInError):
+    """The user stopped the sign-in."""
+
+    def __init__(self) -> None:
+        super().__init__("Sign-in cancelled.")
+
+
+class SignInTimedOut(SignInError):
+    """Nobody finished signing in within the wait."""
+
+    def __init__(self) -> None:
+        super().__init__("Sign-in timed out.")

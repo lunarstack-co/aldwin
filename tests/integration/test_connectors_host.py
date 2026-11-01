@@ -95,6 +95,17 @@ def _log_lines(home: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text("utf-8").splitlines()]
 
 
+def _find(*names: str) -> Any:
+    """A model turn that loads fixture tools, as the model must before using them."""
+    return tool_call(
+        "find_connector_tools", {"connector": "fixture", "names": list(names)}
+    )
+
+
+def _loaded(host: AldwinHost) -> set[str]:
+    return {n for n in host._agent_session.tools if n.startswith("mcp__")}
+
+
 # --- turns ------------------------------------------------------------------
 
 
@@ -104,11 +115,14 @@ async def test_read_only_tool_runs_auto_with_hint_reason(
     """`TC-02`."""
     status = await _add(rig)
     assert (status.status, status.tools) == ("connected", 5)
-    rig.model.add_turns(tool_call("mcp__fixture__read_thing", {}), final("done"))
+    rig.model.add_turns(
+        _find("read_thing"), tool_call("mcp__fixture__read_thing", {}), final("done")
+    )
     events = await collect(rig.client.turn("read it"))
 
     assert not any(isinstance(e, ApprovalEvent) for e in events)
-    [row] = [e for e in events if isinstance(e, ToolCallEvent)]
+    finder, row = [e for e in events if isinstance(e, ToolCallEvent)]
+    assert finder.name == "find_connector_tools"
     assert (row.connector, row.connector_title, row.remote_tool, row.reason) == (
         "fixture",
         "Fixture",
@@ -123,7 +137,9 @@ async def test_write_tool_asks_with_connector_and_counts_denial(rig: Rig) -> Non
     """`TC-03`."""
     await _add(rig)
     rig.model.add_turns(
-        tool_call("mcp__fixture__write_thing", {"value": "x"}), final("ok")
+        _find("write_thing"),
+        tool_call("mcp__fixture__write_thing", {"value": "x"}),
+        final("ok"),
     )
     events = []
     async for ev in rig.client.turn("write it"):
@@ -145,7 +161,9 @@ async def test_trust_hints_off_makes_read_tool_ask(rig: Rig) -> None:
     await _add(rig)
     listing = await rig.client.connectors_trust_hints("fixture", False)
     assert listing.items[0].trust_read_only_hints is False
-    rig.model.add_turns(tool_call("mcp__fixture__read_thing", {}), final("ok"))
+    rig.model.add_turns(
+        _find("read_thing"), tool_call("mcp__fixture__read_thing", {}), final("ok")
+    )
     asked = False
     async for ev in rig.client.turn("read it"):
         if isinstance(ev, ApprovalEvent):
@@ -167,20 +185,27 @@ async def test_connectors_block_is_in_the_system_message(rig: Rig) -> None:
 async def test_tools_survive_model_new_skills_and_restore(
     rig: Rig, fake_model: FakeModel, aldwin_home: Path
 ) -> None:
-    """`TC-10`: `/model`, `/new`, a skills reload and a restart all keep the tools."""
+    """`/model` and a skills reload keep loaded tools; `/new` and a restart start
+    with none loaded but everything findable."""
     await _add(rig)
 
-    def has_tools(host: AldwinHost) -> bool:
-        return "mcp__fixture__read_thing" in host._agent_session.tools
+    def findable(host: AldwinHost) -> bool:
+        return "find_connector_tools" in host._agent_session.tools and (
+            host._connectors._index.names("fixture") != []
+        )
 
     host = rig.host
-    assert has_tools(host)
+    assert findable(host) and _loaded(host) == set()
+    rig.model.add_turns(_find("read_thing"), final("loaded"))
+    await collect(rig.client.turn("load it"))
+    assert _loaded(host) == {"mcp__fixture__read_thing"}
+
     await rig.client.set_model(host.model)
-    assert has_tools(host)
-    await rig.client.new_conversation()
-    assert has_tools(host)
+    assert findable(host) and _loaded(host) == {"mcp__fixture__read_thing"}
     host._rebuild_agent_for_skills()
-    assert has_tools(host)
+    assert findable(host) and _loaded(host) == {"mcp__fixture__read_thing"}
+    await rig.client.new_conversation()
+    assert findable(host) and _loaded(host) == set()
 
     restored = AldwinHost(
         InProcessTransport(),
@@ -197,10 +222,11 @@ async def test_tools_survive_model_new_skills_and_restore(
     try:
 
         async def _back() -> None:
-            while not has_tools(restored):
+            while not findable(restored):
                 await asyncio.sleep(0.01)
 
         await asyncio.wait_for(_back(), 5)
+        assert _loaded(restored) == set()
     finally:
         await restored.stop_host()
 
@@ -214,6 +240,9 @@ async def test_list_tool_policy_disable_enable_remove(rig: Rig) -> None:
     assert listing.error is None
     [info] = listing.items
     assert (info.name, info.status, len(info.tools)) == ("fixture", "connected", 5)
+    rig.model.add_turns(_find("write_thing"), final("loaded"))
+    await collect(rig.client.turn("load it"))
+    assert "mcp__fixture__write_thing" in rig.host._agent_session.tools
 
     listing = await rig.client.connectors_tool_policy("fixture", "write_thing", "off")
     write = next(t for t in listing.items[0].tools if t.name == "write_thing")

@@ -29,6 +29,7 @@ MAX_GIF_BYTES = 5_242_880  # 5 MB NFR GIF size cap
 EXPECTED_WHEEL_ASSETS = (
     "aldwin/core/assets/__init__.py",
     "aldwin/core/assets/config.yaml",
+    "aldwin/core/assets/connectors/catalog.yaml",
     "aldwin/core/assets/instructions.md",
     "aldwin/core/assets/persona.md",
     "aldwin/core/assets/profile.md",

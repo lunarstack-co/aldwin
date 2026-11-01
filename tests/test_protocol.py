@@ -493,3 +493,90 @@ def test_tool_grant_scope_and_new_error_codes() -> None:
         error = ErrorEvent(re="r", code=code, message="m")
         assert parse_event(error.model_dump_json()) == error
     assert HOST_EVENT_RE == "host"
+
+
+# --- connector sign-in ---------------------------------------------------------
+
+
+def _sign_in_messages() -> list[Any]:
+    from aldwin.protocol import (
+        CatalogItem,
+        ConnectorAuthEvent,
+        ConnectorsAddRequest,
+        ConnectorsAuthPasteRequest,
+        ConnectorsAuthTokenRequest,
+        ConnectorsEvent,
+        ConnectorsLoginRequest,
+        ConnectorsLogoutRequest,
+        ConnectorStatusEvent,
+    )
+
+    return [
+        ConnectorsLoginRequest(name="linear", no_browser=True),
+        ConnectorsLogoutRequest(name="linear"),
+        ConnectorsAuthPasteRequest(
+            name="linear", redirect_url="http://127.0.0.1:47823/callback?code=c&state=s"
+        ),
+        ConnectorsAuthTokenRequest(name="github", token="t"),
+        ConnectorsAddRequest(
+            url="https://mcp.linear.app/mcp",
+            auth="oauth",
+            client_id="c",
+            no_browser=True,
+        ),
+        ConnectorAuthEvent(
+            re="r",
+            name="linear",
+            title="Linear",
+            mode="browser",
+            url="https://a/authorize?state=s",
+            expires_in=300,
+        ),
+        ConnectorAuthEvent(
+            re="r",
+            name="github",
+            title="GitHub",
+            mode="token",
+            token_help_url="https://github.com/settings/tokens",
+            expires_in=300,
+        ),
+        ConnectorStatusEvent(re="host", name="linear", status="needs_auth"),
+        ConnectorsEvent(
+            re="r",
+            catalog=[
+                CatalogItem(
+                    name="linear",
+                    title="Linear",
+                    purpose="p",
+                    url="https://mcp.linear.app/mcp",
+                    auth="oauth",
+                    docs_url="https://d",
+                    keywords=["linear"],
+                    added=True,
+                )
+            ],
+        ),
+    ]
+
+
+@pytest.mark.parametrize("message", _sign_in_messages(), ids=lambda m: type(m).__name__)
+def test_sign_in_messages_round_trip(message: Any) -> None:
+    assert parse_message(message.model_dump_json()) == message
+
+
+def test_paste_and_token_are_hidden_from_repr() -> None:
+    from aldwin.protocol import ConnectorsAuthPasteRequest, ConnectorsAuthTokenRequest
+
+    paste = ConnectorsAuthPasteRequest(
+        name="x", redirect_url="http://127.0.0.1/cb?code=SECRETCODE"
+    )
+    token = ConnectorsAuthTokenRequest(name="x", token="SECRETTOKEN")
+    assert "SECRETCODE" not in repr(paste)
+    assert "SECRETTOKEN" not in repr(token)
+
+
+def test_connector_auth_needs_re() -> None:
+    with pytest.raises(ValidationError):
+        parse_event(
+            '{"type":"event","kind":"connector.auth","name":"x","title":"X","mode":"token"}'
+        )

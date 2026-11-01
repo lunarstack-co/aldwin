@@ -92,7 +92,7 @@ def test_defaults(aldwin_home: Path) -> None:
             "connectors.yaml: connectors.x.enabled must be a boolean",
         ),
         (
-            "connectors:\n  x:\n    url: https://x.example/mcp\n    auth: oauth\n",
+            "connectors:\n  x:\n    url: https://x.example/mcp\n    auth: magic\n",
             "connectors.yaml: connectors.x.auth must be one of the allowed values",
         ),
         (

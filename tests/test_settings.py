@@ -42,6 +42,7 @@ def test_load_config_missing_file_returns_defaults(aldwin_home: Path) -> None:
             notes_days=7,
             persona_chars=2000,
             max_steps=15,
+            connector_tools=40,
         ),
     )
 
@@ -178,6 +179,7 @@ def test_load_config_malformed_yaml_or_non_dict_raises_config_error(
     [
         ("limits:\n  max_steps: 0\n", "limits.max_steps", "integer >= 1"),
         ("limits:\n  profile_chars: 99\n", "limits.profile_chars", "integer >= 100"),
+        ("limits:\n  connector_tools: 4\n", "limits.connector_tools", "integer >= 5"),
         (
             "theme: neon\n",
             "theme",

@@ -313,8 +313,25 @@ def test_classify_api_status_error_with_model_word_is_not_unknown_model() -> Non
         body=None,
     )
     code, msg = classify_model_error(err, model="gpt-4o")
-    assert code == "model_unavailable"
-    assert "/model" not in msg
+    assert code == "request_rejected"
+    assert "HTTP 400" in msg and "/model" not in msg
+    assert "connection" not in msg
+
+
+def test_classify_too_many_tools_says_what_to_turn_off() -> None:
+    err = openai.BadRequestError(
+        "Error code: 400 - {'error': {'message': \"Invalid 'tools': array too long. "
+        "Expected an array with maximum length 128, but got an array with length "
+        '161 instead."}}',
+        response=cast(Any, _http_response(400)),
+        body=None,
+    )
+    code, msg = classify_model_error(err)
+    assert code == "request_rejected"
+    assert msg == (
+        "OpenAI allows at most 128 tools and 161 are switched on. "
+        "Turn some off in /connectors."
+    )
 
 
 def test_retry_status_message_connection_vs_busy() -> None:

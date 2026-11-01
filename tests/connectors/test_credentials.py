@@ -84,7 +84,7 @@ def test_credential_identity_tracks_the_token_only() -> None:
     assert a == credential_identity({"token": "one", "kind": "bearer", "v": 1})
     assert a != credential_identity(bearer_credential("two"))
     assert credential_identity(None) is None
-    assert credential_identity({"kind": "oauth"}) == ("oauth",)
+    assert credential_identity({"kind": "other"}) == ("other",)
     assert "one" not in repr(a)
 
 

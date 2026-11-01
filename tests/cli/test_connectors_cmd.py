@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
 
+import httpx2
 import pytest
 from typer.testing import CliRunner
 
 from aldwin.cli.main import app
+from aldwin.client import connectors_login_command, connectors_logout_command
 from aldwin.core.connectors.config import load_connectors
+from aldwin.core.connectors.credentials import FileCredentialStore
 from aldwin.core.connectors.errors import ConnectorUnreachable
 from aldwin.core.connectors.mcp_tool import RemoteToolSpec
 from aldwin.host.connectors import ConnectorAdmin
@@ -119,3 +123,126 @@ def test_unexpected_error_exits_2(monkeypatch: pytest.MonkeyPatch) -> None:
     result = runner.invoke(app, ["connectors", "list"])
     assert result.exit_code == 2
     assert "disk on fire" in result.output
+
+
+# --- sign-in ------------------------------------------------------------------
+
+
+def test_add_with_client_id_saves_an_oauth_entry_unchecked(
+    fake_probe: list[Any], aldwin_home: Path
+) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "connectors",
+            "add",
+            "notion",
+            "--url",
+            "https://mcp.notion.example/mcp",
+            "--client-id",
+            "pre-id",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Notion added. Sign in with: aldwin connectors login notion" in result.output
+    assert fake_probe == []
+    config = load_connectors(aldwin_home).entries["notion"]
+    assert config.auth == "oauth"
+    assert config.oauth is not None and config.oauth.client_id == "pre-id"
+
+
+def test_login_and_logout_refuse_token_connectors(
+    fake_probe: list[Any], aldwin_home: Path
+) -> None:
+    runner.invoke(
+        app, ["connectors", "add", "plain", "--url", "https://plain.example/mcp"]
+    )
+    for command in ("login", "logout"):
+        result = runner.invoke(app, ["connectors", command, "plain"])
+        assert result.exit_code == 1
+        assert "Plain doesn't use browser sign-in." in result.output
+    missing = runner.invoke(app, ["connectors", "login", "nope"])
+    assert missing.exit_code == 1
+    assert "No connector named nope." in missing.output
+
+
+async def _approve(url: str) -> str:
+    async with httpx2.AsyncClient(follow_redirects=False) as http:
+        return str((await http.get(url)).headers["location"])
+
+
+def _save_oauth(home: Path, url: str) -> None:
+    from aldwin.core.connectors.config import ConnectorConfig, save_connectors
+
+    save_connectors(
+        home, {"fixture": ConnectorConfig(name="fixture", url=url, auth="oauth")}
+    )
+
+
+@pytest.mark.loopback
+async def test_login_with_paste_signs_in(oauth_server: Any, aldwin_home: Path) -> None:
+    _save_oauth(aldwin_home, oauth_server.mcp_url)
+    shown: list[str] = []
+    pastes = iter(["not an address"])
+
+    async def read_line(_prompt: str) -> str:
+        bad = next(pastes, None)
+        if bad is not None:
+            return bad
+        [url] = [line for line in shown if line.startswith(oauth_server.issuer)]
+        return await _approve(url)
+
+    row = await connectors_login_command(
+        "fixture",
+        paste=True,
+        show=shown.append,
+        read_line=read_line,
+        open_browser=lambda _url: pytest.fail("no browser in paste mode"),
+    )
+    assert row["tools_count"] == 5
+    assert any("paste the address the browser ends on" in line for line in shown)
+    assert any("no sign-in code" in line for line in shown)
+    assert FileCredentialStore(aldwin_home).get("fixture") is not None
+
+    connectors_logout_command("fixture")
+    assert FileCredentialStore(aldwin_home).get("fixture") is None
+
+
+@pytest.mark.loopback
+async def test_login_through_the_browser(oauth_server: Any, aldwin_home: Path) -> None:
+    _save_oauth(aldwin_home, oauth_server.mcp_url)
+    trips: list[asyncio.Task[None]] = []
+
+    async def browser_trip(url: str) -> None:
+        back = await _approve(url)
+        async with httpx2.AsyncClient() as http:
+            await http.get(back)
+
+    def open_browser(url: str) -> bool:
+        trips.append(asyncio.create_task(browser_trip(url)))
+        return True
+
+    async def no_paste(_prompt: str) -> str:
+        raise AssertionError("the browser came back; nothing to paste")
+
+    shown: list[str] = []
+    row = await connectors_login_command(
+        "fixture",
+        paste=False,
+        show=shown.append,
+        read_line=no_paste,
+        open_browser=open_browser,
+    )
+    await asyncio.gather(*trips)
+    assert row["tools_count"] == 5
+    assert "Waiting for you to finish in the browser…" in shown
+
+
+def test_logout_deletes_the_sign_in(aldwin_home: Path) -> None:
+    _save_oauth(aldwin_home, "https://mcp.notion.example/mcp")
+    store = FileCredentialStore(aldwin_home)
+    store.set("fixture", {"v": 1, "kind": "oauth"})
+    result = runner.invoke(app, ["connectors", "logout", "fixture"])
+    assert result.exit_code == 0, result.output
+    assert "fixture signed out." in result.output
+    assert store.get("fixture") is None

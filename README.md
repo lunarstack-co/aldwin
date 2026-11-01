@@ -56,7 +56,7 @@ After that, `aldwin` picks up your latest conversation where you left off. Type 
 - **Terminal:** run shell commands, always with your approval.
 - **Planning:** keep a live checklist for longer jobs and do exact arithmetic and date maths.
 - **Skills:** nine built-in skills, your own skills in `~/.aldwin/skills/`, and an `@` picker to choose one for a message.
-- **Connectors:** add a remote MCP server with `/connectors` and use its tools in any conversation. Tools the server marks read-only run automatically; anything else asks first.
+- **Connectors:** add a remote MCP server with `/connectors` and use its tools in any conversation. Tools the server marks read-only run automatically; anything else asks first. Connector tools load on demand, so any number of apps can stay connected without crowding the model.
 
 See the [full tool list](https://github.com/lunarstack-co/aldwin/blob/main/docs/tools.md) and the [skills guide](https://github.com/lunarstack-co/aldwin/blob/main/docs/skills.md).
 

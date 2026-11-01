@@ -1,0 +1,68 @@
+# Apps offered under /connectors -> + Add a connector. URLs are checked before
+# each release by tests/live/test_catalog_live.py.
+version: 1
+entries:
+  - name: notion
+    title: Notion
+    purpose: Search, read and update pages and databases
+    url: https://mcp.notion.com/mcp
+    auth: oauth
+    docs_url: https://developers.notion.com/docs/mcp
+    keywords: [notion]
+  - name: linear
+    title: Linear
+    purpose: Find, create and update issues and projects
+    url: https://mcp.linear.app/mcp
+    auth: oauth
+    docs_url: https://linear.app/docs/mcp
+    keywords: [linear, issue, ticket]
+  - name: atlassian
+    title: Atlassian
+    purpose: Jira issues and Confluence pages
+    url: https://mcp.atlassian.com/v1/mcp/authv2
+    auth: oauth
+    docs_url: https://support.atlassian.com/rovo/docs/getting-started-with-the-atlassian-remote-mcp-server/
+    keywords: [jira, confluence, atlassian, bitbucket]
+  - name: todoist
+    title: Todoist
+    purpose: Manage tasks and projects
+    url: https://ai.todoist.net/mcp
+    auth: oauth
+    docs_url: https://www.todoist.com/help/articles/todoist-mcp-server
+    keywords: [todoist, todo]
+  - name: github
+    title: GitHub
+    purpose: Repositories, issues and pull requests
+    url: https://api.githubcopilot.com/mcp/
+    auth: bearer
+    token_help_url: https://github.com/settings/personal-access-tokens/new
+    docs_url: https://github.com/github/github-mcp-server
+    keywords: [github, repo, pull request, issue]
+  - name: sentry
+    title: Sentry
+    purpose: Issues, stack traces and error context
+    url: https://mcp.sentry.dev/mcp
+    auth: oauth
+    docs_url: https://docs.sentry.io/product/sentry-mcp/
+    keywords: [sentry, stack trace, crash report]
+  - name: figma
+    title: Figma
+    purpose: Design context from Figma files
+    url: https://mcp.figma.com/mcp
+    auth: oauth
+    docs_url: https://developers.figma.com/docs/figma-mcp-server/remote-server-installation/
+    keywords: [figma, mockup, wireframe]
+  - name: dropbox
+    title: Dropbox
+    purpose: Search, read and manage files
+    url: https://mcp.dropbox.com/mcp
+    auth: oauth
+    docs_url: https://help.dropbox.com/integrations/connect-dropbox-mcp-server
+    keywords: [dropbox]
+  - name: context7
+    title: Context7
+    purpose: Up-to-date library docs and code examples
+    url: https://mcp.context7.com/mcp
+    auth: none
+    docs_url: https://context7.com/docs/resources/all-clients
+    keywords: [context7, library docs]

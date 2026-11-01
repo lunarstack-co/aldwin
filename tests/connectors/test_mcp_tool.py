@@ -182,3 +182,40 @@ def test_prepare_approval_text(tmp_path: Path) -> None:
     untitled = _tool(None, tmp_path, "create_issue")
     assert untitled.prepare_approval().summary == "Fixture wants to run create_issue"
     assert untitled.prepare_approval().detail is None
+
+
+async def test_needs_sign_in_caller_gives_the_sign_in_sentence(
+    workspace: Workspace, aldwin_home: Path
+) -> None:
+    from aldwin.core.connectors.connection import NeedsSignInCaller
+
+    spec = RemoteToolSpec(name="read_thing", read_only_hint=True)
+    policy = connector_policy(CONFIG, spec)
+    assert policy is not None
+    register_runtime_policy(policy)
+    try:
+
+        async def _never(_req: ApprovalRequest) -> ApprovalAnswer:
+            raise AssertionError("read-only tool must not ask")
+
+        tool = McpTool(
+            connector=CONFIG,
+            spec=spec,
+            connection=NeedsSignInCaller("Fixture"),
+            tmp_dir=aldwin_home,
+        )
+        [wrapped] = wrap_tools_with_policy(
+            [tool],
+            session=PolicySession(workspace=workspace, home=aldwin_home),
+            ask=_never,
+        )
+        with pytest.raises(ToolCallError) as info:
+            await wrapped.call({})
+        text = str(info.value)
+        assert text.count("<untrusted ") == 1
+        assert (
+            "Fixture needs you to sign in again. Ask the user to run /connectors."
+            in text
+        )
+    finally:
+        unregister_runtime_policy(policy.name)

@@ -127,3 +127,67 @@ def test_run_command_cannot_read_connector_credentials(
     session = PolicySession(workspace=workspace, home=aldwin_home)
     decision = decide("run_command", {"command": command}, session)
     assert decision.kind == "deny"
+
+
+@pytest.mark.loopback
+async def test_oauth_codes_and_tokens_never_leave_credentials_store(
+    fake_model: FakeModel, aldwin_home: Path, oauth_server: Any
+) -> None:
+    """A browser sign-in: tokens live in one 0600 file; no event or log holds them."""
+    import httpx2
+
+    from aldwin.core.logging import setup_logging
+    from aldwin.protocol import ConnectorAuthEvent
+
+    setup_logging(aldwin_home, debug=True)
+    transport = InProcessTransport()
+    host = AldwinHost(
+        transport,
+        agent_builder=lambda name, ask: build_agent(
+            AldwinConfig(model=name),
+            SecretsConfig(),
+            ask,
+            home=aldwin_home,
+            model=fake_model,
+        ),
+    )
+    sent: list[Any] = []
+    original_send = transport.send_event
+
+    async def record(event: Any) -> None:
+        sent.append(event)
+        await original_send(event)
+
+    transport.send_event = record  # type: ignore[method-assign]
+    await host.start()
+    client = AldwinClient(transport.connect())
+    await client.connect()
+    try:
+        async for event in client.connectors_sign_in(
+            name="fixture", url=oauth_server.mcp_url
+        ):
+            if isinstance(event, ConnectorAuthEvent):
+                assert event.url is not None
+                async with httpx2.AsyncClient() as http:
+                    approved = await http.get(event.url)
+                    await http.get(approved.headers["location"])
+        fake_model.add_turns(tool_call("mcp__fixture__read_thing", {}), final("done"))
+        async for _ev in client.turn("use the tool"):
+            pass
+    finally:
+        await client.close()
+        await host.stop_host()
+
+    secrets = [
+        *oauth_server.access_tokens,
+        *oauth_server.issued_refresh_tokens,
+        *oauth_server.issued_codes,
+    ]
+    assert secrets
+    creds = credentials_dir(aldwin_home) / "fixture.json"
+    for secret in secrets:
+        hits = _files_containing(aldwin_home, secret)
+        assert hits in ([], [creds]), (secret, hits)
+        for event in sent:
+            assert secret not in event.model_dump_json()
+    assert _mode(creds) == 0o600

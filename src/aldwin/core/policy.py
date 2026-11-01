@@ -224,6 +224,14 @@ REGISTRY: Final[dict[str, ToolPolicy]] = {
         never_grant=None,
         parallel_safe=True,
     ),
+    "find_connector_tools": ToolPolicy(
+        name="find_connector_tools",
+        tier="auto",
+        path_args=(),
+        writes=False,
+        never_grant=None,
+        parallel_safe=False,
+    ),
     "list_dir": ToolPolicy(
         name="list_dir",
         tier="auto",
@@ -336,6 +344,7 @@ DEFAULT_MAX_OUTPUT_CHARS_BY_TOOL: Final[dict[str, int]] = {
     "forget": 4_000,
     "todo": 4_000,
     "calculate": 4_000,
+    "find_connector_tools": 4_000,
     "edit_file": 4_000,
     "write_file": 4_000,
     "download_file": 1_000,

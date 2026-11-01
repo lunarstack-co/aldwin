@@ -34,7 +34,7 @@ Type `/` at the prompt for autocomplete:
 | `/workspace` | Show the workspace folder, or switch it with `/workspace <path>` |
 | `/verbose` | Show or hide up to 12 preview lines under file-tool rows for this session |
 | `/tools` | List built-in tools and which ones require approval, then each connector's tools |
-| `/connectors` (or `/mcp`) | Add a connector by URL, or manage one: its tools, reconnect, turn off, remove |
+| `/connectors` | Add a connector by URL, or manage one: its tools, reconnect, turn off, remove |
 | `/exit` | Save the current session and exit |
 
 ## Keyboard shortcuts
