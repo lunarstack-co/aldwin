@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import time
 
+import pytest
+
 from aldwin.core.connectors.index import IndexedTool, ToolIndex, tokens
 
 
@@ -125,6 +127,7 @@ def test_replace_drop_get_and_names() -> None:
     assert index.connectors() == []
 
 
+@pytest.mark.perf
 def test_search_a_thousand_tools_is_fast() -> None:
     index = ToolIndex()
     for c in range(10):
@@ -139,7 +142,11 @@ def test_search_a_thousand_tools_is_fast() -> None:
                 for i in range(100)
             ],
         )
-    started = time.perf_counter()
-    found = index.search("thing number 7")
-    assert len(found) == 5
-    assert time.perf_counter() - started < 0.05
+    assert len(index.search("thing number 7")) == 5
+    # Best of five, so one slow scheduler tick on a shared runner can't fail it.
+    timings = []
+    for _ in range(5):
+        started = time.perf_counter()
+        index.search("thing number 7")
+        timings.append(time.perf_counter() - started)
+    assert min(timings) < 0.05
