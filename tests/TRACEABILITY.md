@@ -22,7 +22,7 @@ Coverage floor: CI `--cov-fail-under=90` overall; aim ≥85% line on `core/`/`ho
 | Token never leaks | NFR security, TC-13 | `tests/security/test_connector_secrets.py` |
 | Budgets, architecture | NFR performance and architecture | `tests/perf/test_connectors_budget.py`, `tests/test_architecture.py` |
 | Manual run | TC-15 | `docs/manual-test.md` Step 14 |
-| Pasted secrets: shapes, notice, redacted sessions, history filter | Pasted-secret FR-1 to FR-5, NFR security | `tests/test_secret_shapes.py`, `tests/integration/test_pasted_secret_host.py`, `tests/cli/test_history_filter.py`, `tests/security/test_pasted_secrets.py`, `docs/manual-test.md` Step 19 |
+| Pasted secrets: shapes, notice, redaction before the model call, history filter | Pasted-secret FR-1 to FR-5, NFR security | `tests/test_secret_shapes.py`, `tests/integration/test_pasted_secret_host.py`, `tests/cli/test_history_filter.py`, `tests/security/test_pasted_secrets.py`, `docs/manual-test.md` Step 19 |
 
 ## Security, policy, e2e, perf (this change)
 

@@ -1,22 +1,20 @@
-"""A token pasted into chat: the host warns, then keeps it out of saved sessions
-and out of the conversation the model sees on later turns."""
+"""A token pasted into chat: the host warns and redacts it before the model
+call, so neither the model nor the saved session ever holds it."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
-import pytest
 from conftest import collect
 from fakes.model import FakeModel, FakeTurn
 
 from aldwin.client import AldwinClient
-from aldwin.host import runner
 from aldwin.host.runner import PASTED_SECRET_NOTICE
-from aldwin.protocol import REDACTED, DoneEvent, NoticeEvent, TextEvent
+from aldwin.protocol import REDACTED, DoneEvent, Event, NoticeEvent, TextEvent
 
 TOKEN = "ghp_" + "a1B2" * 9
+SLACK = "xoxb-1234567890-abcdefghij"
 JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTYifQ.c2lnbmF0dXJlLXZhbHVl"
 
 
@@ -34,103 +32,83 @@ def _sessions_text(home: Path) -> str:
 
 
 def _model_saw(fake_model: FakeModel, text: str) -> bool:
-    return any(text in (message.content or "") for message in fake_model.calls[-1])
+    return any(
+        text in (message.content or "") for call in fake_model.calls for message in call
+    )
 
 
-async def _paste(client: AldwinClient, fake_model: FakeModel) -> list[Any]:
-    fake_model.add_turns(FakeTurn.text(["Got it."]))
-    return await collect(client.turn(f"here is my token {TOKEN}"))
+def _notices(events: list[Event]) -> list[str]:
+    return [ev.message for ev in events if isinstance(ev, NoticeEvent)]
 
 
-async def test_notice_comes_first_and_message_is_unchanged(
+async def test_notice_comes_first_and_model_gets_redacted_text(
     host_client: AldwinClient, fake_model: FakeModel, aldwin_home: Path
 ) -> None:
-    events = await _paste(host_client, fake_model)
+    fake_model.add_turns(FakeTurn.text(["Got it."]))
 
-    notices = [i for i, ev in enumerate(events) if isinstance(ev, NoticeEvent)]
-    texts = [i for i, ev in enumerate(events) if isinstance(ev, TextEvent)]
-    assert [events[i].message for i in notices] == [PASTED_SECRET_NOTICE]
-    assert notices[0] < texts[0]
-    assert _model_saw(fake_model, f"here is my token {TOKEN}")
+    events = await collect(host_client.turn(f"connect GitHub, my token is {TOKEN}"))
+
+    first_notice = next(i for i, ev in enumerate(events) if isinstance(ev, NoticeEvent))
+    first_text = next(i for i, ev in enumerate(events) if isinstance(ev, TextEvent))
+    assert _notices(events) == [PASTED_SECRET_NOTICE]
+    assert first_notice < first_text
+    assert _model_saw(fake_model, f"connect GitHub, my token is {REDACTED}")
+    assert not _model_saw(fake_model, TOKEN)
     credentials = aldwin_home / "credentials"
     assert not any(path.is_file() for path in credentials.rglob("*"))
 
 
-async def test_saved_session_is_redacted(
+async def test_saved_session_never_holds_the_token(
     host_client: AldwinClient, fake_model: FakeModel, aldwin_home: Path
 ) -> None:
-    await _paste(host_client, fake_model)
+    fake_model.add_turns(FakeTurn.text(["Got it."]), FakeTurn.text(["Sure."]))
+
+    await collect(host_client.turn(f"here is my token {TOKEN}"))
+    await collect(host_client.turn("what did I just send?"))
 
     [path] = _session_files(aldwin_home)
     saved = json.loads(path.read_text("utf-8"))
     assert TOKEN not in _sessions_text(aldwin_home)
-    assert REDACTED in json.loads(saved["memory"])["steps"][0]["data"]["task"]
-    assert saved["turns"][-1]["text"] == f"here is my token {REDACTED}"
-    assert saved["turns"][-1]["text"].count(REDACTED) == 1
+    assert saved["turns"][0]["text"] == f"here is my token {REDACTED}"
     assert saved["meta"]["title"] == f"here is my token {REDACTED}"
+    assert REDACTED in json.loads(saved["memory"])["steps"][0]["data"]["task"]
+    assert not _model_saw(fake_model, TOKEN)
 
 
-async def test_next_turn_memory_is_redacted(
+async def test_two_tokens_give_one_notice_and_keep_the_rest(
     host_client: AldwinClient, fake_model: FakeModel
 ) -> None:
-    await _paste(host_client, fake_model)
-    fake_model.add_turns(FakeTurn.text(["Sure."]))
+    fake_model.add_turns(FakeTurn.text(["Both noted."]))
 
-    await collect(host_client.turn("what did I just send?"))
+    events = await collect(host_client.turn(f"rotate {TOKEN} and {SLACK} for me"))
 
-    assert not _model_saw(fake_model, TOKEN)
-    assert _model_saw(fake_model, REDACTED)
+    assert _notices(events) == [PASTED_SECRET_NOTICE]
+    assert _model_saw(fake_model, f"rotate {REDACTED} and {REDACTED} for me")
 
 
-async def test_taint_survives_later_saves(
-    host_client: AldwinClient,
-    fake_model: FakeModel,
-    aldwin_home: Path,
-    monkeypatch: pytest.MonkeyPatch,
+async def test_plain_message_gets_no_notice(
+    host_client: AldwinClient, fake_model: FakeModel
 ) -> None:
-    def broken_restore(*_: Any) -> Any:
-        raise RuntimeError("restore failed")
+    fake_model.add_turns(FakeTurn.text(["Tuesday."]))
 
-    # With the live swap broken the token stays in memory, so only the taint
-    # keeps it off disk on later saves.
-    monkeypatch.setattr(runner, "restore_session", broken_restore)
-    await _paste(host_client, fake_model)
-    fake_model.add_turns(FakeTurn.text(["One."]), FakeTurn.text(["Two."]))
+    events = await collect(
+        host_client.turn("what day is it? task-1234567890abcdefghij")
+    )
 
-    await collect(host_client.turn("first follow-up"))
-    await collect(host_client.turn("second follow-up"))
-
-    assert _model_saw(fake_model, TOKEN)
-    assert TOKEN not in _sessions_text(aldwin_home)
-
-
-async def test_new_session_starts_clean(
-    host_client: AldwinClient, fake_model: FakeModel, aldwin_home: Path
-) -> None:
-    await _paste(host_client, fake_model)
-    [old] = _session_files(aldwin_home)
-    example = "sk-proj-" + "Example1" * 3
-    fake_model.add_turns(FakeTurn.text([f"An example key looks like {example}."]))
-
-    await host_client.new_conversation()
-    await collect(host_client.turn("show me what an API key looks like"))
-
-    [new] = [path for path in _session_files(aldwin_home) if path != old]
-    assert example in json.loads(new.read_text("utf-8"))["memory"]
-    assert TOKEN not in _sessions_text(aldwin_home)
+    assert _notices(events) == []
+    assert _model_saw(fake_model, "task-1234567890abcdefghij")
 
 
 async def test_jwt_warns_and_runs(
     host_client: AldwinClient, fake_model: FakeModel, aldwin_home: Path
 ) -> None:
-    fake_model.add_turns(FakeTurn.text(["That token expires tomorrow."]))
+    fake_model.add_turns(FakeTurn.text(["I can't see the token itself."]))
 
     events = await collect(host_client.turn(f"why is this JWT rejected? {JWT}"))
 
-    assert PASTED_SECRET_NOTICE in [
-        ev.message for ev in events if isinstance(ev, NoticeEvent)
-    ]
+    assert PASTED_SECRET_NOTICE in _notices(events)
     assert isinstance(events[-1], DoneEvent) and events[-1].reason == "answered"
+    assert not _model_saw(fake_model, JWT)
     text = _sessions_text(aldwin_home)
     assert JWT[:30] not in text
     assert REDACTED in text

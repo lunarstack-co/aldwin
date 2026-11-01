@@ -39,13 +39,9 @@ All local data lives in `~/.aldwin`. Set `ALDWIN_HOME=/path/to/dir` to use a dif
 
 ## Secrets pasted into chat
 
-If a message holds something shaped like a token (a GitHub or Slack token, an `sk-` API key, or a JSON Web Token), Aldwin still sends it to OpenAI with the rest of the message, because by then it has already been typed. It then keeps the token out of its own files:
+If a message holds something shaped like a token (a GitHub or Slack token, an `sk-` API key, or a JSON Web Token), Aldwin replaces it with `‹redacted›` before anything leaves your computer. The rest of the message is sent as typed, so "connect me to GitHub, here's my token …" still gets an answer. The model, the saved conversation and its title only ever hold `‹redacted›`, and the line is not written to `history`.
 
-- the line is not written to `history`;
-- every later save of that conversation replaces token-shaped text with `‹redacted›`, in the messages, the title and the answers;
-- after the turn, the conversation the model sees on later turns carries `‹redacted›` instead of the token.
-
-`/new` starts a conversation that is saved as normal. Lines already in an older `history` file are not rewritten. To give Aldwin a token, use `/connectors` or the private prompt (`Token (hidden):`) it shows when a connector needs one.
+Lines already in an older `history` file are not rewritten. To give Aldwin a token, use `/connectors` or the private prompt (`Token (hidden):`) it shows when a connector needs one.
 
 ## Logs
 

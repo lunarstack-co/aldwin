@@ -69,7 +69,7 @@ The log rotates at 10 MB, and secret-shaped tokens are replaced with `‹redacte
 
 ## Secrets pasted into chat
 
-When a message looks like it holds a token, Aldwin shows `That looks like a secret. Don't paste secrets into chat; use /connectors or the private prompt.` before the reply. The turn still runs. The token is kept out of the input history and redacted from the saved conversation. See [Data and privacy](privacy.md#secrets-pasted-into-chat).
+When a message looks like it holds a token, Aldwin replaces the token with `‹redacted›` before the model call and shows `That looks like a secret. I removed it before sending; use /connectors or the private prompt.` before the reply. The rest of the message still goes. The token is also kept out of the input history. See [Data and privacy](privacy.md#secrets-pasted-into-chat).
 
 ## Known limits
 

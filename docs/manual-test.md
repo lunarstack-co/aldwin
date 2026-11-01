@@ -298,8 +298,8 @@ Needs a real model and an account with one catalogue app, for example Linear.
 
 ### Step 19: Pasted secrets
 
-1. In the chat, paste `ghp_` followed by 36 letters and press Enter.
-   - Expect: `That looks like a secret. Don't paste secrets into chat; use /connectors or the private prompt.` on its own line before the reply. The reply still arrives.
+1. In the chat, type `connect me to GitHub, my token is ghp_` followed by 36 letters and press Enter.
+   - Expect: `That looks like a secret. I removed it before sending; use /connectors or the private prompt.` on its own line before the reply. Aldwin still answers the rest of the message (it proposes the GitHub connector, whose hidden prompt asks for a token).
 2. After the reply, in another terminal:
    - `grep -c ghp_ ~/.aldwin/history` prints `0`.
    - `grep -c ghp_ ~/.aldwin/sessions/*.json` prints `0` for every file.
