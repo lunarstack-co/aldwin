@@ -303,7 +303,7 @@ Needs a real model and an account with one catalogue app, for example Linear.
 2. After the reply, in another terminal:
    - `grep -c ghp_ ~/.aldwin/history` prints `0`.
    - `grep -c ghp_ ~/.aldwin/sessions/*.json` prints `0` for every file.
-   - `grep -c '‹redacted›' ~/.aldwin/sessions/*.json` prints at least `1` for the newest file.
+   - `grep -c redacted ~/.aldwin/sessions/*.json` prints at least `1` for the newest file (the marker is stored as `\u2039redacted\u203a`).
 3. Press up-arrow: the pasted line is still there for this session.
 
 ## 3. Manual test run log template (`FR-12`)
