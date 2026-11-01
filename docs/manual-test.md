@@ -296,6 +296,16 @@ Needs a real model and an account with one catalogue app, for example Linear.
 5. Ask Aldwin to connect GitHub.
    - Expect: a hidden `Token (hidden):` prompt, not a request to paste the token into the chat. Press Enter: the turn stops and nothing is saved.
 
+### Step 19: Pasted secrets
+
+1. In the chat, type `connect me to GitHub, my token is ghp_` followed by 36 letters and press Enter.
+   - Expect: `That looks like a secret. I removed it before sending; use /connectors or the private prompt.` on its own line before the reply. Aldwin still answers the rest of the message (it proposes the GitHub connector, whose hidden prompt asks for a token).
+2. After the reply, in another terminal:
+   - `grep -c ghp_ ~/.aldwin/history` prints `0`.
+   - `grep -c ghp_ ~/.aldwin/sessions/*.json` prints `0` for every file.
+   - `grep -c redacted ~/.aldwin/sessions/*.json` prints at least `1` for the newest file (the marker is stored as `\u2039redacted\u203a`).
+3. Press up-arrow: the pasted line is still there for this session.
+
 ## 3. Manual test run log template (`FR-12`)
 
 Copy and paste the filled-in template below as a comment on Linear ticket **ENG-384** for each platform tested (`macOS` and `Linux`):

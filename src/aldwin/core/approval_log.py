@@ -31,9 +31,11 @@ LogSource = Literal["rule", "grant", "user", "no_approver", "error", "hint"]
 # - sk-[A-Za-z0-9_-]{20,} (OpenAI / Anthropic keys)
 # - tvly-[A-Za-z0-9_-]{12,} (Tavily keys)
 # - AKIA[0-9A-Z]{16} (AWS access key IDs)
-# - gh[pousr]_[A-Za-z0-9]{36,} (GitHub tokens)
+# - gh[pousr]_[A-Za-z0-9]{36,} and github_pat_… (GitHub tokens)
 # - xox[abprs]-[A-Za-z0-9-]{10,} (Slack tokens)
+# - eyJ….….… (JSON Web Tokens)
 # - -----BEGIN ... PRIVATE KEY----- blocks or headers
+# Keep in step with the chat token shapes in protocol/secret_shapes.py.
 SECRET_PATTERNS: Final[tuple[re.Pattern[str], ...]] = (
     re.compile(
         r"-----BEGIN [A-Z0-9 _-]*PRIVATE KEY-----"
@@ -45,7 +47,9 @@ SECRET_PATTERNS: Final[tuple[re.Pattern[str], ...]] = (
     re.compile(r"\btvly-[A-Za-z0-9_-]{12,}\b"),
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,}\b"),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{22,}\b"),
     re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}\b"),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
     re.compile(r"\bALDWIN_CANARY_[A-Za-z0-9_-]+\b"),
 )
 # Back-compat alias used by older call sites.

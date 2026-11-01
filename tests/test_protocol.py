@@ -216,7 +216,16 @@ def test_protocol_imports_only_stdlib_and_pydantic() -> None:
     protocol_dir = (
         Path(__file__).resolve().parent.parent / "src" / "aldwin" / "protocol"
     )
-    allowed_roots = {"__future__", "functools", "typing", "uuid", "pydantic", "aldwin"}
+    allowed_roots = {
+        "__future__",
+        "dataclasses",
+        "functools",
+        "re",
+        "typing",
+        "uuid",
+        "pydantic",
+        "aldwin",
+    }
 
     for py_file in protocol_dir.rglob("*.py"):
         tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))

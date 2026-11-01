@@ -79,8 +79,20 @@ from aldwin.protocol.messages import (
     parse_message,
     parse_request,
 )
+from aldwin.protocol.secret_shapes import (
+    REDACTED,
+    SECRET_SHAPES,
+    SecretMatch,
+    find_pasted_secrets,
+    redact_pasted_secrets,
+)
 
 __all__ = [
+    "REDACTED",
+    "SECRET_SHAPES",
+    "SecretMatch",
+    "find_pasted_secrets",
+    "redact_pasted_secrets",
     "ApprovalAnswer",
     "ApprovalEvent",
     "ApprovalTier",

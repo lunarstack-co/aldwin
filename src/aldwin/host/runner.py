@@ -172,11 +172,16 @@ from aldwin.protocol import (
     ToolCallEvent,
     ToolResultEvent,
     TurnRequest,
+    redact_pasted_secrets,
 )
 from aldwin.protocol.messages import SkillCatalogItem
 
 logger = logging.getLogger("aldwin.host.runner")
 
+PASTED_SECRET_NOTICE: Final[str] = (
+    "That looks like a secret. I removed it before sending; "
+    "use /connectors or the private prompt."
+)
 CIRCUIT_BREAKER_NOTICE: Final[str] = (
     "Stopped after 3 declined actions. Tell Aldwin what you'd like instead."
 )
@@ -1406,12 +1411,16 @@ class AldwinHost:
                     )
                 if picked:
                     record_skills_used(self._home, used_names)
-            task_text = build_task(req.text, picked)
+            # The token stops here: the model, memory and session file get `text`.
+            text = redact_pasted_secrets(req.text)
+            if text != req.text:
+                await scope.emit(NoticeEvent(re=req.id, message=PASTED_SECRET_NOTICE))
+            task_text = build_task(text, picked)
             if self._stored_session.turns is None:
                 self._stored_session.turns = []
             self._stored_session.turns.append(
                 {
-                    "text": req.text,
+                    "text": text,
                     "skills": [entry.name for entry in picked],
                 }
             )

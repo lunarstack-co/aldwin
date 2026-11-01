@@ -37,6 +37,12 @@ All local data lives in `~/.aldwin`. Set `ALDWIN_HOME=/path/to/dir` to use a dif
     └── approvals.jsonl     one redacted line per policy decision, rotated at 10 MB
 ```
 
+## Secrets pasted into chat
+
+If a message holds something shaped like a token (a GitHub or Slack token, an `sk-` API key, or a JSON Web Token), Aldwin replaces it with `‹redacted›` before anything leaves your computer. The rest of the message is sent as typed, so "connect me to GitHub, here's my token …" still gets an answer. The model, the saved conversation and its title only ever hold `‹redacted›`, and the line is not written to `history`.
+
+Lines already in an older `history` file are not rewritten. To give Aldwin a token, use `/connectors` or the private prompt (`Token (hidden):`) it shows when a connector needs one.
+
 ## Logs
 
 - `logs/aldwin.log` records lifecycle events and errors only, never message content. Every record passes through a filter that redacts secret-shaped values (`sk-…`, `tvly-…`). Run `aldwin --debug` for more detail.
