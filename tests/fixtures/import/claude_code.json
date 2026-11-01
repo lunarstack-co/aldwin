@@ -1,0 +1,20 @@
+{
+  "numStartups": 12,
+  "mcpServers": {
+    "github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github@1.0.0"],
+      "env": {"GITHUB_TOKEN": "ghp_fake0001"}
+    },
+    "stripe": {"type": "http", "url": "https://mcp.stripe.com", "headers": {"Authorization": "Bearer ${STRIPE_KEY}"}},
+    "legacy": {"type": "sse", "url": "https://mcp.example.com/sse"},
+    "sockets": {"type": "ws", "url": "wss://mcp.example.com/ws"},
+    "embedded": {"type": "sdk"}
+  },
+  "projects": {
+    "/some/other/project": {
+      "mcpServers": {"other-only": {"command": "other-mcp"}}
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "type": "local",
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@0.0.84"],
+      "env": {"PW_HEADLESS": "1"},
+      "tools": ["*"]
+    },
+    "linear": {
+      "type": "http",
+      "url": "https://mcp.linear.app/mcp",
+      "headers": {"Authorization": "Bearer fake-copilot-1"},
+      "tools": ["list_issues"]
+    }
+  }
+}

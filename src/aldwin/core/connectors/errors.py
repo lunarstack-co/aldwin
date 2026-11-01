@@ -67,3 +67,24 @@ class SignInTimedOut(SignInError):
 
     def __init__(self) -> None:
         super().__init__("Sign-in timed out.")
+
+
+class ConnectorCommandNotFound(ConnectorError):
+    """A local connector's program is not installed or not runnable."""
+
+    def __init__(self, command: str) -> None:
+        super().__init__(f"command not found: {command}")
+
+
+class ConnectorNotApproved(ConnectorError):
+    """The user said no to running a local command; nothing was saved or started."""
+
+    def __init__(self, title: str) -> None:
+        super().__init__(f"{title} was not approved, so nothing was saved.")
+
+
+class ConnectorProcessExited(ConnectorSessionLost):
+    """A local server's process ended while it was in use."""
+
+    def __init__(self, code: int | None) -> None:
+        super().__init__(f"server exited (code {code})")

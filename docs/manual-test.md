@@ -241,6 +241,46 @@ Needs network access and a Linear and a Notion account (free plans work).
 13. With Linear and Notion both connected, ask a Linear question, then a Notion question, then another Linear question.
     - Expect: `/connectors` shows both `● connected` with no warning. The first Linear answer and the first Notion answer each start with a `find_connector_tools` tool row, then the app's own tool row. The second Linear question has no `find_connector_tools` row. After `/new`, the next Linear question shows the `find_connector_tools` row again.
 
+### Step 16: Connectors: local servers
+
+Needs Node.js with `npx` (macOS or Linux; Windows is not supported).
+
+1. `/connectors → + Add a connector… → Local command… (advanced)`.
+   - Expect: the note `This runs a program on this computer with access to your workspace folder.` and a `Command:` prompt.
+2. Enter `npx -y @modelcontextprotocol/server-everything`, then press Enter at `Name [everything]`.
+   - Expect: an approval panel with `Run a local connector: everything`, the labels `runs a program on this computer` and `package version not pinned`, and `Command:`, `Folder:` (your workspace) and `Environment:` lines with variable names only.
+3. Press Enter.
+   - Expect: `Everything was not approved, so nothing was saved.` `/connectors` does not list it.
+4. Repeat steps 1 and 2 and press `y`.
+   - Expect: `Everything connected.` and a tool count. `~/.aldwin/connectors.yaml` has `command: npx` and an `approved_digest`.
+5. Ask: "Use the everything server to echo hello."
+   - Expect: a `find_connector_tools` row, then an `Everything` tool row that asks first, and the answer.
+6. In another terminal: `pgrep -f server-everything` and note the pid (P), then `/exit` in Aldwin.
+   - Expect: within 5 seconds `pgrep -g P` prints nothing.
+7. `ls -l ~/.aldwin/logs/mcp-everything.log`.
+   - Expect: `-rw-------`. Its contents never appeared in the chat.
+8. In `connectors.yaml`, change one of the `args` by hand, then start `aldwin` and run `/connectors`.
+   - Expect: `✕ everything  failed: needs approval: open /connectors to enable it`, and no new `server-everything` process. Disable and enable it to approve again.
+9. In a shell: `aldwin connectors add pyver --command "python3 -V"` with stdin not a terminal (for example `< /dev/null`).
+   - Expect: `Adding a local command needs approval; rerun with --yes.` and exit code 1.
+
+### Step 17: Connectors: import
+
+Use a real MCP config file from another editor or desktop app (a JSON file with an `mcpServers` or `servers` key; see `docs/commands.md` for the apps supported). Copy it to a scratch folder first.
+
+1. `aldwin connectors import <copy>`, then `echo $?`.
+   - Expect: a table with `name`, `type` and `status` columns, then `Imported N connectors. M values moved to Aldwin's credential store.` (`1 connector` or `1 value` when the count is 1), and `0`.
+2. For each secret value in the source file, `grep -c '<value>' ~/.aldwin/connectors.yaml`.
+   - Expect: `0` every time.
+3. Run the same import again.
+   - Expect: every row reads `skipped: name already exists` and the exit code is 1.
+4. Run `uv run aldwin connectors import` with no path, in a fresh home (`ALDWIN_HOME=$(mktemp -d)`).
+   - Expect: `Found:` and one line per config file found (app, scope, server count, path), then `Import these? [y/N]`. Enter prints `Nothing imported.`; `y` imports and the table gains a `from` column when more than one file was found. A file that can't be read shows `can't read: …` on its line and a `warning:` on stderr, and the others still import.
+5. In a fresh home, start `aldwin`, open `/connectors` and pick `Import from other apps…`.
+   - Expect: the same `Found:` lines, `Import these? [y/N]`, then one line per server and the summary. The list now shows the imported entries.
+6. Start `aldwin` and open `/connectors`.
+   - Expect: imported local servers show `disabled · review and enable`. Enable one: the approval panel appears, and after `y` it connects and the note is gone.
+
 ## 3. Manual test run log template (`FR-12`)
 
 Copy and paste the filled-in template below as a comment on Linear ticket **ENG-384** for each platform tested (`macOS` and `Linux`):

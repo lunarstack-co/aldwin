@@ -1,0 +1,14 @@
+app: opencode
+homepage: https://opencode.ai/docs/mcp-servers/
+verified: 2026-11-01
+verified_from: docs
+format: jsonc
+dialect: opencode
+servers_at: [[mcp]]
+locations:
+  - scope: user
+    paths: {any: ~/.config/opencode/opencode.json}
+    also: [~/.config/opencode/opencode.jsonc]
+  - scope: project
+    paths: {any: "{workspace}/opencode.json"}
+    also: ["{workspace}/opencode.jsonc"]

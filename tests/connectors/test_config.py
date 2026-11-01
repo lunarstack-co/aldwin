@@ -97,7 +97,7 @@ def test_defaults(aldwin_home: Path) -> None:
         ),
         (
             "connectors:\n  x:\n    enabled: true\n",
-            "connectors.yaml: connectors.x.url must be set",
+            "connectors.yaml: x must have url or command",
         ),
         (
             "connectors:\n  x:\n    url: http://example.com/mcp\n",

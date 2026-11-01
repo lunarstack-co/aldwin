@@ -1,0 +1,14 @@
+{
+  "theme": "Default",
+  "mcpServers": {
+    "python-tools": {
+      "command": "python",
+      "args": ["-m", "mcp_tools"],
+      "cwd": "/opt/tools",
+      "env": {"API_KEY": "${EXTERNAL_API_KEY}", "MODE": "$MODE", "LOG": "debug"},
+      "trust": true
+    },
+    "legacy-sse": {"url": "https://sse.example.com/mcp"},
+    "docs": {"httpUrl": "https://docs.example.com/mcp", "headers": {"Authorization": "Bearer fake-gemini-1"}}
+  }
+}

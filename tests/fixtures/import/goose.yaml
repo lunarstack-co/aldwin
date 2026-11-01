@@ -1,0 +1,27 @@
+GOOSE_PROVIDER: openai
+extensions:
+  developer:
+    enabled: true
+    type: builtin
+    name: developer
+  fetch:
+    enabled: true
+    type: stdio
+    name: fetch
+    cmd: uvx
+    args: [mcp-server-fetch@2026.10.28]
+    envs: {FETCH_TOKEN: fake-goose-1}
+    env_keys: [HTTP_PROXY]
+    timeout: 300
+  remote-docs:
+    enabled: false
+    type: streamable_http
+    name: remote-docs
+    uri: https://docs.example.com/mcp
+    headers: {Authorization: "Bearer fake-goose-2"}
+    envs: {}
+    env_keys: []
+  summoner:
+    enabled: true
+    type: platform
+    name: summoner

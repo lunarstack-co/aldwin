@@ -112,6 +112,9 @@ class McpConnection:
 
     @property
     def host(self) -> str:
+        """Where the server is, for messages: the URL's host or the program."""
+        if self.config.url is None:
+            return self.config.command or self.config.name
         return urlsplit(self.config.url).netloc or self.config.url
 
     async def open(self, *, timeout: float = OPEN_TIMEOUT_S) -> list[RemoteToolSpec]:
@@ -125,6 +128,10 @@ class McpConnection:
         except TimeoutError:
             # The owner is stuck mid-connect and won't see `close`; don't wait long.
             await self.close(timeout=1.0)
+            if self.config.kind == "local":
+                raise ConnectorError(
+                    f"{self.config.display_title} didn't start within {timeout:g}s."
+                ) from None
             raise ConnectorUnreachable(
                 self.host, f"no answer after {timeout:g}s"
             ) from None
@@ -193,7 +200,9 @@ class McpConnection:
                 target = (
                     self._transport_factory(http)
                     if self._transport_factory is not None
-                    else streamable_http_client(self.config.url, http_client=http)
+                    else streamable_http_client(
+                        self.config.server_url, http_client=http
+                    )
                 )
                 async with Client(
                     target,

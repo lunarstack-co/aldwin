@@ -1,0 +1,15 @@
+app: Cline
+homepage: https://github.com/cline/cline
+verified: 2026-11-01
+verified_from: source
+format: json
+dialect: standard
+servers_at: [[mcpServers]]
+locations:
+  - scope: user
+    paths: {any: ~/.cline/data/settings/cline_mcp_settings.json}
+  # The VS Code extension keeps the same file in its extension storage.
+  - scope: user
+    paths:
+      darwin: ~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json
+      linux: ~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json

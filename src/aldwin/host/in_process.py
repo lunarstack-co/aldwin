@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import logging
 import os
+import shlex
 import shutil
+import signal
 import sys
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -54,7 +57,7 @@ from aldwin.core.workspace import (
 
 if TYPE_CHECKING:
     from aldwin.client.client import AldwinClient
-    from aldwin.protocol import Event, Request
+    from aldwin.protocol import ApprovalEvent, Event, Request
 
 logger = logging.getLogger("aldwin.host")
 
@@ -625,17 +628,78 @@ async def open_in_process_client(
         workspace_setter=host.set_workspace,
         home=root,
     )
+    _register_exit_backstop()
+    terminated = _CancelOnSigterm()
     try:
         await client.connect()
         yield client
     finally:
-        await client.close()
-        await host.stop_host()
+        try:
+            await client.close()
+            await host.stop_host()
+        finally:
+            terminated.uninstall()
+        if terminated.fired:
+            # Python's default SIGTERM action would skip this cleanup entirely.
+            raise SystemExit(128 + signal.SIGTERM)
+
+
+class _CancelOnSigterm:
+    """Turn SIGTERM into a cancel of the current task, so the `finally` that
+    stops local servers runs. Only possible on the main thread's loop.
+    """
+
+    def __init__(self) -> None:
+        self.fired = False
+        self._loop = asyncio.get_running_loop()
+        self._task = asyncio.current_task()
+        self._installed = False
+        try:
+            self._loop.add_signal_handler(signal.SIGTERM, self._on_signal)
+            self._installed = True
+        except (NotImplementedError, RuntimeError, ValueError):
+            pass  # not the main thread, or no signal support on this platform
+
+    def _on_signal(self) -> None:
+        if self.fired:
+            return  # a second SIGTERM must not cancel the cleanup already running
+        self.fired = True
+        if self._task is not None:
+            self._task.cancel()
+
+    def uninstall(self) -> None:
+        if self._installed:
+            self._loop.remove_signal_handler(signal.SIGTERM)
+            self._installed = False
+
+
+_exit_backstop_registered = False
+
+
+def _register_exit_backstop() -> None:
+    """At interpreter exit, kill any local server group still running."""
+    global _exit_backstop_registered
+    if not _exit_backstop_registered:
+        atexit.register(_kill_local_servers)
+        _exit_backstop_registered = True
+
+
+def _kill_local_servers() -> None:
+    # Only loaded once a local server has started; nothing to do otherwise.
+    stdio = sys.modules.get("aldwin.core.connectors.stdio")
+    if stdio is not None:
+        stdio.kill_live_groups()
 
 
 __all__ = [
     "ConnectorCommandError",
+    "ShellApprovalHandler",
+    "connector_needs_approval",
     "connectors_add_command",
+    "connectors_add_local_command",
+    "connectors_enable_command",
+    "connectors_find_configs",
+    "connectors_import_command",
     "connectors_remove_command",
     "connectors_set_enabled",
     "connectors_summary",
@@ -836,6 +900,223 @@ async def connectors_login_command(
     return {**_connector_row(config), "tools_count": len(signed.specs)}
 
 
+# Answers a host approval in the shell: the answer and an optional reason.
+ShellApprovalHandler = Callable[["ApprovalEvent"], Awaitable[tuple[str, str | None]]]
+
+
+def _shell_approve(on_approval: ShellApprovalHandler) -> Any:
+    """Turn the CLI's answer into the host's: the host builds the question and
+    logs the answer; the CLI only shows it and replies.
+    """
+    import uuid
+
+    from aldwin.core.policy import ApprovalAnswer, ApprovalRequest
+    from aldwin.protocol import ApprovalEvent
+
+    async def approve(request: ApprovalRequest) -> ApprovalAnswer:
+        event = ApprovalEvent(
+            re="shell",
+            approval_id=uuid.uuid4().hex,
+            tool=request.tool,
+            tier=request.tier,
+            summary=request.summary,
+            detail=request.detail or "",
+            grantable=request.grantable,
+            digest=request.digest,
+            risky=list(request.risky),
+            connector=request.connector,
+        )
+        answer, reason = await on_approval(event)
+        if answer == "yes":
+            return ApprovalAnswer("yes", "user", reason)
+        return ApprovalAnswer("no", "user", reason)
+
+    return approve
+
+
+async def connectors_add_local_command(
+    name: str,
+    command: str,
+    *,
+    env_allow: Sequence[str] = (),
+    cwd: str | None = None,
+    on_approval: ShellApprovalHandler,
+    home: Path | None = None,
+    workspace: Path | None = None,
+) -> dict[str, Any]:
+    """Approve, start and save a local connector. Nothing is saved on `no` or on
+    any failure; the program is stopped again before this returns.
+    """
+    from aldwin.core.approval_log import ApprovalLogger
+    from aldwin.core.connectors.config import ConnectorConfig
+    from aldwin.core.connectors.errors import ConnectorError
+    from aldwin.core.connectors.local import ADD_TOOL, parse_command_line
+    from aldwin.core.connectors.state import tool_infos
+    from aldwin.host.connectors import ConnectorAdmin
+
+    root = _resolve_home(home)
+    admin = ConnectorAdmin(root)
+    try:
+        program, args = parse_command_line(command)
+        config = ConnectorConfig(
+            name=name,
+            command=program,
+            args=args,
+            env_allow=list(env_allow),
+            cwd=str(Path(cwd).expanduser().resolve()) if cwd else "workspace",
+        )
+        admin.check_new(config)
+        workspace_root = workspace or default_workspace_root(root)
+        approved = await admin.approve_local(
+            config,
+            tool=ADD_TOOL,
+            workspace_root=workspace_root,
+            approve=_shell_approve(on_approval),
+            approval_log=ApprovalLogger(home=root),
+        )
+        specs = await _probe_local(admin, approved, workspace_root)
+        admin.save_new(approved, None)
+    except ConnectorError as exc:
+        raise ConnectorCommandError(exc.message) from None
+    infos = tool_infos(approved, specs)
+    row = _connector_row(approved)
+    row["read"] = sum(1 for t in infos if t.effective == "auto")
+    row["write"] = sum(1 for t in infos if t.effective == "ask")
+    return row
+
+
+async def _probe_local(admin: Any, config: Any, workspace_root: Path) -> list[Any]:
+    from aldwin.core.connectors.connection import probe_connector
+    from aldwin.core.connectors.stderr_log import ServerLog
+    from aldwin.core.connectors.stdio import StdioTransport
+
+    spec = admin.launch_spec(config, workspace_root=workspace_root)
+    specs: list[Any] = await probe_connector(
+        config,
+        None,
+        transport_factory=lambda _http: StdioTransport(
+            spec, log=ServerLog(admin.home, config.name)
+        ),
+    )
+    return specs
+
+
+def connector_needs_approval(name: str, *, home: Path | None = None) -> bool:
+    """True for a local connector that would ask before it is turned on."""
+    from aldwin.core.connectors.local import is_approved
+    from aldwin.host.connectors import ConnectorAdmin
+
+    config = ConnectorAdmin(_resolve_home(home)).load().entries.get(name)
+    return config is not None and config.kind == "local" and not is_approved(config)
+
+
+async def connectors_enable_command(
+    name: str,
+    *,
+    on_approval: ShellApprovalHandler,
+    home: Path | None = None,
+    workspace: Path | None = None,
+) -> dict[str, Any]:
+    """Turn a connector on. A local one not yet approved asks first and stays off
+    on `no`; running Aldwins pick the change up on their next turn.
+    """
+    from aldwin.core.approval_log import ApprovalLogger
+    from aldwin.core.connectors.errors import ConnectorError
+    from aldwin.core.connectors.local import ENABLE_TOOL
+    from aldwin.host.connectors import ConnectorAdmin
+
+    root = _resolve_home(home)
+    admin = ConnectorAdmin(root)
+    try:
+        if not connector_needs_approval(name, home=root):
+            return _connector_row(admin.update(name, enabled=True))
+        config = admin.load().entries[name]
+        approved = await admin.approve_local(
+            config,
+            tool=ENABLE_TOOL,
+            workspace_root=workspace or default_workspace_root(root),
+            approve=_shell_approve(on_approval),
+            approval_log=ApprovalLogger(home=root),
+        )
+        updated = admin.update(
+            name, enabled=True, approved_digest=approved.approved_digest, note=None
+        )
+    except ConnectorError as exc:
+        raise ConnectorCommandError(exc.message) from None
+    return _connector_row(updated)
+
+
+def connectors_find_configs(
+    *, home: Path | None = None, workspace: Path | None = None
+) -> dict[str, Any]:
+    """MCP config files other apps keep in the usual places, plus the files
+    named in `connectors.import_paths`. Reads only; problems become warnings.
+    """
+    from aldwin.core.connectors.importer import find_config_files
+    from aldwin.core.settings import ConfigError, load_config
+
+    root = _resolve_home(home)
+    setup_logging(root)
+    try:
+        extra = load_config(root).connectors.import_paths
+    except ConfigError as exc:
+        raise ConnectorCommandError(str(exc)) from None
+    found, warnings = find_config_files(
+        user_home=Path.home(),
+        workspace=workspace or default_workspace_root(root),
+        extra_paths=extra,
+    )
+    return {
+        "found": [
+            {
+                "app": f.app,
+                "scope": f.scope,
+                "path": str(f.path),
+                "servers": f.servers,
+                "error": f.error,
+            }
+            for f in found
+        ],
+        "warnings": warnings,
+    }
+
+
+def connectors_import_command(
+    path: Path,
+    *,
+    rename_conflicts: bool = False,
+    home: Path | None = None,
+    workspace: Path | None = None,
+) -> dict[str, Any]:
+    """Import the servers a config file lists. Never starts or asks anything;
+    running Aldwins pick the new entries up on their next turn.
+    """
+    from aldwin.core.connectors.errors import ConnectorError
+    from aldwin.host.connectors import ConnectorAdmin
+
+    root = _resolve_home(home)
+    setup_logging(root)
+    admin = ConnectorAdmin(root)
+    try:
+        result = admin.import_file(
+            path,
+            rename_conflicts=rename_conflicts,
+            workspace=workspace or default_workspace_root(root),
+        )
+    except ConnectorError as exc:
+        raise ConnectorCommandError(exc.message) from None
+    return {
+        "app": result.app,
+        "rows": [
+            {"name": r.name, "kind": r.kind, "status": r.status, "detail": r.detail}
+            for r in result.rows
+        ],
+        "imported": result.imported,
+        "values": result.values,
+        "warnings": list(result.warnings),
+    }
+
+
 def connectors_logout_command(name: str, *, home: Path | None = None) -> None:
     """Delete a connector's sign-in. Nothing is revoked at the server."""
     from aldwin.host.connectors import ConnectorAdmin
@@ -881,6 +1162,9 @@ def _connector_row(config: Any) -> dict[str, Any]:
         "name": config.name,
         "title": config.display_title,
         "url": config.url,
+        "command": (
+            shlex.join([config.command, *config.args]) if config.command else None
+        ),
         "enabled": config.enabled,
         "auth": config.auth,
         "token_env": config.token_env,

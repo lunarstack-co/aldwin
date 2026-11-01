@@ -9,7 +9,10 @@
 | `aldwin skills` | List default and user skills from the terminal (same catalogue as `/skills`) |
 | `aldwin connectors list [--json]` | List connectors (connected apps over MCP) |
 | `aldwin connectors add <name> --url <url> [--token-env VAR]` | Check an MCP server and save it as a connector |
-| `aldwin connectors remove\|enable\|disable <name>` | Delete, turn on, or turn off a connector |
+| `aldwin connectors add <name> --command "<cmd>" [--env-allow VAR] [--cwd PATH] [--yes]` | Approve, check and save a local MCP server (macOS and Linux) |
+| `aldwin connectors import [<path>] [--rename-conflicts] [--yes]` | Import MCP servers from another agent app's config file; local ones are saved disabled. Without a path, looks in the usual places of every supported app, lists what it found and asks first. See [import-sources.md](import-sources.md) |
+| `aldwin connectors remove\|disable <name>` | Delete or turn off a connector |
+| `aldwin connectors enable <name> [--yes]` | Turn on a connector; a local command not yet approved asks first |
 | `aldwin uninstall` | Remove Aldwin (see [Uninstall](#uninstall)) |
 | `aldwin --plain` | Disable ANSI colours, live animations, and the terminal bell (also enabled by `NO_COLOR=1`) |
 | `aldwin --debug` | Enable `DEBUG`-level event logging in `~/.aldwin/logs/aldwin.log` |
@@ -34,7 +37,7 @@ Type `/` at the prompt for autocomplete:
 | `/workspace` | Show the workspace folder, or switch it with `/workspace <path>` |
 | `/verbose` | Show or hide up to 12 preview lines under file-tool rows for this session |
 | `/tools` | List built-in tools and which ones require approval, then each connector's tools |
-| `/connectors` | Add a connector by URL, or manage one: its tools, reconnect, turn off, remove |
+| `/connectors` | Add a connector by URL or local command, import the ones set up in other agent apps, or manage one: its tools, reconnect, turn off, remove |
 | `/exit` | Save the current session and exit |
 
 ## Keyboard shortcuts

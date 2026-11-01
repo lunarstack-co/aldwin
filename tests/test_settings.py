@@ -378,3 +378,18 @@ def test_extensible_provider_secrets_preserved_and_resolved(
     env_resolved = resolve_key("anthropic", aldwin_home)
     assert env_resolved.key == "sk-ant-env-99998888"
     assert env_resolved.source == "env"
+
+
+def test_connectors_import_paths_must_be_a_list(aldwin_home: Path) -> None:
+    (aldwin_home / "config.yaml").write_text(
+        "model: gpt-4o\nconnectors:\n  import_paths: x\n", encoding="utf-8"
+    )
+    with pytest.raises(ConfigError) as info:
+        load_config(aldwin_home)
+    assert "'connectors.import_paths' must be a list of paths" in str(info.value)
+
+    (aldwin_home / "config.yaml").write_text(
+        "model: gpt-4o\nconnectors:\n  import_paths: [~/team/mcp.toml]\n",
+        encoding="utf-8",
+    )
+    assert load_config(aldwin_home).connectors.import_paths == ["~/team/mcp.toml"]

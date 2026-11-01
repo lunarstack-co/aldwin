@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -153,6 +153,7 @@ class ApprovalLogger:
         reason: str | None = None,
         session_id: str | None = None,
         connector: str | None = None,
+        labels: Sequence[str] = (),
     ) -> bool:
         """Append one redacted JSON record to `approvals.jsonl`.
 
@@ -168,7 +169,7 @@ class ApprovalLogger:
         if not active_session:
             active_session = "default"
 
-        record_obj = {
+        record_obj: dict[str, object] = {
             "ts": datetime.now().astimezone().isoformat(timespec="milliseconds"),
             "session": active_session,
             "call_id": call_id,
@@ -182,6 +183,8 @@ class ApprovalLogger:
             "reason": redact_secrets(reason) if reason else None,
             "connector": connector,
         }
+        if labels:
+            record_obj["labels"] = list(labels)
         line = json.dumps(record_obj, ensure_ascii=False)
 
         try:

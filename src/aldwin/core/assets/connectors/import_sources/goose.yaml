@@ -1,0 +1,10 @@
+app: Goose
+homepage: https://github.com/aaif-goose/goose
+verified: 2026-11-01
+verified_from: source
+format: yaml
+dialect: goose
+servers_at: [[extensions]]
+locations:
+  - scope: user
+    paths: {any: ~/.config/goose/config.yaml}

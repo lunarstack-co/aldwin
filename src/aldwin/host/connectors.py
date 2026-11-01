@@ -12,6 +12,9 @@ import asyncio
 import itertools
 import logging
 import os
+import shlex
+import sys
+import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -50,10 +53,29 @@ from aldwin.core.connectors.errors import (
     ConnectorAuthRequired,
     ConnectorConfigError,
     ConnectorError,
+    ConnectorNotApproved,
     NeedsSignIn,
     SignInTimedOut,
 )
+from aldwin.core.connectors.importer import (
+    FoundConfig,
+    ImportResult,
+    apply_import,
+    find_config_files,
+    load_file,
+    plan_import,
+)
 from aldwin.core.connectors.index import IndexedTool, ToolIndex
+from aldwin.core.connectors.local import (
+    ADD_TOOL,
+    ENABLE_TOOL,
+    LaunchSpec,
+    check_command_floor,
+    is_approved,
+    launch_spec,
+    local_approval_request,
+    require_command,
+)
 from aldwin.core.connectors.mcp_tool import McpTool, RemoteToolSpec, ToolCaller
 from aldwin.core.connectors.oauth_messages import (
     DEFAULT_CLIENT_METADATA_URL,
@@ -71,6 +93,7 @@ from aldwin.core.connectors.state import (
     tool_infos,
 )
 from aldwin.core.policy import (
+    ApprovalAnswer,
     PolicyAskFn,
     PolicySession,
     register_runtime_policy,
@@ -81,6 +104,7 @@ from aldwin.core.tools.connector_tools import (
     LoadResult,
     build_find_connector_tools_tool,
 )
+from aldwin.core.workspace import default_workspace_root
 
 logger = logging.getLogger("aldwin.host.connectors")
 
@@ -99,6 +123,14 @@ MAX_MODEL_TOOLS = 128
 DEFAULT_LOADED_CAP = 40
 _CONNECTOR_TOOL_PREFIX = "mcp__"
 AuthMode = Literal["browser", "paste", "token"]
+SSE_UNSUPPORTED = "SSE is not supported"
+NEEDS_APPROVAL = "needs approval: open /connectors to enable it"
+WINDOWS_UNSUPPORTED = "local servers are not supported on Windows"
+
+
+def _local_servers_supported() -> bool:
+    # Process groups and killpg are POSIX-only.
+    return sys.platform != "win32"
 
 
 @dataclass(frozen=True)
@@ -132,6 +164,15 @@ class ConnectorEvent:
     kind: Literal["status", "notice"]
     snapshot: ConnectorSnapshot | None = None
     message: str = ""
+
+
+@dataclass(frozen=True)
+class ImportReport:
+    """What an import found, what it saved, and what went wrong on the way."""
+
+    found: list[FoundConfig]
+    results: list[ImportResult]
+    warnings: list[str]
 
 
 @dataclass(frozen=True)
@@ -180,9 +221,107 @@ class ConnectorAdmin:
             return BearerAuth(token)
         return build_auth(config, self.store, self._environ)
 
+    def launch_spec(
+        self, config: ConnectorConfig, *, workspace_root: Path
+    ) -> LaunchSpec:
+        """How `config` would start: command floor, folder and environment checked."""
+        return launch_spec(
+            config,
+            workspace_root=workspace_root,
+            home=self.home,
+            environ=self._environ,
+            credentials=self.store,
+        )
+
+    async def approve_local(
+        self,
+        config: ConnectorConfig,
+        *,
+        tool: str,
+        workspace_root: Path,
+        approve: PolicyAskFn | None,
+        approval_log: ApprovalLogger | None,
+    ) -> ConnectorConfig:
+        """Ask before a local command first runs and log the answer.
+
+        Returns `config` carrying its approval digest. Starts and saves nothing;
+        a `no` (or nobody to ask) raises `ConnectorNotApproved`.
+        """
+        target = shlex.join([config.command or "", *config.args])
+        try:
+            check_command_floor([config.command or "", *config.args])
+        except ConnectorConfigError as exc:
+            if approval_log is not None:
+                approval_log.log_decision(
+                    call_id=uuid.uuid4().hex,
+                    tool=tool,
+                    target=target,
+                    digest=None,
+                    tier="ask",
+                    decision="blocked",
+                    answer="none",
+                    source="rule",
+                    reason=exc.message,
+                    connector=config.name,
+                )
+            raise
+        spec = self.launch_spec(config, workspace_root=workspace_root)
+        require_command(spec)
+        request = local_approval_request(
+            spec, config, tool=tool, workspace_root=workspace_root
+        )
+        answer = (
+            await approve(request)
+            if approve is not None
+            else ApprovalAnswer("no", "no_approver")
+        )
+        if approval_log is not None:
+            approval_log.log_decision(
+                # The approval id ties this line to the event the door answered.
+                call_id=answer.approval_id or uuid.uuid4().hex,
+                tool=tool,
+                target=target,
+                digest=request.digest,
+                tier="ask",
+                decision="asked",
+                answer=answer.answer,
+                source=answer.source,
+                reason=answer.reason,
+                connector=config.name,
+                labels=request.risky,
+            )
+        if answer.answer == "no":
+            raise ConnectorNotApproved(config.display_title)
+        return config.model_copy(update={"approved_digest": request.digest})
+
+    def import_file(
+        self,
+        path: Path,
+        *,
+        rename_conflicts: bool,
+        workspace: Path | None,
+        user_home: Path | None = None,
+    ) -> ImportResult:
+        """Save the servers another app's config file lists. Starts nothing:
+        imported local commands, and everything from a project file, are
+        saved disabled.
+        """
+        loaded = load_file(
+            path, user_home=user_home or Path.home(), workspace=workspace
+        )
+        with connectors_locked(self.home):
+            plan = plan_import(
+                loaded,
+                existing=self._entries_or_raise(),
+                rename_conflicts=rename_conflicts,
+            )
+            result = apply_import(plan, home=self.home, credentials=self.store)
+        return replace(result, app=loaded.app, warnings=loaded.warnings)
+
     def check_new(self, config: ConnectorConfig) -> None:
         """Raise `ConnectorConfigError` for a bad URL or a taken name."""
-        check_url(config.url)
+        if config.url is not None:
+            check_url(config.url)
         check_name(config.name, self.load().entries)
 
     async def probe(
@@ -295,8 +434,13 @@ class ConnectorManager:
         connection_factory: ConnectionFactory = default_connection_factory,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         loaded_cap: int = DEFAULT_LOADED_CAP,
+        workspace_root: Callable[[], Path] | None = None,
     ) -> None:
         self.admin = admin
+        # Local servers run in the session's workspace, read when each one starts.
+        self._workspace_root = workspace_root or (
+            lambda: default_workspace_root(admin.home)
+        )
         self._policy_session = policy_session
         self._ask = ask
         self._approval_log = approval_log
@@ -383,6 +527,11 @@ class ConnectorManager:
             *(self._stop_live(n, close_timeout=timeout) for n in names),
             return_exceptions=True,
         )
+        # A close that timed out abandons its task, and a native cancel can beat
+        # the transport's shielded stop; kill any group still running.
+        stdio = sys.modules.get("aldwin.core.connectors.stdio")
+        if stdio is not None:
+            stdio.kill_live_groups()
 
     # --- requests -----------------------------------------------------------
 
@@ -394,13 +543,17 @@ class ConnectorManager:
         dry_run: bool,
         no_browser: bool = False,
         on_auth: OnAuth | None = None,
+        approve: PolicyAskFn | None = None,
     ) -> AddResult:
         """Probe (`dry_run`) or connect and save. Nothing is saved on failure.
 
         An `oauth` connector signs in through the browser; a `bearer` one with no
-        token asks for it through `on_auth` (token mode).
+        token asks for it through `on_auth` (token mode). A local command runs
+        only after `approve` says yes.
         """
         self.admin.check_new(config)
+        if config.kind == "local":
+            return await self._add_local(config, dry_run=dry_run, approve=approve)
         if config.auth == "oauth":
             if dry_run:
                 raise ConnectorConfigError(
@@ -430,6 +583,37 @@ class ConnectorManager:
             raise
         await self._adopt(live, connection, specs)
         return AddResult(config, self._snapshot(live))
+
+    async def _add_local(
+        self, config: ConnectorConfig, *, dry_run: bool, approve: PolicyAskFn | None
+    ) -> AddResult:
+        """A local add: the dry run only checks, never starts or asks; a real add
+        asks, starts the program to list its tools, then saves the approval.
+        """
+        if not _local_servers_supported():
+            raise ConnectorConfigError(WINDOWS_UNSUPPORTED)
+        root = self._workspace_root()
+        if dry_run:
+            self.admin.launch_spec(config, workspace_root=root)
+            return AddResult(config, self._snapshot_of(config, "connected", []))
+        approved = await self.admin.approve_local(
+            config,
+            tool=ADD_TOOL,
+            workspace_root=root,
+            approve=approve,
+            approval_log=self._approval_log,
+        )
+        live = _Live(config=approved)
+        await self._emit(ConnectorEvent("status", self._snapshot(live)))
+        connection = self._new_connection(live, None)
+        specs = await connection.open()
+        try:
+            self.admin.save_new(approved, None)
+        except ConnectorError:
+            await connection.close()
+            raise
+        await self._adopt(live, connection, specs)
+        return AddResult(approved, self._snapshot(live))
 
     async def _add_with_sign_in(
         self, config: ConnectorConfig, no_browser: bool, on_auth: OnAuth | None
@@ -685,8 +869,68 @@ class ConnectorManager:
         finally:
             self._auth_waits.pop(config.name, None)
 
-    async def enable(self, name: str) -> ConnectorSnapshot:
-        config = self.admin.update(name, enabled=True)
+    async def import_from_apps(
+        self,
+        *,
+        paths: Sequence[str],
+        dry_run: bool,
+        rename_conflicts: bool,
+        extra_paths: Sequence[str],
+    ) -> ImportReport:
+        """Find other apps' config files and, unless `dry_run`, import them.
+
+        Nothing is started: imported local commands are saved disabled. One
+        file that fails becomes a warning and the others still import.
+        """
+        root = self._workspace_root()
+        found, warnings = find_config_files(
+            user_home=Path.home(), workspace=root, extra_paths=extra_paths
+        )
+        if dry_run:
+            return ImportReport(found, [], warnings)
+        chosen = [Path(p) for p in paths] or [
+            f.path for f in found if f.error is None and f.servers
+        ]
+        results: list[ImportResult] = []
+        for path in chosen:
+            try:
+                results.append(
+                    self.admin.import_file(
+                        path, rename_conflicts=rename_conflicts, workspace=root
+                    )
+                )
+            except ConnectorError as exc:
+                warnings.append(exc.message)
+            except Exception as exc:  # one bad file must not stop the others
+                logger.exception("import: couldn't import %s", path)
+                warnings.append(f"couldn't import {path} ({type(exc).__name__})")
+        await self.reconcile()
+        return ImportReport(found, results, warnings)
+
+    async def enable(
+        self, name: str, *, approve: PolicyAskFn | None = None
+    ) -> ConnectorSnapshot:
+        """Turn a connector on. A local one not yet approved (imported, or its
+        command edited by hand) asks first and stays off on `no`.
+        """
+        current = self._require(name)
+        if current.kind == "local" and not is_approved(current):
+            approved = await self.admin.approve_local(
+                current,
+                tool=ENABLE_TOOL,
+                workspace_root=self._workspace_root(),
+                approve=approve,
+                approval_log=self._approval_log,
+            )
+            # The approval answers the import's "review and enable" note.
+            config = self.admin.update(
+                name,
+                enabled=True,
+                approved_digest=approved.approved_digest,
+                note=None,
+            )
+        else:
+            config = self.admin.update(name, enabled=True)
         self._configs[name] = config
         self._fingerprint = connectors_fingerprint(self.admin.home)
         await self._stop_live(name)
@@ -762,8 +1006,29 @@ class ConnectorManager:
     def _needs_sign_in_at_start(self, config: ConnectorConfig) -> bool:
         return config.auth == "oauth" and self.admin.store.get(config.name) is None
 
+    def _blocked_reason(self, config: ConnectorConfig) -> str | None:
+        """Why `config` must not connect at all, short of the user acting."""
+        if config.transport == "sse":
+            return SSE_UNSUPPORTED
+        if config.kind == "local":
+            if not _local_servers_supported():
+                return WINDOWS_UNSUPPORTED
+            if not is_approved(config):
+                return NEEDS_APPROVAL
+        return None
+
+    async def _hold(self, config: ConnectorConfig, reason: str) -> _Live:
+        """Show `config` as failed without connecting or retrying."""
+        live = _Live(config=config, status="failed", error=reason)
+        self._live[config.name] = live
+        await self._emit(ConnectorEvent("status", self._snapshot(live)))
+        return live
+
     async def _begin(self, config: ConnectorConfig) -> _Live:
         """Start a connector; an `oauth` one never signed in waits for the user."""
+        reason = self._blocked_reason(config)
+        if reason is not None:
+            return await self._hold(config, reason)
         if self._needs_sign_in_at_start(config):
             live = _Live(config=config)
             self._live[config.name] = live
@@ -803,6 +1068,9 @@ class ConnectorManager:
 
     async def _connect_now(self, config: ConnectorConfig) -> _Live:
         """Try to connect now; if that fails, keep retrying in the background."""
+        reason = self._blocked_reason(config)
+        if reason is not None:
+            return await self._hold(config, reason)
         live = _Live(
             config=config,
             identity=credential_identity(self.admin.store.get(config.name)),
@@ -950,14 +1218,32 @@ class ConnectorManager:
             ):
                 self._apply(live, specs)
 
+        extra: dict[str, Any] = {}
+        if live.config.kind == "local":
+            extra["transport_factory"] = self._stdio_transport(live.config)
         connection = self._connection_factory(
             live.config,
             auth=auth,
             on_tools_changed=on_tools_changed,
             on_lost=on_lost,
+            **extra,
         )
         holder.append(connection)
         return connection
+
+    def _stdio_transport(self, config: ConnectorConfig) -> Callable[[Any], Any]:
+        """The transport for a local server, built when the connection opens so a
+        bad folder or a missing program fails that attempt, not this call.
+        """
+
+        def build(_http: Any) -> Any:
+            from aldwin.core.connectors.stderr_log import ServerLog
+            from aldwin.core.connectors.stdio import StdioTransport
+
+            spec = self.admin.launch_spec(config, workspace_root=self._workspace_root())
+            return StdioTransport(spec, log=ServerLog(self.admin.home, config.name))
+
+        return build
 
     def _apply(
         self,
@@ -1090,4 +1376,17 @@ class ConnectorManager:
             tools=tool_infos(config, specs),
             error=error,
             retry_in_s=retry_in_s,
+            transport=(
+                "sse"
+                if config.transport == "sse"
+                else "stdio"
+                if config.kind == "local"
+                else "http"
+            ),
+            command=(
+                shlex.join([config.command, *config.args])
+                if config.command is not None
+                else None
+            ),
+            note=config.note,
         )

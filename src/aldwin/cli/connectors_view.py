@@ -16,12 +16,15 @@ from aldwin.cli.picker import Row, row_text
 from aldwin.cli.render import ChatRenderer
 from aldwin.client import ProtocolError, sanitize_display_text
 from aldwin.protocol import (
+    ApprovalAnswer,
+    ApprovalEvent,
     CatalogItem,
     ConnectorAuth,
     ConnectorAuthEvent,
     ConnectorInfo,
     ConnectorProbeEvent,
     ConnectorsEvent,
+    ConnectorsImportEvent,
     ConnectorStatusEvent,
     ConnectorToolInfo,
     DoneEvent,
@@ -31,10 +34,19 @@ from aldwin.protocol import (
 )
 
 PromptLine = Callable[[str], Awaitable[str]]
+ApprovalHandler = Callable[
+    [ApprovalEvent], Awaitable[tuple[ApprovalAnswer, str | None]]
+]
 ToolChoice = Literal["auto", "ask", "off", "default"]
 
 ADD_LABEL = "+ Add a connector…"
+IMPORT_LABEL = "Import from other apps…"
+IMPORT_NONE_FOUND = "No MCP config files found in the usual places."
 CUSTOM_LABEL = "Custom URL…"
+LOCAL_LABEL = "Local command… (advanced)"
+LOCAL_NOTE = (
+    "This runs a program on this computer with access to your workspace folder."
+)
 _GLYPHS = {
     "connected": ("●", "ok"),
     "failed": ("✕", "err"),
@@ -57,16 +69,26 @@ class ConnectorsClient(Protocol):
 
     async def connectors_list(self) -> ConnectorsEvent: ...
 
+    async def connectors_import(
+        self,
+        paths: Sequence[str] = (),
+        *,
+        dry_run: bool = False,
+        rename_conflicts: bool = False,
+    ) -> ConnectorsImportEvent: ...
+
     async def connectors_add(
         self,
         *,
-        url: str,
+        url: str | None = None,
         name: str | None = None,
         title: str | None = None,
         auth: ConnectorAuth = "none",
         token: str | None = None,
         token_env: str | None = None,
         dry_run: bool = False,
+        command: str | None = None,
+        on_approval: ApprovalHandler | None = None,
     ) -> ConnectorProbeEvent | ConnectorStatusEvent: ...
 
     def connectors_sign_in(
@@ -88,7 +110,9 @@ class ConnectorsClient(Protocol):
 
     async def stop(self) -> DoneEvent | ErrorEvent: ...
 
-    async def connectors_enable(self, name: str) -> ConnectorStatusEvent: ...
+    async def connectors_enable(
+        self, name: str, *, on_approval: ApprovalHandler | None = None
+    ) -> ConnectorStatusEvent: ...
 
     async def connectors_disable(self, name: str) -> ConnectorStatusEvent: ...
 
@@ -145,26 +169,84 @@ class _View:
         width = max((len(i.title) for i in listing.items), default=0)
         rows: list[Row] = [connector_row(info, width) for info in listing.items]
         rows.append([("class:accent", ADD_LABEL)])
+        rows.append([("class:accent", IMPORT_LABEL)])
         choice = await self._choose(rows, title="Connectors")
         if choice is None:
             return
         if choice == len(listing.items):
             await self.add(listing.catalog)
+        elif choice == len(listing.items) + 1:
+            await self.import_from_apps()
         else:
             await self.manage(listing.items[choice])
+
+    # --- import -------------------------------------------------------------
+
+    async def import_from_apps(self) -> None:
+        """Show what other apps have set up, ask once, and import it."""
+        scan = await self.client.connectors_import(dry_run=True)
+        self._warnings(scan.warnings)
+        if not scan.found:
+            self._result("warn", IMPORT_NONE_FOUND)
+            return
+        self._gap()
+        self._line("Found:", "bold")
+        for item in scan.found:
+            state = (
+                f"can't read: {item.error}"
+                if item.error
+                else f"{item.servers} server{'' if item.servers == 1 else 's'}"
+            )
+            self._line(
+                sanitize_display_text(
+                    f"{item.app} ({item.scope})  {state}  {item.path}"
+                ),
+                "muted" if item.error or not item.servers else "",
+            )
+        usable = [f.path for f in scan.found if not f.error and f.servers]
+        if not usable:
+            self._result("warn", import_summary(0, 0))
+            return
+        reply = (await self.prompt_line("  Import these? [y/N] ")).strip().lower()
+        if reply not in ("y", "yes"):
+            self._line("Nothing imported.", "muted")
+            return
+        result = await self.client.connectors_import(usable)
+        self._warnings(result.warnings)
+        self._gap()
+        for row in result.rows:
+            style = {"imported": "ok", "skipped": "muted", "failed": "err"}[row.status]
+            self._line(
+                sanitize_display_text(
+                    f"{row.name}  {row.kind}  {row.detail}  ({row.app})"
+                ),
+                style,
+            )
+        self._result(
+            "ok" if result.imported else "warn",
+            import_summary(result.imported, result.values),
+            "Local commands are off until you enable and approve them."
+            if result.imported
+            else None,
+        )
+
+    def _warnings(self, warnings: Sequence[str]) -> None:
+        for warning in warnings:
+            self._line(f"warning: {sanitize_display_text(warning)}", "warn")
 
     # --- add ----------------------------------------------------------------
 
     async def add(self, catalog: Sequence[CatalogItem] = ()) -> None:
-        if catalog:
-            rows = catalog_rows(catalog, self.console.width)
-            choice = await self._choose(rows, title="Add a connector")
-            if choice is None:
-                return
-            if choice < len(catalog):
-                await self.add_from_catalog(catalog[choice])
-                return
-        await self.add_custom()
+        rows = catalog_rows(catalog, self.console.width)
+        choice = await self._choose(rows, title="Add a connector")
+        if choice is None:
+            return
+        if choice < len(catalog):
+            await self.add_from_catalog(catalog[choice])
+        elif choice == len(catalog):
+            await self.add_custom()
+        else:
+            await self.add_local()
 
     async def add_from_catalog(self, item: CatalogItem) -> None:
         title = sanitize_display_text(item.title)
@@ -233,6 +315,67 @@ class _View:
             return
         assert isinstance(status, ConnectorStatusEvent)
         self._status_result(title, status)
+
+    async def add_local(self) -> None:
+        """Add a server started from a command; the host asks before it runs."""
+        self._line(LOCAL_NOTE, "muted")
+        line = (await self.prompt_line("  Command: ")).strip()
+        if not line:
+            return
+        try:
+            probe = await self.client.connectors_add(command=line, dry_run=True)
+        except ProtocolError as exc:
+            self._result("err", "Couldn't use that command", str(exc))
+            return
+        assert isinstance(probe, ConnectorProbeEvent)
+        typed = (await self.prompt_line(f"  Name [{probe.name}]: ")).strip()
+        name = typed or probe.name
+        title = probe.title if name == probe.name else name[:1].upper() + name[1:]
+        try:
+            status = await self.client.connectors_add(
+                command=line, name=name, on_approval=self.approve
+            )
+        except ProtocolError as exc:
+            self._result("err", f"{title} didn't connect", str(exc))
+            return
+        assert isinstance(status, ConnectorStatusEvent)
+        self._status_result(title, status)
+
+    async def approve(self, event: ApprovalEvent) -> tuple[ApprovalAnswer, str | None]:
+        """Show the host's question; Enter, Esc and n all mean no."""
+        if self.input_dev is not None:
+            answer = await self._read_choice(event, self.input_dev)
+        else:
+            self.renderer.render_approval_panel(event)
+            reply = await self.prompt_line("  Run this program? [y/N] ")
+            answer = "yes" if reply.strip().lower() in ("y", "yes") else "no"
+        if answer == "yes":
+            # Starting can take a while (npx may download first); say so.
+            self._line("Starting the program…", "muted")
+            return "yes", None
+        return "no", None
+
+    async def _read_choice(self, event: ApprovalEvent, input_dev: Input) -> str:
+        """Read the answer, moving the ❯ with the arrow keys as it changes."""
+        from aldwin.cli.chat_screen import read_approval_key
+
+        if self.renderer.plain or not self.console.is_interactive:
+            self.renderer.render_approval_panel(event)
+            return await read_approval_key(input_dev, grantable=False)
+        from rich.live import Live
+
+        self.renderer.ring_bell()
+        panel = self.renderer.build_approval_panel
+        with Live(
+            panel(event, selected=0), console=self.console, auto_refresh=False
+        ) as live:
+            return await read_approval_key(
+                input_dev,
+                grantable=False,
+                on_select=lambda row: live.update(
+                    panel(event, selected=row), refresh=True
+                ),
+            )
 
     # --- sign-in ------------------------------------------------------------
 
@@ -384,7 +527,13 @@ class _View:
                 "ok", f"{title} disabled.", "Its tools are off until you enable it."
             )
         elif choice == 2:
-            status = await self.client.connectors_enable(info.name)
+            try:
+                status = await self.client.connectors_enable(
+                    info.name, on_approval=self.approve
+                )
+            except ProtocolError as exc:
+                self._result("err", f"{title} wasn't enabled", str(exc))
+                return
             self._status_result(title, status)
         elif choice == 3:
             await self._remove(info)
@@ -521,12 +670,25 @@ def connector_row(info: ConnectorInfo, width: int = 0) -> Row:
     else:
         reads = "reads auto" if info.trust_read_only_hints else "reads ask"
         detail, detail_style = f"{len(usable)} tools · {reads}, writes ask", "muted"
+    note: list[tuple[str, str]] = (
+        [("class:muted", f" · {sanitize_display_text(info.note)}")] if info.note else []
+    )
     return [
         (f"class:{glyph_style}", f"{glyph} "),
         ("", title),
         ("", "  "),
         (f"class:{detail_style}", sanitize_display_text(detail)),
+        *note,
     ]
+
+
+def import_summary(imported: int, values: int) -> str:
+    connectors = "connector" if imported == 1 else "connectors"
+    moved = "value" if values == 1 else "values"
+    return (
+        f"Imported {imported} {connectors}. "
+        f"{values} {moved} moved to Aldwin's credential store."
+    )
 
 
 def list_label(info: ConnectorInfo) -> str:
@@ -534,7 +696,9 @@ def list_label(info: ConnectorInfo) -> str:
 
 
 def catalog_rows(catalog: Sequence[CatalogItem], width: int = 100) -> list[Row]:
-    """The catalogue in three aligned columns, then `Custom URL…`."""
+    """The catalogue in three aligned columns, then `Custom URL…` and the local
+    command entry.
+    """
     title_w = max([len(CUSTOM_LABEL), *(len(i.title) for i in catalog)])
     room = max(12, width - 2 - title_w - 2 - 3 - _TAG_WIDTH)
     purposes = [_fit(sanitize_display_text(i.purpose), room) for i in catalog]
@@ -563,6 +727,7 @@ def catalog_rows(catalog: Sequence[CatalogItem], width: int = 100) -> list[Row]:
             ("class:muted", "any MCP server address"),
         ]
     )
+    rows.append([("", LOCAL_LABEL)])
     return rows
 
 

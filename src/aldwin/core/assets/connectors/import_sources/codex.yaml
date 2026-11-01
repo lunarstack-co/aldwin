@@ -1,0 +1,12 @@
+app: Codex CLI
+homepage: https://learn.chatgpt.com/docs/extend/mcp?surface=cli
+verified: 2026-11-01
+verified_from: docs
+format: toml
+dialect: codex
+servers_at: [[mcp_servers]]
+locations:
+  - scope: user
+    paths: {any: ~/.codex/config.toml}
+  - scope: project
+    paths: {any: "{workspace}/.codex/config.toml"}

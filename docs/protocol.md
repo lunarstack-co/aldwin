@@ -78,14 +78,15 @@ The tables above list the original `v1` messages. `v2` also has the skills and t
 
 ## Connectors
 
-Connectors add remote MCP servers whose tools join the conversation. These messages were added without bumping `v` from 2: door and host ship in one package over the in-process transport, so they always agree. Before the daemon ships, doors must tolerate unknown event `kind`s.
+Connectors add MCP servers whose tools join the conversation: remote servers by URL, and local servers started from a command on this computer (macOS and Linux only). These messages were added without bumping `v` from 2: door and host ship in one package over the in-process transport, so they always agree. Before the daemon ships, doors must tolerate unknown event `kind`s.
 
 ### Requests
 
 | `type` | Fields | Answer |
 |---|---|---|
 | `connectors.list` | *(none)* | `connectors`, then `done` |
-| `connectors.add` | `url`, `name: str \| None` (suggested from the host name when omitted), `title`, `auth: "none" \| "bearer" \| "oauth"`, `token` (never in `repr`), `token_env`, `dry_run: bool = False`, `client_id` (a pre-registered OAuth client), `no_browser: bool = False` | Runs in the background. `dry_run`: `connector.probe`, then `done` (refused for `oauth`). Otherwise `connector.status`, then `done`. `oauth`, or `bearer` with no token, first sends `connector.auth` and waits for the user. Nothing is saved on failure. |
+| `connectors.add` | `url` or `command` (exactly one; `command` is a local command line, run without a shell), `env_allow: list[str]` and `cwd` (an absolute folder; default the workspace) for a local command, `name: str \| None` (suggested from the host name or the command when omitted), `title`, `auth: "none" \| "bearer" \| "oauth"`, `token` (never in `repr`), `token_env`, `dry_run: bool = False`, `client_id` (a pre-registered OAuth client), `no_browser: bool = False` | Runs in the background. `dry_run`: `connector.probe`, then `done` (refused for `oauth`). Otherwise `connector.status`, then `done`. `oauth`, or `bearer` with no token, first sends `connector.auth` and waits for the user. A local `command` first sends `approval` (`tool="connectors.add"`, never grantable) and runs nothing unless the answer is `yes`; its `dry_run` only checks the command and suggests a name, without starting or asking. Nothing is saved on failure. |
+| `connectors.import` | `paths: list[str] = []`, `dry_run: bool = False`, `rename_conflicts: bool = False` | `connectors.import`, then `done`. `dry_run` only lists the files other agent apps keep MCP servers in. Otherwise `paths` are imported, or every readable file found when `paths` is empty. Nothing is started: imported local commands, and everything from a project file, are saved disabled. One unreadable file is a warning, not a failure. |
 | `connectors.remove` | `name` | `done` (the saved token is deleted too) |
 | `connectors.enable` | `name` | Runs in the background: `connector.status`, then `done` |
 | `connectors.disable` | `name` | `connector.status`, then `done`; the tools leave the conversation at once |
@@ -104,11 +105,12 @@ Connectors add remote MCP servers whose tools join the conversation. These messa
 | `kind` | Fields |
 |---|---|
 | `connectors` | `items: list[ConnectorInfo]`, `error: str \| None` (the `connectors.yaml` problem, when the file is invalid), `catalog: list[CatalogItem]` |
+| `connectors.import` | `found: list[ImportSourceInfo]` (`app`, `scope: "user" \| "project"`, `path`, `servers`, `error`), `rows: list[ImportRowInfo]` (`name`, `kind`, `status: "imported" \| "skipped" \| "failed"`, `detail`, `app`), `imported`, `values` (secret values moved to the credential store), `warnings: list[str]` |
 | `connector.status` | `name`, `status: "connecting" \| "connected" \| "failed" \| "disabled" \| "needs_auth"`, `tools: int`, `error`, `retry_in_s` |
 | `connector.auth` | `name`, `title`, `mode: "browser" \| "paste" \| "token"`, `url` (the sign-in address; `null` for `token`), `token_help_url`, `expires_in` (seconds left to answer) |
 | `connector.probe` | `name`, `title`, `tools: list[ConnectorToolInfo]`, `read: int`, `write: int` |
 
-`ConnectorInfo` has `name`, `title`, `url`, `enabled`, `status`, `auth`, `trust_read_only_hints`, `tools`, `error`, `retry_in_s`. `ConnectorToolInfo` has `name`, `model_name` (`mcp__<connector>__<tool>`), `title`, `description`, `read_only`, `setting` (the user's choice, or `null`) and `effective` (`auto`, `ask` or `off`).
+`ConnectorInfo` has `name`, `title`, `url` (`null` for a local connector), `enabled`, `status`, `auth`, `trust_read_only_hints`, `tools`, `error`, `retry_in_s`, `transport` (`http`, `stdio` or `sse`), `command` (how a local connector starts, for display) and `note`. An `sse` entry is never connected (`error: "SSE is not supported"`); a local entry whose command changed since it was approved shows `error: "needs approval: open /connectors to enable it"` and does not start. `connectors.enable` on such an entry sends `approval` (`tool="connectors.enable"`) first. `ConnectorToolInfo` has `name`, `model_name` (`mcp__<connector>__<tool>`), `title`, `description`, `read_only`, `setting` (the user's choice, or `null`) and `effective` (`auto`, `ask` or `off`).
 
 `CatalogItem` has `name`, `title`, `purpose`, `url`, `auth`, `docs_url`, `keywords`, `token_help_url` and `added` (already in `connectors.yaml`).
 

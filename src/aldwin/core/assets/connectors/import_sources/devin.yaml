@@ -1,0 +1,12 @@
+app: Devin
+homepage: https://docs.devin.ai/cli/extensibility/mcp/configuration.md
+verified: 2026-11-01
+verified_from: docs
+format: json
+dialect: standard
+servers_at: [[mcpServers]]
+locations:
+  - scope: user
+    paths: {any: ~/.config/devin/mcp_config.json}
+  - scope: project
+    paths: {any: "{workspace}/.devin/mcp_config.json"}

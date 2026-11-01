@@ -1,0 +1,20 @@
+{
+  "agents": {"defaults": {"model": "gpt-4o"}},
+  "tools": {
+    "web": {},
+    "mcp_servers": {
+      "filesystem": {
+        "type": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+        "env": {"FS_TOKEN": "fake-nanobot-1"},
+        "enabled_tools": ["read_file"]
+      },
+      "remote": {
+        "type": "streamableHttp",
+        "url": "https://remote.example.com/mcp",
+        "headers": {"Authorization": "Bearer fake-nanobot-2"}
+      }
+    }
+  }
+}

@@ -12,6 +12,7 @@ If something here is unclear or out of date, that is a bug too. Open an issue or
 - **Improve the docs.** Fixes to the README, the [protocol spec](docs/protocol.md) or this guide are always welcome.
 
 Security problems should not go in a public issue. Email [contact@lunarstack.co](mailto:contact@lunarstack.co) instead.
+- **Add an app to import from.** `aldwin connectors import` reads other agent apps' MCP configs. Adding an app is one YAML file plus a fixture, with no Python when the format is already known. See [docs/import-sources.md](docs/import-sources.md).
 
 ## Set up
 

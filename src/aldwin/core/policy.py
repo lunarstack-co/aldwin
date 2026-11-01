@@ -112,6 +112,7 @@ class ApprovalAnswer:
     answer: Literal["yes", "yes_session", "no"]
     source: Literal["user", "no_approver"]
     reason: str | None = None
+    approval_id: str | None = None  # the `approval` event answered, when one was sent
 
 
 @dataclass(frozen=True, slots=True)

@@ -22,6 +22,7 @@ from pydantic import (
     StrictStr,
     ValidationError,
     field_validator,
+    model_validator,
 )
 
 from aldwin.core.connectors.errors import ConnectorConfigError
@@ -37,9 +38,19 @@ NAME_PATTERN: Final[str] = r"^[a-z0-9][a-z0-9_-]{0,29}$"
 _NAME_RE = re.compile(NAME_PATTERN)
 _LOCAL_HOSTS: Final[frozenset[str]] = frozenset({"localhost", "127.0.0.1"})
 _GENERIC_LABELS: Final[frozenset[str]] = frozenset({"mcp", "api", "www", "server"})
+ENV_NAME_PATTERN: Final[str] = r"^[A-Za-z_][A-Za-z0-9_]{0,63}$"
+_ENV_NAME_RE = re.compile(ENV_NAME_PATTERN)
+WORKSPACE_CWD: Final[str] = "workspace"
+# Package runners whose first non-flag argument names the server package.
+_RUNNERS: Final[frozenset[str]] = frozenset({"npx", "bunx", "uvx", "pipx"})
+_DLX_RUNNERS: Final[frozenset[str]] = frozenset({"pnpm", "yarn"})
+_INTERPRETERS: Final[frozenset[str]] = frozenset(
+    {"python", "python3", "node", "deno", "bun"}
+)
 
 AuthKind = Literal["none", "bearer", "oauth"]
 ToolSetting = Literal["auto", "ask", "off"]
+ConnectorKind = Literal["local", "remote"]
 
 _EXPECTED_BY_ERROR: Final[dict[str, str]] = {
     "bool_type": "a boolean",
@@ -63,12 +74,22 @@ class OAuthSettings(BaseModel):
 
 
 class ConnectorConfig(BaseModel):
-    """One connector entry. The YAML key is `name`; the file never holds a secret."""
+    """One connector entry. The YAML key is `name`; the file never holds a secret.
+
+    A remote entry has `url`; a local one has `command` (run without a shell).
+    """
 
     model_config = ConfigDict(frozen=True, extra="ignore")
 
     name: StrictStr = Field(pattern=NAME_PATTERN)
-    url: StrictStr
+    url: StrictStr | None = None
+    command: StrictStr | None = None
+    args: list[StrictStr] = Field(default_factory=list)
+    env_allow: list[StrictStr] = Field(default_factory=list)
+    cwd: StrictStr = WORKSPACE_CWD
+    transport: Literal["sse"] | None = None
+    approved_digest: StrictStr | None = None
+    note: StrictStr | None = None
     title: StrictStr | None = None
     enabled: StrictBool = True
     auth: AuthKind = "none"
@@ -87,12 +108,56 @@ class ConnectorConfig(BaseModel):
 
     @field_validator("url")
     @classmethod
-    def _url_allowed(cls, value: str) -> str:
+    def _url_allowed(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
         try:
             check_url(value)
         except ConnectorConfigError as exc:
             raise ValueError(exc.message) from None
         return value
+
+    @field_validator("env_allow")
+    @classmethod
+    def _env_names(cls, value: list[str]) -> list[str]:
+        for item in value:
+            if not _ENV_NAME_RE.fullmatch(item):
+                raise ValueError(f"has an invalid variable name: {item}")
+        return value
+
+    @field_validator("cwd")
+    @classmethod
+    def _cwd_shape(cls, value: str) -> str:
+        if value != WORKSPACE_CWD and not Path(value).is_absolute():
+            raise ValueError("must be workspace or an absolute path")
+        return value
+
+    @model_validator(mode="after")
+    def _url_or_command(self) -> ConnectorConfig:
+        if self.url is not None and self.command is not None:
+            raise ValueError("must have either url or command, not both")
+        if self.url is None and self.command is None:
+            raise ValueError("must have url or command")
+        remote_only = (
+            self.auth != "none" or self.token_env or self.transport or self.oauth
+        )
+        if self.command is not None and remote_only:
+            raise ValueError(
+                "is a local command, so it can't use auth, token_env, transport "
+                "or oauth"
+            )
+        return self
+
+    @property
+    def kind(self) -> ConnectorKind:
+        return "local" if self.command is not None else "remote"
+
+    @property
+    def server_url(self) -> str:
+        """The `url` of a remote entry; only remote code paths read it."""
+        if self.url is None:
+            raise ConnectorConfigError(f"{self.display_title} is a local command")
+        return self.url
 
     @property
     def display_title(self) -> str:
@@ -165,8 +230,11 @@ def save_connectors(home: Path, entries: Mapping[str, ConnectorConfig]) -> None:
     body: dict[str, Any] = {}
     for name, config in sorted(entries.items()):
         data = config.model_dump(exclude={"name"}, exclude_none=True)
-        if not data["tools"]:
-            del data["tools"]
+        for empty_list in ("tools", "args", "env_allow"):
+            if not data[empty_list]:
+                del data[empty_list]
+        if config.kind == "remote":
+            del data["cwd"]
         body[name] = data
     text = yaml.safe_dump(
         {**header, "connectors": body},
@@ -235,9 +303,59 @@ def suggest_name(url: str, existing: Iterable[str]) -> str:
         labels = labels[:-1]
     while len(labels) > 1 and labels[0] in _GENERIC_LABELS:
         labels = labels[1:]
-    base = re.sub(r"[^a-z0-9_-]", "-", labels[0].lower()).lstrip("-_")[:30]
-    base = base or "connector"
+    return _free_name(labels[0], existing)
 
+
+def suggest_name_for_command(argv: list[str], existing: Iterable[str]) -> str:
+    """Suggest a free name from a command line:
+    `npx -y @modelcontextprotocol/server-everything` -> `everything`.
+    """
+    base = _strip_package(_package_token(argv))
+    return _free_name(base, existing)
+
+
+def _package_token(argv: list[str]) -> str:
+    """The argument that names the server: the package for `npx`/`uvx`-style
+    runners, the script for an interpreter, otherwise the program itself.
+    """
+    if not argv:
+        return ""
+    program = Path(argv[0]).name
+    rest = argv[1:]
+    if program in _DLX_RUNNERS and rest[:1] == ["dlx"]:
+        rest = rest[1:]
+    elif program not in _RUNNERS | _INTERPRETERS:
+        return program
+    skip_next = False
+    for arg in rest:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg in ("--from", "-m", "--with"):
+            skip_next = arg != "-m"
+            continue
+        if arg.startswith("-"):
+            continue
+        return Path(arg).stem if program in _INTERPRETERS else arg
+    return program
+
+
+def _strip_package(token: str) -> str:
+    """Drop a scope, a version and the usual `mcp`/`server` affixes."""
+    name = token.rsplit("/", 1)[-1] if token.startswith("@") else token
+    name = re.split(r"@|==", name, maxsplit=1)[0]
+    for prefix in ("mcp-server-", "server-"):
+        if name.startswith(prefix) and len(name) > len(prefix):
+            name = name[len(prefix) :]
+    for suffix in ("-mcp", "-server"):
+        if name.endswith(suffix) and len(name) > len(suffix):
+            name = name[: -len(suffix)]
+    return name
+
+
+def _free_name(raw: str, existing: Iterable[str]) -> str:
+    base = re.sub(r"[^a-z0-9_-]", "-", raw.lower()).lstrip("-_")[:30]
+    base = base or "connector"
     taken = set(existing)
     candidate, n = base, 2
     while candidate in taken:
@@ -271,6 +389,10 @@ def _describe(name: str, exc: ValidationError) -> str:
     loc = ".".join(str(part) for part in first.get("loc", ()))
     if first["type"] == "value_error" and loc == "url":
         return f"connectors.yaml: connectors.{name}.url must use https://"
+    if first["type"] == "value_error":
+        reason = str(first.get("ctx", {}).get("error", first["msg"]))
+        target = f"{name}.{loc}" if loc else name
+        return f"connectors.yaml: {target} {reason}"
     expected = _EXPECTED_BY_ERROR.get(first["type"], "a valid value")
     target = f"connectors.{name}" + (f".{loc}" if loc and loc != "name" else "")
     if loc == "name":

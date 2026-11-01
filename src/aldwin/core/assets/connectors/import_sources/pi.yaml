@@ -1,0 +1,12 @@
+app: Pi
+homepage: https://github.com/earendil-works/pi
+verified: 2026-11-01
+verified_from: source
+format: json
+dialect: standard
+servers_at: [[mcpServers]]
+locations:
+  - scope: user
+    paths: {any: ~/.pi/agent/mcp.json}
+  - scope: project
+    paths: {any: "{workspace}/.pi/mcp.json"}

@@ -90,10 +90,10 @@ async def discover(
         async with asyncio.timeout(DISCOVERY_TIMEOUT_S):
             return await _discover(config, client)
     except TimeoutError:
-        raise ConnectorUnreachable(_host(config.url), "timed out") from None
+        raise ConnectorUnreachable(_host(config.server_url), "timed out") from None
     except httpx2.HTTPError as exc:
         raise ConnectorUnreachable(
-            _host(config.url), str(exc) or type(exc).__name__
+            _host(config.server_url), str(exc) or type(exc).__name__
         ) from None
     except OAuthFlowError:
         raise SignInError(issuer_mismatch(title)) from None
@@ -103,18 +103,22 @@ async def _discover(
     config: ConnectorConfig, client: httpx2.AsyncClient
 ) -> Discovery | None:
     probe = await client.post(
-        config.url,
+        config.server_url,
         json=_PROBE_BODY,
         headers={"accept": "application/json, text/event-stream"},
     )
     if probe.is_success:
         return None
     if probe.status_code != 401:
-        raise ConnectorUnreachable(_host(config.url), f"HTTP {probe.status_code}")
+        raise ConnectorUnreachable(
+            _host(config.server_url), f"HTTP {probe.status_code}"
+        )
 
     prm: ProtectedResourceMetadata | None = None
     hinted = extract_resource_metadata_from_www_auth(probe)
-    for url in build_protected_resource_metadata_discovery_urls(hinted, config.url):
+    for url in build_protected_resource_metadata_discovery_urls(
+        hinted, config.server_url
+    ):
         prm = await handle_protected_resource_response(
             await client.send(create_oauth_metadata_request(url))
         )
@@ -122,9 +126,12 @@ async def _discover(
             break
 
     auth_server = str(prm.authorization_servers[0]) if prm else None
-    expected = auth_server or f"{urlsplit(config.url).scheme}://{_host(config.url)}"
+    expected = (
+        auth_server
+        or f"{urlsplit(config.server_url).scheme}://{_host(config.server_url)}"
+    )
     for url in build_oauth_authorization_server_metadata_discovery_urls(
-        auth_server, config.url
+        auth_server, config.server_url
     ):
         ok, asm = await handle_auth_metadata_response(
             await client.send(create_oauth_metadata_request(url))
@@ -199,7 +206,7 @@ class AldwinOAuthProvider(OAuthClientProvider):
         client_metadata_url: str | None = None,
     ) -> None:
         super().__init__(
-            server_url=config.url,
+            server_url=config.server_url,
             client_metadata=client_metadata(redirect_port),
             storage=storage,
             redirect_handler=redirect_handler if interactive else self._no_person,
