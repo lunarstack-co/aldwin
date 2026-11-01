@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import logging
 import random
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from enum import StrEnum
 from typing import Any, Final, Literal
@@ -25,11 +26,16 @@ ModelErrorCode = Literal[
     "rate_limited",
     "model_unavailable",
     "unknown_model",
+    "request_rejected",
     "internal",
 ]
 
 DEFAULT_MODEL: Final[str] = "gpt-4o"
 DEFAULT_KEY_CHECK_TIMEOUT: Final[float] = 10.0
+# OpenAI's 400 when a request offers more tools than it accepts.
+_TOO_MANY_TOOLS_RE: Final[re.Pattern[str]] = re.compile(
+    r"'tools'.*maximum length (\d+), but got an array with length (\d+)"
+)
 
 _CHAT_MODEL_PREFIXES: Final[tuple[str, ...]] = (
     "gpt-4o",
@@ -266,9 +272,18 @@ def classify_model_error(
                 "rate_limited",
                 "OpenAI is busy right now. Wait a moment and try again.",
             )
+        too_many = _TOO_MANY_TOOLS_RE.search(str(exc))
+        if too_many is not None:
+            limit, count = too_many.groups()
+            return (
+                "request_rejected",
+                f"OpenAI allows at most {limit} tools and {count} are switched on. "
+                "Turn some off in /connectors.",
+            )
         return (
-            "model_unavailable",
-            "Can't reach OpenAI. Check your connection, then press ↑ Enter to retry.",
+            "request_rejected",
+            f"OpenAI refused the request (HTTP {exc.status_code}). "
+            "Details are in ~/.aldwin/logs/aldwin.log.",
         )
     if isinstance(exc, ModelError):
         text = _redact_text(str(exc)).lower()

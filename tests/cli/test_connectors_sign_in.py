@@ -167,10 +167,10 @@ async def test_catalogue_lists_apps_with_tags_and_custom_last() -> None:
     added = GITHUB.model_copy(update={"added": True})
     client = FakeSignInClient(catalog=[NOTION, added, CONTEXT7])
     out = await _run(client, "1", "")
-    assert "1. Notion  Notes and docs  [sign in]" in out
-    assert "2. GitHub  Code and issues  [✓ added]" in out
-    assert "3. Context7  Library docs\n" in out
-    assert "4. Custom URL…" in out
+    assert "1. Notion       Notes and docs    sign in" in out
+    assert "2. GitHub       Code and issues   ✓ added" in out
+    assert "3. Context7     Library docs      no sign-in" in out
+    assert "4. Custom URL…  any MCP server address" in out
 
 
 async def test_browser_sign_in_from_the_catalogue(opened: list[str]) -> None:
@@ -180,8 +180,8 @@ async def test_browser_sign_in_from_the_catalogue(opened: list[str]) -> None:
 
     assert opened == [AUTH_URL]
     assert AUTH_URL in out  # printed too, in case the browser opened elsewhere
-    assert "This link works for 5 minutes" in out
-    assert "Notion connected. 3 tools are available now." in out
+    assert "(it works for 5 minutes)" in out
+    assert "✓ Notion connected.\n    Signed in. 3 tools are available now." in out
     _kind, kw = client.calls[0]
     assert kw == {
         "name": "notion",
@@ -249,7 +249,7 @@ async def test_catalogue_app_without_sign_in_adds_directly() -> None:
     client = FakeSignInClient(catalog=[CONTEXT7])
     out = await _run(client, "1", "1")
     assert client.calls == [("add", {"url": CONTEXT7.url, "name": "context7"})]
-    assert "Context7 connected. 2 tools are available now." in out
+    assert "✓ Context7 connected.\n    2 tools are available now." in out
 
 
 async def test_custom_url_that_needs_sign_in_offers_the_browser(
@@ -288,7 +288,7 @@ async def test_sign_out_is_offered_for_browser_sign_in() -> None:
     out = await _run(client, "1", "6")
     assert "6. Sign out" in out
     assert ("logout", "notion") in client.calls
-    assert "Notion signed out. Sign in again from /connectors." in out
+    assert "✓ Notion signed out." in out
 
 
 async def test_sign_out_is_not_offered_for_token_connectors() -> None:

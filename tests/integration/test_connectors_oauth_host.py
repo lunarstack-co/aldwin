@@ -186,9 +186,16 @@ async def test_sign_out_keeps_tools_that_say_to_sign_in(
     assert status.status == "needs_auth"
     assert rig.store.get("fixture") is None
 
-    rig.model.add_turns(tool_call("mcp__fixture__read_thing", {}), final("ok"))
+    rig.model.add_turns(
+        tool_call(
+            "find_connector_tools", {"connector": "fixture", "names": ["read_thing"]}
+        ),
+        tool_call("mcp__fixture__read_thing", {}),
+        final("ok"),
+    )
     events = await collect(rig.client.turn("read it"))
-    [result] = [e for e in events if isinstance(e, ToolResultEvent)]
+    found, result = [e for e in events if isinstance(e, ToolResultEvent)]
+    assert found.ok is True
     assert result.ok is False
     seen = " ".join(str(m.content) for m in rig.model.received_messages)
     assert (

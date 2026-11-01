@@ -238,6 +238,8 @@ Needs network access and a Linear and a Notion account (free plans work).
 11. Over SSH (or with `SSH_CONNECTION=x aldwin`), add Notion.
     - Expect: no browser opens; the address is printed with `Open the address above in a browser and sign in, then paste the address the browser ends on.`
 12. Check that no token or code was written outside the credentials folder: `grep -rlE "access_token|refresh_token|code=" ~/.aldwin --exclude-dir=credentials` prints nothing.
+13. With Linear and Notion both connected, ask a Linear question, then a Notion question, then another Linear question.
+    - Expect: `/connectors` shows both `● connected` with no warning. The first Linear answer and the first Notion answer each start with a `find_connector_tools` tool row, then the app's own tool row. The second Linear question has no `find_connector_tools` row. After `/new`, the next Linear question shows the `find_connector_tools` row again.
 
 ## 3. Manual test run log template (`FR-12`)
 

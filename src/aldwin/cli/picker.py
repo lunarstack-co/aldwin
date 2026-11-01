@@ -12,13 +12,25 @@ from prompt_toolkit.layout.containers import Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.output import DummyOutput
 
+from aldwin.cli.theme import PICKER_STYLE, PLAIN_PROMPT_STYLE
+
+# A row is plain text, or `(style, text)` fragments such as `("class:muted", "…")`.
+Row = str | Sequence[tuple[str, str]]
+
+
+def row_text(row: Row) -> str:
+    """A row without its styles, for numbered lists and plain output."""
+    return row if isinstance(row, str) else "".join(text for _style, text in row)
+
 
 async def pick_index(
-    items: Sequence[str],
+    items: Sequence[Row],
     *,
     default: int = 0,
     input_dev: Input | None = None,
     plain: bool = False,
+    header: str | None = None,
+    erase_when_done: bool = False,
 ) -> int | None:
     """Show an inline ❯ list; return selected index, or ``None`` on Esc.
 
@@ -32,14 +44,24 @@ async def pick_index(
 
     def _render() -> list[tuple[str, str]]:
         fragments: list[tuple[str, str]] = []
+        if header:
+            fragments.append(("class:heading", f"{header}"))
+            fragments.append(("class:hint", "   ↑↓ move · Enter choose · Esc back\n\n"))
         for idx, label in enumerate(items):
+            chosen = idx == selected
             if plain:
-                marker = "> " if idx == selected else "  "
-                style = ""
+                fragments.append(("", f"{'> ' if chosen else '  '}{row_text(label)}\n"))
+                continue
+            fragments.append(("class:accent", "❯ " if chosen else "  "))
+            if isinstance(label, str):
+                style = "class:accent" if chosen else "class:muted"
+                fragments.append((style, label))
             else:
-                marker = "❯ " if idx == selected else "  "
-                style = "class:accent" if idx == selected else "class:muted"
-            fragments.append((style, f"{marker}{label}\n"))
+                for style, text in label:
+                    fragments.append(
+                        (f"{style} class:selected" if chosen else style, text)
+                    )
+            fragments.append(("", "\n"))
         return fragments
 
     kb = KeyBindings()
@@ -79,6 +101,8 @@ async def pick_index(
         layout=Layout(Window(content=control)),
         key_bindings=kb,
         full_screen=False,
+        erase_when_done=erase_when_done,
+        style=PLAIN_PROMPT_STYLE if plain else PICKER_STYLE,
         input=input_dev,
         output=DummyOutput() if isinstance(input_dev, PipeInput) else None,
     )

@@ -582,7 +582,8 @@ class AldwinHost:
         self._available_models = available_models
         self._persist_model = persist_model
 
-        default_model = initial_model or load_config(self._home).model
+        config = load_config(self._home)
+        default_model = initial_model or config.model
         self._stored_session: StoredSession = self._session_store.load_latest(
             default_model=default_model
         )
@@ -631,6 +632,7 @@ class AldwinHost:
             ask=self.ask_policy,
             approval_log=self._approval_log,
             emit=self._emit_connector_event,
+            loaded_cap=config.limits.connector_tools,
         )
         self._connectors_started = False
         # Owned add/enable/reconnect flows, keyed by request id; and the names
@@ -894,6 +896,7 @@ class AldwinHost:
         self._policy_session.reset_turn()
         self._todo = []
         self._stored_session = self._session_store.create_new(model=self._model)
+        self._connectors.reset_loaded()
         self._attach_session(new_session(self._agent))
 
     async def _serve_loop(self) -> None:
@@ -1323,7 +1326,7 @@ class AldwinHost:
                 await self._connectors.reconcile()
             except Exception:
                 logger.exception("connector reconcile failed; continuing the turn")
-            for message in self._connectors.take_auth_notices():
+            for message in self._connectors.take_turn_notices():
                 await scope.emit(NoticeEvent(re=req.id, message=message))
             self._agent_session._interrupt.clear()
             step_text_chunks: list[str] = []
@@ -1384,6 +1387,7 @@ class AldwinHost:
                         self._persist_session(interrupted=True)
                         if call.name == "final_answer":
                             continue
+                        self._connectors.note_tool_used(call.name)
                         self._policy_session.enqueue_step_call(
                             call.id,
                             call.name,

@@ -133,6 +133,21 @@ PROMPT_STYLE: Final[Style] = Style.from_dict(
     }
 )
 
+# Inline choosers (`/model`, `/connectors`): the same meanings as the Rich theme.
+PICKER_STYLE: Final[Style] = Style.from_dict(
+    {
+        "": "",
+        "accent": ACCENT_HEX,
+        "muted": "ansibrightblack",
+        "ok": "ansigreen",
+        "warn": "ansiyellow",
+        "err": "ansired",
+        "heading": "bold",
+        "hint": "ansibrightblack",
+        "selected": "bold",
+    }
+)
+
 PLAIN_PROMPT_STYLE: Final[Style] = Style.from_dict(
     {
         "": "",

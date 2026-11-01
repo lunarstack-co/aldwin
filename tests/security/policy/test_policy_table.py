@@ -32,6 +32,7 @@ PINNED_POLICY_TABLE: dict[
     "remember": ("callable:remember_tier", (), False, "memory edits", False),
     "todo": ("auto", (), False, None, False),
     "calculate": ("auto", (), False, None, True),
+    "find_connector_tools": ("auto", (), False, None, False),
     "list_dir": ("auto", ("path",), False, None, True),
     "glob": ("auto", ("path",), False, None, True),
     "grep": ("auto", ("path",), False, None, True),
@@ -95,9 +96,9 @@ def test_unregistered_tool_fails_startup() -> None:
 
 
 def test_policy_registry_matches_pinned_table(aldwin_home: Path) -> None:
-    """`REGISTRY` matches the pinned 18-tool table and built tools."""
+    """`REGISTRY` matches the pinned 19-tool table and built tools."""
     assert set(REGISTRY.keys()) == set(PINNED_POLICY_TABLE.keys())
-    assert len(REGISTRY) == 18
+    assert len(REGISTRY) == 19
     assert _snapshot_registry(REGISTRY) == PINNED_POLICY_TABLE
 
     assert REGISTRY["remember"].tier is remember_tier

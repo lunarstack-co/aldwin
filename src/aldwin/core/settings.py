@@ -43,6 +43,7 @@ _EXPECTED_FIELD_TYPES: Final[dict[str, str]] = {
     "limits.notes_days": "an integer >= 1",
     "limits.persona_chars": "an integer >= 100",
     "limits.max_steps": "an integer >= 1",
+    "limits.connector_tools": "an integer >= 5",
     "run_command": "a mapping of run_command settings",
     "run_command.env_allow": "a list of environment variable names",
     "run_command.env_allow.*": "an environment variable name (a string)",
@@ -102,6 +103,7 @@ class LimitsConfig(BaseModel):
     notes_days: StrictInt = Field(default=7, ge=1)
     persona_chars: StrictInt = Field(default=2000, ge=100)
     max_steps: StrictInt = Field(default=15, ge=1)
+    connector_tools: StrictInt = Field(default=40, ge=5)
 
 
 class RunCommandConfig(BaseModel):

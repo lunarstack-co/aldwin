@@ -263,12 +263,15 @@ class _View:
                 elif isinstance(event, NoticeEvent):
                     self._line(sanitize_display_text(event.message), "muted")
                 elif isinstance(event, ErrorEvent):
+                    # Close the paste prompt first, or it redraws under the result.
+                    await _cancel(answering)
                     self._result(
                         "err",
                         f"{title} didn't connect",
                         sanitize_display_text(event.message),
                     )
                 elif isinstance(event, DoneEvent):
+                    await _cancel(answering)
                     if event.reason == "stopped":
                         self._result(
                             "warn",

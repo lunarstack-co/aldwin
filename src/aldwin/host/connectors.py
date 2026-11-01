@@ -1,16 +1,18 @@
 """Connector lifecycle in the host: start in the background, reconnect with backoff,
-follow tool-list changes, and re-add tools after every session rebuild.
+follow tool-list changes, and offer tools to the model on demand.
 
 `ConnectorAdmin` changes config and credentials. `ConnectorManager` keeps one
-live connection per enabled connector and keeps the session's tools in step.
+live connection per enabled connector, indexes every usable tool, and offers
+the model only `find_connector_tools` plus the tools it has loaded through it.
 """
 
 from __future__ import annotations
 
 import asyncio
+import itertools
 import logging
 import os
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -51,6 +53,7 @@ from aldwin.core.connectors.errors import (
     NeedsSignIn,
     SignInTimedOut,
 )
+from aldwin.core.connectors.index import IndexedTool, ToolIndex
 from aldwin.core.connectors.mcp_tool import McpTool, RemoteToolSpec, ToolCaller
 from aldwin.core.connectors.oauth_messages import (
     DEFAULT_CLIENT_METADATA_URL,
@@ -74,6 +77,10 @@ from aldwin.core.policy import (
     unregister_runtime_policy,
     wrap_tools_with_policy,
 )
+from aldwin.core.tools.connector_tools import (
+    LoadResult,
+    build_find_connector_tools_tool,
+)
 
 logger = logging.getLogger("aldwin.host.connectors")
 
@@ -85,6 +92,12 @@ if TYPE_CHECKING:
     from aldwin.core.connectors.sign_in import SignedIn, SignInWait
 
 ConnectionFactory = Callable[..., McpConnection]
+
+# OpenAI rejects a request that offers the model more than 128 tools; the
+# loaded-tool cap keeps every turn well under that.
+MAX_MODEL_TOOLS = 128
+DEFAULT_LOADED_CAP = 40
+_CONNECTOR_TOOL_PREFIX = "mcp__"
 AuthMode = Literal["browser", "paste", "token"]
 
 
@@ -281,6 +294,7 @@ class ConnectorManager:
         emit: Callable[[ConnectorEvent], Awaitable[None]],
         connection_factory: ConnectionFactory = default_connection_factory,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        loaded_cap: int = DEFAULT_LOADED_CAP,
     ) -> None:
         self.admin = admin
         self._policy_session = policy_session
@@ -296,7 +310,19 @@ class ConnectorManager:
         self.load_error: str | None = None
         self._cimd_url = DEFAULT_CLIENT_METADATA_URL
         self._auth_waits: dict[str, _AuthWait] = {}
-        self._auth_notices: list[str] = []
+        self._turn_notices: list[str] = []
+        self._index = ToolIndex()
+        self._loaded_cap = loaded_cap
+        # Loaded tools by model name: the connector and the tick last used at.
+        self._loaded: dict[str, tuple[str, int]] = {}
+        self._tick = itertools.count()
+        [self._finder] = wrap_tools_with_policy(
+            [build_find_connector_tools_tool(index=self._index, load=self.load)],
+            session=policy_session,
+            ask=ask,
+            approval_log=approval_log,
+            join=True,
+        )
 
     # --- lifecycle ----------------------------------------------------------
 
@@ -312,12 +338,15 @@ class ConnectorManager:
                 await self._begin(config)
 
     def attach(self, session: AgentSession) -> None:
-        """Use `session` from now on and add every connector tool to it."""
+        """Use `session` from now on; the loaded set carries over to it."""
         self._session = session
-        tools = [t for live in self._live.values() for t in live.tools.values()]
-        self._join_peers(tools)
-        if tools:
-            session.add_tools(tools, replace=True)
+        self._join_peers(
+            [
+                self._finder,
+                *(t for live in self._live.values() for t in live.tools.values()),
+            ]
+        )
+        self._offer()
 
     async def reconcile(self) -> None:
         """Pick up changes another process made; cheap when nothing did."""
@@ -506,10 +535,96 @@ class ConnectorManager:
         """Connectors whose flow is waiting on the user (browser, paste or token)."""
         return set(self._auth_waits)
 
-    def take_auth_notices(self) -> list[str]:
+    def take_turn_notices(self) -> list[str]:
         """Each connector that newly needs sign-in, once."""
-        notices, self._auth_notices = self._auth_notices, []
+        notices, self._turn_notices = self._turn_notices, []
         return notices
+
+    # --- tools on demand ----------------------------------------------------
+
+    def load(self, tools: Sequence[IndexedTool]) -> LoadResult:
+        """Offer `tools` from the model's next call on; `find_connector_tools`
+        calls this. Over the cap, the least recently used loaded tools go first.
+        """
+        available = self._available()
+        new: list[IndexedTool] = []
+        for tool in tools:
+            if tool.model_name not in available:
+                continue
+            if tool.model_name in self._loaded:
+                self.note_tool_used(tool.model_name)
+            else:
+                new.append(tool)
+        cap = self._cap()
+        new, skipped = new[:cap], new[cap:]
+        evicted = self._evict(keep=cap - len(new))
+        for tool in new:
+            self._loaded[tool.model_name] = (tool.connector, next(self._tick))
+        self._offer()
+        loaded = [t for t in tools if t.model_name in self._loaded]
+        return LoadResult(loaded=loaded, evicted=evicted, skipped=skipped)
+
+    def note_tool_used(self, model_name: str) -> None:
+        """Keep a tool the model just called away from the eviction end."""
+        entry = self._loaded.get(model_name)
+        if entry is not None:
+            self._loaded[model_name] = (entry[0], next(self._tick))
+
+    def reset_loaded(self) -> None:
+        """A new conversation starts with no connector tools loaded."""
+        self._loaded.clear()
+        self._offer()
+
+    def _available(self) -> dict[str, Tool]:
+        return {n: t for live in self._live.values() for n, t in live.tools.items()}
+
+    def _cap(self) -> int:
+        """How many connector tools may be loaded: the configured cap, or less
+        when the built-ins leave less room under the model's limit."""
+        session = self._session
+        others = 0
+        if session is not None:
+            others = sum(
+                1 for n in session.tools if not n.startswith(_CONNECTOR_TOOL_PREFIX)
+            )
+            if self._finder.name not in session.tools:
+                others += 1
+        return max(0, min(self._loaded_cap, MAX_MODEL_TOOLS - others))
+
+    def _evict(self, *, keep: int) -> list[str]:
+        evicted: list[str] = []
+        while len(self._loaded) > keep:
+            oldest = min(self._loaded, key=lambda name: self._loaded[name][1])
+            del self._loaded[oldest]
+            evicted.append(oldest)
+        return evicted
+
+    def _offer(self) -> None:
+        """Make the session's connector tools exactly the finder plus the loaded set.
+
+        A loaded tool keeps its place while its connector is reconnecting, so a
+        dropped connection does not make the model find everything again.
+        """
+        session = self._session
+        if session is None:
+            return
+        available = self._available()
+        for name, (connector, _tick) in list(self._loaded.items()):
+            live = self._live.get(connector)
+            reconnecting = live is not None and not live.tools
+            if name not in available and not reconnecting:
+                del self._loaded[name]
+        self._evict(keep=self._cap())
+        wanted = {name: available[name] for name in self._loaded if name in available}
+        wanted[self._finder.name] = self._finder
+        stale = [
+            n
+            for n in session.tools
+            if n.startswith(_CONNECTOR_TOOL_PREFIX) and n not in wanted
+        ]
+        session.add_tools(wanted.values(), replace=True)
+        if stale:
+            session.remove_tools(stale)
 
     async def _sign_in(
         self, live: _Live, no_browser: bool, on_auth: OnAuth
@@ -683,7 +798,7 @@ class ConnectorManager:
                 live, live.specs, caller=NeedsSignInCaller(live.config.display_title)
             )
         if notice:
-            self._auth_notices.append(needs_sign_in_notice(live.config.display_title))
+            self._turn_notices.append(needs_sign_in_notice(live.config.display_title))
         await self._emit(ConnectorEvent("status", self._snapshot(live)))
 
     async def _connect_now(self, config: ConnectorConfig) -> _Live:
@@ -856,6 +971,7 @@ class ConnectorManager:
         connection: ToolCaller | None = caller or live.connection
         assert connection is not None
         fresh: dict[str, Tool] = {}
+        indexed: list[IndexedTool] = []
         for spec in specs:
             policy = connector_policy(live.config, spec)
             if policy is None:
@@ -875,6 +991,16 @@ class ConnectorManager:
                 connection=connection,
                 tmp_dir=self.admin.home / "tmp",
             )
+            indexed.append(
+                IndexedTool(
+                    connector=live.config.name,
+                    title=live.config.display_title,
+                    name=spec.name,
+                    model_name=policy.name,
+                    description=spec.description,
+                    auto=policy.tier == "auto",
+                )
+            )
         wrapped = wrap_tools_with_policy(
             fresh.values(),
             session=self._policy_session,
@@ -884,10 +1010,8 @@ class ConnectorManager:
         )
         gone = set(live.tools) - set(fresh)
         live.tools = {t.name: t for t in wrapped}
-        if self._session is not None:
-            self._session.add_tools(wrapped, replace=True)
-            present = [n for n in gone if n in self._session.tools]
-            self._session.remove_tools(present)
+        self._index.replace(live.config.name, indexed)
+        self._offer()
         self._forget(gone)
 
     def _reconfigured(self, config: ConnectorConfig) -> None:
@@ -926,9 +1050,8 @@ class ConnectorManager:
     def _remove_tools(self, live: _Live) -> None:
         names = set(live.tools)
         live.tools = {}
-        if self._session is not None:
-            present = [n for n in names if n in self._session.tools]
-            self._session.remove_tools(present)
+        self._index.drop(live.config.name)
+        self._offer()
         self._forget(names)
 
     def _forget(self, names: set[str]) -> None:

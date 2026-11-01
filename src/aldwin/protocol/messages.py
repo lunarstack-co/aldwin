@@ -41,6 +41,7 @@ ErrorCode = Literal[
     "internal",
     "connector",
     "auth_required",
+    "request_rejected",
 ]
 ConnectorStatus = Literal["connecting", "connected", "failed", "disabled", "needs_auth"]
 ConnectorAuth = Literal["none", "bearer", "oauth"]

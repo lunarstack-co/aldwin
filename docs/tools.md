@@ -73,6 +73,14 @@ Notes live in `~/.aldwin/memory/notes/YYYY-MM-DD.md`. A rebuildable SQLite FTS5 
 | `todo` | Keeps a checklist for jobs of three or more steps, shown as a live view | No |
 | `calculate` | Exact arithmetic and ISO date maths, no shell | No |
 
+## Connectors
+
+| Tool | What it does | Needs approval? |
+|---|---|---|
+| `find_connector_tools` | Finds tools on connected apps by words (`query`) or by name (`connector` and `names`) and loads them for the rest of the conversation | No |
+
+Connector tools are not sent to the model up front. The system prompt lists each connected app's tool names; the model calls `find_connector_tools` to load the few it needs, then calls them. At most `limits.connector_tools` (default 40) stay loaded; past that the least recently used are dropped and can be found again. `/new` starts with none loaded. Each loaded tool keeps its own setting from `/connectors` (`auto`, `ask` or `off`), and an `off` tool can never be found.
+
 ## Skills
 
 | Tool | What it does | Needs approval? |

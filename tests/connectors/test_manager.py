@@ -34,6 +34,7 @@ from aldwin.core.policy import (
     ApprovalRequest,
     PolicySession,
 )
+from aldwin.core.tools.connector_tools import LoadResult
 from aldwin.core.workspace import Workspace
 from aldwin.host.connectors import ConnectorAdmin, ConnectorEvent, ConnectorManager
 
@@ -124,12 +125,15 @@ def _manager(
     factory: Callable[..., McpConnection] | None = None,
     sleep: Any = None,
     environ: dict[str, str] | None = None,
+    loaded_cap: int | None = None,
 ) -> ConnectorManager:
     kwargs: dict[str, Any] = {}
     if factory is not None:
         kwargs["connection_factory"] = factory
     if sleep is not None:
         kwargs["sleep"] = sleep
+    if loaded_cap is not None:
+        kwargs["loaded_cap"] = loaded_cap
     return ConnectorManager(
         admin=ConnectorAdmin(home, environ=environ or {}),
         policy_session=policy_session,
@@ -170,37 +174,57 @@ async def _next_call_tools(fake_model: FakeModel, session: AgentSession) -> set[
     return _names(fake_model.tool_specs[-1])
 
 
+def _load(mgr: ConnectorManager, connector: str, *names: str) -> LoadResult:
+    """Load tools the way `find_connector_tools` does; all of them by default."""
+    wanted = names or mgr._index.names(connector)
+    found = (mgr._index.get(connector, name) for name in wanted)
+    return mgr.load([tool for tool in found if tool is not None])
+
+
+def _connector_tools(session: AgentSession) -> set[str]:
+    return {n for n in session.tools if n.startswith("mcp__")}
+
+
 # --- add, attach, off -------------------------------------------------------
 
 
-async def test_add_mid_conversation_adds_tools_before_next_call(
+async def test_add_mid_conversation_offers_tools_once_loaded(
     manager: ConnectorManager,
     agent_session: AgentSession,
     fake_model: FakeModel,
     recorder: Recorder,
     aldwin_home: Path,
 ) -> None:
-    """`TC-01`."""
+    """A new connector is findable at once; its tools are offered once loaded."""
     manager.attach(agent_session)
     result = await manager.add(
         ConnectorConfig(name="fixture", url=FIXTURE_URL), token=None, dry_run=False
     )
     assert (result.tool_count, result.read, result.write) == (5, 1, 4)
     assert recorder.statuses() == ["connecting", "connected"]
-    assert FIXTURE_MODEL_NAMES <= await _next_call_tools(fake_model, agent_session)
+    sent = await _next_call_tools(fake_model, agent_session)
+    assert "find_connector_tools" in sent
+    assert not any(n.startswith("mcp__") for n in sent)
     assert "fixture" in load_connectors(aldwin_home).entries
     assert FIXTURE_MODEL_NAMES <= set(REGISTRY)
 
+    loaded = _load(manager, "fixture")
+    assert {t.model_name for t in loaded.loaded} == FIXTURE_MODEL_NAMES
+    assert FIXTURE_MODEL_NAMES <= await _next_call_tools(fake_model, agent_session)
 
-async def test_tool_set_off_is_absent_from_schemas(
+
+async def test_tool_set_off_is_absent_from_index_and_schemas(
     manager: ConnectorManager, agent_session: AgentSession, fake_model: FakeModel
 ) -> None:
-    """`TC-05`."""
+    """`TC-04`: an off tool cannot be found or loaded."""
     manager.attach(agent_session)
     config = ConnectorConfig(
         name="fixture", url=FIXTURE_URL, tools={"write_thing": "off"}
     )
     await manager.add(config, token=None, dry_run=False)
+    assert "write_thing" not in manager._index.names("fixture")
+    assert len(manager._index.names("fixture")) == 4
+    _load(manager, "fixture")
     names = await _next_call_tools(fake_model, agent_session)
     assert "mcp__fixture__write_thing" not in names
     assert "mcp__fixture__read_thing" in names
@@ -235,13 +259,19 @@ async def test_settings_reapply_without_reconnecting(
     )
     live = manager._live["fixture"]
     connection = live.connection
+    _load(manager, "fixture")
+    assert "mcp__fixture__write_thing" in agent_session.tools
 
     await manager.set_tool_setting("fixture", "write_thing", "off")
     assert "mcp__fixture__write_thing" not in agent_session.tools
+    assert "write_thing" not in manager._index.names("fixture")
     assert load_connectors(aldwin_home).entries["fixture"].tools == {
         "write_thing": "off"
     }
     await manager.set_tool_setting("fixture", "write_thing", "default")
+    assert "write_thing" in manager._index.names("fixture")
+    assert "mcp__fixture__write_thing" not in agent_session.tools
+    _load(manager, "fixture", "write_thing")
     assert "mcp__fixture__write_thing" in agent_session.tools
 
     await manager.set_trust_hints("fixture", False)
@@ -259,30 +289,45 @@ async def test_disable_enable_remove(
     await manager.add(
         ConnectorConfig(name="fixture", url=FIXTURE_URL), token=None, dry_run=False
     )
+    _load(manager, "fixture")
     snap = await manager.disable("fixture")
     assert snap.status == "disabled"
-    assert not any(n.startswith("mcp__") for n in agent_session.tools)
+    assert not _connector_tools(agent_session)
+    assert manager._index.names("fixture") == []
     assert not any(n.startswith("mcp__") for n in REGISTRY)
 
     snap = await manager.enable("fixture")
     assert snap.status == "connected"
-    assert "mcp__fixture__read_thing" in agent_session.tools
+    assert "read_thing" in manager._index.names("fixture")
+    assert not _connector_tools(agent_session)
+    _load(manager, "fixture", "read_thing")
+    assert _connector_tools(agent_session) == {"mcp__fixture__read_thing"}
 
     await manager.remove("fixture")
     assert load_connectors(aldwin_home).entries == {}
-    assert not any(n.startswith("mcp__") for n in agent_session.tools)
+    assert not _connector_tools(agent_session)
+    assert manager._index.connectors() == []
     assert manager.snapshots() == []
 
 
-async def test_attach_readds_tools_after_a_rebuild(
+async def test_attach_reoffers_loaded_tools_after_a_rebuild(
     manager: ConnectorManager, agent_session: AgentSession, fake_model: FakeModel
 ) -> None:
-    """`FR-21`: a fresh session gets every connector tool back."""
+    """A rebuilt session (model change) keeps what the model had loaded."""
+    manager.attach(agent_session)
     await manager.add(
         ConnectorConfig(name="fixture", url=FIXTURE_URL), token=None, dry_run=False
     )
+    _load(manager, "fixture", "read_thing")
     manager.attach(agent_session)
-    assert FIXTURE_MODEL_NAMES <= await _next_call_tools(fake_model, agent_session)
+    sent = await _next_call_tools(fake_model, agent_session)
+    assert {n for n in sent if n.startswith("mcp__")} == {"mcp__fixture__read_thing"}
+    assert "find_connector_tools" in sent
+
+    manager.reset_loaded()
+    sent = await _next_call_tools(fake_model, agent_session)
+    assert not any(n.startswith("mcp__") for n in sent)
+    assert "find_connector_tools" in sent
 
 
 async def test_long_name_is_stable_across_managers(
@@ -377,21 +422,27 @@ async def test_list_changed_updates_session_and_registry(
     agent_session: AgentSession,
     fixture_server: FixtureControls,
 ) -> None:
-    """`TC-08`."""
+    """`TC-12`: a changed list re-indexes; loaded tools follow it."""
     manager.attach(agent_session)
     await manager.add(
         ConnectorConfig(name="fixture", url=FIXTURE_URL), token=None, dry_run=False
     )
+    _load(manager, "fixture")
     await fixture_server.swap_tools()
 
     async def _swapped() -> None:
-        while "mcp__fixture__new_thing" not in agent_session.tools:
+        while "new_thing" not in manager._index.names("fixture"):
             await asyncio.sleep(0.01)
 
     await asyncio.wait_for(_swapped(), 5)
+    assert "write_thing" not in manager._index.names("fixture")
     assert "mcp__fixture__write_thing" not in agent_session.tools
+    assert "mcp__fixture__read_thing" in agent_session.tools
+    assert "mcp__fixture__new_thing" not in agent_session.tools  # indexed, not loaded
     assert "mcp__fixture__new_thing" in REGISTRY
     assert "mcp__fixture__write_thing" not in REGISTRY
+    _load(manager, "fixture", "new_thing")
+    assert "mcp__fixture__new_thing" in agent_session.tools
 
 
 async def test_running_call_finishes_when_its_tool_is_removed(
@@ -404,6 +455,7 @@ async def test_running_call_finishes_when_its_tool_is_removed(
         ConnectorConfig(name="fixture", url=FIXTURE_URL), token=None, dry_run=False
     )
     fixture_server.slow_tool("write_thing", 0.3)
+    _load(manager, "fixture", "write_thing")
     tool = agent_session.tools["mcp__fixture__write_thing"]
     call = asyncio.create_task(tool.call({"value": "x"}))
     await asyncio.sleep(0.05)
@@ -432,6 +484,7 @@ async def test_server_restart_reconnects_with_backoff(
         mgr.attach(agent_session)
         await mgr.start()
         await recorder.wait_for(lambda: "connected" in recorder.statuses())
+        _load(mgr, "fixture", "read_thing")
         assert "mcp__fixture__read_thing" in agent_session.tools
 
     await recorder.wait_for(
@@ -439,6 +492,7 @@ async def test_server_restart_reconnects_with_backoff(
     )
     assert recorder.statuses()[-1] == "failed"
     assert not any(n.startswith("mcp__") for n in agent_session.tools)
+    assert mgr._index.names("fixture") == []
     assert mgr.snapshots()[0].retry_in_s == 30
 
     await sleep.release()  # server still down: this attempt fails
@@ -450,7 +504,8 @@ async def test_server_restart_reconnects_with_backoff(
     async with serve_http(controls, port=port):
         await sleep.release()
         await recorder.wait_for(lambda: "Fixture reconnected." in recorder.notices())
-        assert "mcp__fixture__read_thing" in agent_session.tools
+        # The loaded set survives the outage: no second find is needed.
+        assert _connector_tools(agent_session) == {"mcp__fixture__read_thing"}
         assert sleep.delays == [30.0, 60.0]
         await mgr.aclose()
 
@@ -557,6 +612,7 @@ async def test_relist_after_stop_does_not_bring_tools_back(
     await manager.add(
         ConnectorConfig(name="fixture", url=FIXTURE_URL), token=None, dry_run=False
     )
+    _load(manager, "fixture")
     fixture_server.delay_connect(0.3)  # slows the re-list `list_changed` triggers
     await fixture_server.swap_tools()
     await asyncio.sleep(0.05)
@@ -675,5 +731,156 @@ async def test_name_collision_second_skipped(
     await manager.add(
         ConnectorConfig(name="fixture", url=FIXTURE_URL), token=None, dry_run=False
     )
+    assert "dup.thing" in manager._index.names("fixture")
+    assert "dup_thing" not in manager._index.names("fixture")
+    _load(manager, "fixture", "dup.thing")
     assert "mcp__fixture__dup_thing" in agent_session.tools
     assert "tools collide on mcp__fixture__dup_thing" in caplog.text
+
+
+# --- tools on demand ----------------------------------------------------------
+
+
+def _two_connectors(
+    home: Path,
+    policy_session: PolicySession,
+    recorder: Recorder,
+    **kwargs: Any,
+) -> ConnectorManager:
+    return _manager(
+        home,
+        policy_session,
+        recorder,
+        _in_process(
+            ("alpha", build_fixture_server()), ("beta", build_fixture_server())
+        ),
+        **kwargs,
+    )
+
+
+async def _add(mgr: ConnectorManager, *names: str) -> None:
+    for name in names:
+        await mgr.add(
+            ConnectorConfig(name=name, url=f"https://{name}.example/mcp"),
+            token=None,
+            dry_run=False,
+        )
+
+
+async def test_session_starts_with_only_the_finder(
+    aldwin_home: Path,
+    policy_session: PolicySession,
+    recorder: Recorder,
+    agent_session: AgentSession,
+    fake_model: FakeModel,
+) -> None:
+    """`TC-05`: two connectors on, and the model is offered one extra tool."""
+    builtin = set(agent_session.tools)
+    mgr = _two_connectors(aldwin_home, policy_session, recorder)
+    await mgr.start()
+    try:
+        mgr.attach(agent_session)
+        await _add(mgr, "alpha", "beta")
+        sent = await _next_call_tools(fake_model, agent_session)
+        assert sent == builtin | {"find_connector_tools"}
+        assert mgr._index.connectors() == ["alpha", "beta"]
+        assert [s.error for s in mgr.snapshots()] == [None, None]
+        assert mgr.take_turn_notices() == []
+    finally:
+        await mgr.aclose()
+
+
+async def test_load_evicts_the_least_recently_used_at_the_cap(
+    aldwin_home: Path,
+    policy_session: PolicySession,
+    recorder: Recorder,
+    agent_session: AgentSession,
+) -> None:
+    """`TC-09`."""
+    mgr = _two_connectors(aldwin_home, policy_session, recorder, loaded_cap=6)
+    await mgr.start()
+    try:
+        mgr.attach(agent_session)
+        await _add(mgr, "alpha", "beta")
+        first = _load(mgr, "alpha")
+        assert len(first.loaded) == 5 and first.evicted == [] and first.skipped == []
+        mgr.note_tool_used("mcp__alpha__read_thing")
+
+        second = _load(mgr, "beta")
+        assert [t.connector for t in second.loaded] == ["beta"] * 5
+        assert second.skipped == []
+        assert len(second.evicted) == 4
+        assert "mcp__alpha__read_thing" not in second.evicted
+        offered = _connector_tools(agent_session)
+        assert len(offered) == 6
+        assert "mcp__alpha__read_thing" in offered
+        assert sum(n.startswith("mcp__beta__") for n in offered) == 5
+
+        # Loading again only refreshes; nothing is duplicated or evicted.
+        again = _load(mgr, "beta", "read_thing")
+        assert [t.model_name for t in again.loaded] == ["mcp__beta__read_thing"]
+        assert again.evicted == []
+        assert _connector_tools(agent_session) == offered
+    finally:
+        await mgr.aclose()
+
+
+async def test_the_model_limit_is_never_exceeded(
+    aldwin_home: Path,
+    policy_session: PolicySession,
+    recorder: Recorder,
+    agent_session: AgentSession,
+    fake_model: FakeModel,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`TC-10`: the backstop under the configured cap."""
+    import aldwin.host.connectors as host_connectors
+
+    limit = len(agent_session.tools) + 1 + 4  # built-ins, the finder, four more
+    monkeypatch.setattr(host_connectors, "MAX_MODEL_TOOLS", limit)
+    mgr = _two_connectors(aldwin_home, policy_session, recorder)
+    await mgr.start()
+    try:
+        mgr.attach(agent_session)
+        await _add(mgr, "alpha")
+        result = _load(mgr, "alpha")
+        assert len(result.loaded) == 4 and len(result.skipped) == 1
+        sent = await _next_call_tools(fake_model, agent_session)
+        assert len(sent) == limit
+    finally:
+        await mgr.aclose()
+
+
+async def test_off_disable_and_remove_drop_loaded_tools(
+    aldwin_home: Path,
+    policy_session: PolicySession,
+    recorder: Recorder,
+    agent_session: AgentSession,
+) -> None:
+    """`TC-11`."""
+    mgr = _two_connectors(aldwin_home, policy_session, recorder)
+    await mgr.start()
+    try:
+        mgr.attach(agent_session)
+        await _add(mgr, "alpha", "beta")
+        _load(mgr, "alpha")
+        _load(mgr, "beta")
+        assert len(_connector_tools(agent_session)) == 10
+
+        await mgr.set_tool_setting("alpha", "read_thing", "off")
+        assert "mcp__alpha__read_thing" not in agent_session.tools
+        assert [t.model_name for t in mgr._index.search("read")] == [
+            "mcp__beta__read_thing"
+        ]
+
+        await mgr.disable("beta")
+        assert not any(n.startswith("mcp__beta__") for n in agent_session.tools)
+        assert mgr._index.search("read") == []
+        assert mgr._index.connectors() == ["alpha"]
+
+        await mgr.remove("alpha")
+        assert not _connector_tools(agent_session)
+        assert mgr._index.connectors() == []
+        assert "find_connector_tools" in agent_session.tools
+    finally:
+        await mgr.aclose()
