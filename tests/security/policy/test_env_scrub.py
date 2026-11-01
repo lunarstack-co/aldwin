@@ -61,3 +61,32 @@ def test_env_allow_secret_still_scrubbed(
     cfg = load_config(aldwin_home)
     assert "GITHUB_TOKEN" not in cfg.run_command.env_allow
     assert "MY_VAR" in cfg.run_command.env_allow
+
+
+def test_connector_env_scrubs_secrets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A local server only gets the safe baseline when it names nothing."""
+    from aldwin.core.connectors.config import ConnectorConfig
+    from aldwin.core.connectors.local import build_server_env
+
+    environ = {
+        "PATH": "/usr/bin",
+        "HOME": "/home/u",
+        "LANG": "en_GB.UTF-8",
+        "OPENAI_API_KEY": "sk-x",
+        "GITHUB_TOKEN": "ghp_x",
+        "AWS_SECRET_ACCESS_KEY": "aws-x",
+        "MY_PASSWORD": "pw-x",
+        CANARY: "1",
+    }
+    config = ConnectorConfig(name="x", command="npx", args=["pkg@1"])
+    env = build_server_env(config, environ=environ, stored={}, cwd=tmp_path)
+    assert not {
+        "OPENAI_API_KEY",
+        "GITHUB_TOKEN",
+        "AWS_SECRET_ACCESS_KEY",
+        "MY_PASSWORD",
+        CANARY,
+    } & set(env)
+    assert {"PATH", "HOME", "LANG"} <= set(env)

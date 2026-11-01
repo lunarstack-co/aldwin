@@ -58,10 +58,15 @@ class FakeConnectorsClient:
         self.error: str | None = None
         self.calls: list[tuple[Any, ...]] = []
         self.needs_token = False
+        self.import_answers: list[Any] = []
         self.add_error: ProtocolError | None = None
 
     def tools_summary(self) -> list[Any]:
         return []
+
+    async def connectors_import(self, paths: Any = (), **kw: Any) -> Any:
+        self.calls.append(("import", {"paths": list(paths), **kw}))
+        return self.import_answers.pop(0)
 
     async def connectors_list(self) -> ConnectorsEvent:
         return ConnectorsEvent(re="r", items=self.items, error=self.error)
@@ -85,7 +90,9 @@ class FakeConnectorsClient:
             re="r", name=kw["name"], status="connected", tools=2
         )
 
-    async def connectors_enable(self, name: str) -> ConnectorStatusEvent:
+    async def connectors_enable(
+        self, name: str, *, on_approval: Any = None
+    ) -> ConnectorStatusEvent:
         self.calls.append(("enable", name))
         return ConnectorStatusEvent(re="r", name=name, status="connected", tools=2)
 
@@ -185,7 +192,7 @@ async def test_list_shows_glyphs_summary_add_and_config_error() -> None:
 
 async def test_add_flow_happy_path() -> None:
     client = FakeConnectorsClient()
-    out = await _run(client, "1", "https://fixture.example/mcp", "", "1")
+    out = await _run(client, "1", "1", "https://fixture.example/mcp", "", "1")
     assert (
         "Fixture has 2 tools: 1 read (run automatically), 1 write (ask first)." in out
     )
@@ -205,6 +212,7 @@ async def test_add_flow_asks_for_a_token_on_401() -> None:
     client.needs_token = True
     out = await _run(
         client,
+        "1",
         "1",
         "https://fixture.example/mcp",
         "2",
@@ -236,7 +244,7 @@ async def test_add_flow_shows_each_error_and_saves_nothing(message: str) -> None
     """`TC-12` (door half)."""
     client = FakeConnectorsClient()
     client.add_error = ProtocolError(message, code="connector")
-    out = await _run(client, "1", "https://fixture.example/mcp")
+    out = await _run(client, "1", "1", "https://fixture.example/mcp")
     assert message in out
     assert len(client.calls) == 1 and client.calls[0][1]["dry_run"] is True
 

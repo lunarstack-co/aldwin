@@ -47,6 +47,9 @@ _EXPECTED_FIELD_TYPES: Final[dict[str, str]] = {
     "run_command": "a mapping of run_command settings",
     "run_command.env_allow": "a list of environment variable names",
     "run_command.env_allow.*": "an environment variable name (a string)",
+    "connectors": "a mapping of connector settings",
+    "connectors.import_paths": "a list of paths",
+    "connectors.import_paths.*": "a path (a string)",
     "openai_api_key": "a string API key",
     "tavily_api_key": "a string API key",
 }
@@ -114,6 +117,15 @@ class RunCommandConfig(BaseModel):
     env_allow: list[str] = Field(default_factory=list)
 
 
+class ConnectorsConfig(BaseModel):
+    """Connector settings from ``config.yaml``."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    # Extra MCP config files `aldwin connectors import` looks at without a path.
+    import_paths: list[str] = Field(default_factory=list)
+
+
 ThemeName = Literal["auto", "dark", "light", "colour_blind", "plain"]
 
 
@@ -128,6 +140,7 @@ class AldwinConfig(BaseModel):
     check_for_updates: bool = True
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
     run_command: RunCommandConfig = Field(default_factory=RunCommandConfig)
+    connectors: ConnectorsConfig = Field(default_factory=ConnectorsConfig)
 
     @field_validator("theme", mode="before")
     @classmethod

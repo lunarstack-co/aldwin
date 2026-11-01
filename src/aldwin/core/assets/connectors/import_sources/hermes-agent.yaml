@@ -1,0 +1,10 @@
+app: Hermes Agent
+homepage: https://github.com/NousResearch/hermes-agent
+verified: 2026-11-01
+verified_from: source
+format: yaml
+dialect: standard
+servers_at: [[mcp_servers]]
+locations:
+  - scope: user
+    paths: {any: ~/.hermes/config.yaml}

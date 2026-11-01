@@ -1,0 +1,18 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // opencode keeps servers under "mcp" and spells the command as a list.
+  "mcp": {
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "-y", "@playwright/mcp@0.0.84"],
+      "environment": {"PW_TOKEN": "{env:PW_TOKEN}", "HEADLESS": "true"},
+      "enabled": true,
+    },
+    "atlassian": {
+      "type": "remote",
+      "url": "https://mcp.atlassian.com/v1/mcp",
+      "headers": {"Authorization": "Bearer fake-atl-1"},
+      "enabled": false,
+    },
+  },
+}

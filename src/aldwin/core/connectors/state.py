@@ -12,6 +12,7 @@ from aldwin.core.connectors.naming import model_tool_name
 from aldwin.core.connectors.policy import connector_policy
 
 ConnectorStatus = Literal["connecting", "connected", "failed", "disabled", "needs_auth"]
+ConnectorTransport = Literal["http", "stdio", "sse"]
 
 # Names past this many are summed up, so one huge server cannot swamp the prompt.
 MAX_LISTED_TOOL_NAMES = 100
@@ -42,7 +43,7 @@ class ConnectorSnapshot:
 
     name: str
     title: str
-    url: str
+    url: str | None
     enabled: bool
     status: ConnectorStatus
     auth: AuthKind
@@ -50,6 +51,9 @@ class ConnectorSnapshot:
     tools: tuple[ConnectorToolInfo, ...] = ()
     error: str | None = None
     retry_in_s: int | None = None
+    transport: ConnectorTransport = "http"
+    command: str | None = None  # the display form of a local command line
+    note: str | None = None
 
 
 def tool_infos(

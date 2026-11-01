@@ -1,0 +1,18 @@
+{
+  // Zed's settings file is JSONC; servers live under context_servers.
+  "theme": "One Dark",
+  "context_servers": {
+    "local-mcp-server": {
+      "command": "some-command",
+      "args": ["arg-1", "arg-2"],
+      "env": {"ZED_TOKEN": "fake-zed-1"}
+    },
+    "older-form": {
+      "command": {"path": "/usr/local/bin/older-mcp", "args": ["--port", "0"], "env": {"OLD": "x"}}
+    },
+    "remote-mcp-server": {
+      "url": "https://example.com/mcp",
+      "headers": {"Authorization": "Bearer fake-zed-2"}
+    }
+  }
+}

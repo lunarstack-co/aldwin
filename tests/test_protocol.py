@@ -16,6 +16,8 @@ from aldwin.protocol import (
     VERSION,
     ApprovalEvent,
     ApproveRequest,
+    ConnectorInfo,
+    ConnectorsAddRequest,
     DoneEvent,
     DroppedSkill,
     ErrorEvent,
@@ -427,6 +429,8 @@ def _connector_messages() -> list[Any]:
         ConnectorsDisableRequest,
         ConnectorsEnableRequest,
         ConnectorsEvent,
+        ConnectorsImportEvent,
+        ConnectorsImportRequest,
         ConnectorsListRequest,
         ConnectorsReconnectRequest,
         ConnectorsRemoveRequest,
@@ -434,6 +438,8 @@ def _connector_messages() -> list[Any]:
         ConnectorsToolPolicyRequest,
         ConnectorsTrustHintsRequest,
         ConnectorToolInfo,
+        ImportRowInfo,
+        ImportSourceInfo,
     )
 
     tool = ConnectorToolInfo(
@@ -444,6 +450,30 @@ def _connector_messages() -> list[Any]:
     )
     return [
         ConnectorsListRequest(),
+        ConnectorsImportRequest(paths=["/home/me/.cursor/mcp.json"], dry_run=True),
+        ConnectorsImportEvent(
+            re="r",
+            found=[
+                ImportSourceInfo(
+                    app="Cursor",
+                    scope="user",
+                    path="/home/me/.cursor/mcp.json",
+                    servers=2,
+                )
+            ],
+            rows=[
+                ImportRowInfo(
+                    name="github",
+                    kind="local",
+                    status="imported",
+                    detail="imported",
+                    app="Cursor",
+                )
+            ],
+            imported=1,
+            values=1,
+            warnings=["Zed: can't resolve {workspace}/.zed/settings.json"],
+        ),
         ConnectorsAddRequest(url="https://x.example/mcp", token="t", dry_run=True),
         ConnectorsRemoveRequest(name="x"),
         ConnectorsEnableRequest(name="x"),
@@ -580,3 +610,37 @@ def test_connector_auth_needs_re() -> None:
         parse_event(
             '{"type":"event","kind":"connector.auth","name":"x","title":"X","mode":"token"}'
         )
+
+
+def test_connectors_add_local_fields_compatible() -> None:
+    old = parse_request(
+        '{"v": 2, "type": "connectors.add", "id": "r1", "url": "https://a.example/mcp",'
+        ' "name": "a", "surprise": 1}'
+    )
+    assert isinstance(old, ConnectorsAddRequest)
+    assert (old.url, old.command, old.env_allow, old.cwd) == (
+        "https://a.example/mcp",
+        None,
+        [],
+        None,
+    )
+    local = ConnectorsAddRequest(command="npx -y pkg", env_allow=["GITHUB_TOKEN"])
+    again = parse_request(local.model_dump_json())
+    assert isinstance(again, ConnectorsAddRequest)
+    assert (again.command, again.env_allow, again.url) == (
+        "npx -y pkg",
+        ["GITHUB_TOKEN"],
+        None,
+    )
+    info = ConnectorInfo(
+        name="everything",
+        title="Everything",
+        transport="stdio",
+        command="npx -y @modelcontextprotocol/server-everything",
+        note="review and enable",
+    )
+    assert ConnectorInfo.model_validate_json(info.model_dump_json()) == info
+    assert (
+        ConnectorInfo(name="a", title="A", url="https://a.example/mcp").transport
+        == "http"
+    )

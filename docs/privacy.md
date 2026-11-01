@@ -16,7 +16,7 @@ All local data lives in `~/.aldwin`. Set `ALDWIN_HOME=/path/to/dir` to use a dif
 
 ```text
 ~/.aldwin/                  (mode 0700)
-├── config.yaml             model, theme, limits, and run_command.env_allow
+├── config.yaml             model, theme, limits, run_command.env_allow, connectors.import_paths
 ├── secrets.yaml            OpenAI and Tavily API keys (mode 0600)
 ├── persona.md              assistant persona (user-editable or y/n approved)
 ├── skills/

@@ -30,6 +30,26 @@ EXPECTED_WHEEL_ASSETS = (
     "aldwin/core/assets/__init__.py",
     "aldwin/core/assets/config.yaml",
     "aldwin/core/assets/connectors/catalog.yaml",
+    *(
+        f"aldwin/core/assets/connectors/import_sources/{name}.yaml"
+        for name in (
+            "claude-code",
+            "claude-desktop",
+            "cline",
+            "codex",
+            "copilot-cli",
+            "cursor",
+            "devin",
+            "gemini-cli",
+            "goose",
+            "hermes-agent",
+            "nanobot",
+            "opencode",
+            "pi",
+            "vscode",
+            "zed",
+        )
+    ),
     "aldwin/core/assets/instructions.md",
     "aldwin/core/assets/persona.md",
     "aldwin/core/assets/profile.md",

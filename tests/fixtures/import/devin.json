@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "notion": {"url": "https://mcp.notion.com/mcp", "transport": "http"},
+    "legacy": {"url": "https://legacy.example.com/sse", "transport": "sse"},
+    "fs": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      "env": {"FS_TOKEN": "fake-devin-1"},
+      "disabled": true
+    }
+  }
+}

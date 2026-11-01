@@ -256,13 +256,19 @@ async def read_approval_key(
     *,
     grantable: bool = False,
     on_expand: Callable[[], None] | None = None,
+    on_select: Callable[[int], None] | None = None,
     escape_delay: float = ESCAPE_FLUSH_DELAY,
 ) -> ApprovalAnswer:
-    """Read `y`/`a`/`n`/`Enter`/`Esc`/`Ctrl-O` for an approval prompt."""
+    """Read `y`/`a`/`n`/`Enter`/`Esc`/`Ctrl-O` for an approval prompt.
+
+    `on_select` gets the highlighted row after each arrow key, so the caller
+    can redraw the chooser.
+    """
     answer, _explicit_n = await _read_approval_key_detail(
         input_dev,
         grantable=grantable,
         on_expand=on_expand,
+        on_select=on_select,
         escape_delay=escape_delay,
     )
     return answer

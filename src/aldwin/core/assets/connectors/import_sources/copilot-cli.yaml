@@ -1,0 +1,10 @@
+app: GitHub Copilot CLI
+homepage: https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers
+verified: 2026-11-01
+verified_from: docs
+format: json
+dialect: standard
+servers_at: [[mcpServers]]
+locations:
+  - scope: user
+    paths: {any: ~/.copilot/mcp-config.json}

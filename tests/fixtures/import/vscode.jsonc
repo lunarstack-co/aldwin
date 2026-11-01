@@ -1,0 +1,16 @@
+// VS Code keeps MCP servers under "servers" and allows comments.
+{
+  "servers": {
+    /* a local server */
+    "github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github@1.0.0",],
+      "env": {"GITHUB_TOKEN": "ghp_fake0001"},
+    },
+    "docs": {
+      "type": "http",
+      "url": "https://docs.example.com/mcp", // the "//" in the URL stays
+    },
+  },
+}

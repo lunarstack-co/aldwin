@@ -1,0 +1,17 @@
+app: Claude Code
+homepage: https://code.claude.com/docs/en/mcp
+verified: 2026-11-01
+verified_from: docs
+format: json
+dialect: standard
+# The user file holds far more than servers; servers for the open workspace sit
+# under projects.<absolute path>.mcpServers.
+servers_at:
+  - [mcpServers]
+  - [projects, "{workspace}", mcpServers]
+max_bytes: 16777216
+locations:
+  - scope: user
+    paths: {any: ~/.claude.json}
+  - scope: project
+    paths: {any: "{workspace}/.mcp.json"}

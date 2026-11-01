@@ -8,7 +8,7 @@ import logging
 import re
 import time
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Final, Literal, cast
@@ -47,12 +47,15 @@ from aldwin.core.connectors.config import (
     check_name,
     check_url,
     suggest_name,
+    suggest_name_for_command,
 )
 from aldwin.core.connectors.errors import (
     ConnectorAuthRequired,
+    ConnectorConfigError,
     ConnectorError,
     NeedsSignIn,
 )
+from aldwin.core.connectors.local import parse_command_line
 from aldwin.core.connectors.policy import tool_call_labels
 from aldwin.core.connectors.state import ConnectorSnapshot
 from aldwin.core.home import home_dir
@@ -100,6 +103,7 @@ from aldwin.host.connectors import (
     ConnectorAdmin,
     ConnectorEvent,
     ConnectorManager,
+    ImportReport,
 )
 from aldwin.host.in_process import InProcessTransport, WorkspaceSummary
 from aldwin.host.sessions import (
@@ -125,6 +129,8 @@ from aldwin.protocol import (
     ConnectorsDisableRequest,
     ConnectorsEnableRequest,
     ConnectorsEvent,
+    ConnectorsImportEvent,
+    ConnectorsImportRequest,
     ConnectorsListRequest,
     ConnectorsLoginRequest,
     ConnectorsLogoutRequest,
@@ -144,6 +150,8 @@ from aldwin.protocol import (
     HelloRequest,
     HistoryEvent,
     HistoryRequest,
+    ImportRowInfo,
+    ImportSourceInfo,
     NoticeEvent,
     Request,
     SetModelRequest,
@@ -441,7 +449,7 @@ class ApprovalBroker:
                         ev.connector_title = title
                         ev.remote_tool = remote
                 await self._send_event(ev)
-                return await future
+                return replace(await future, approval_id=approval_id)
             finally:
                 self._pending.pop(approval_id, None)
 
@@ -633,7 +641,9 @@ class AldwinHost:
             approval_log=self._approval_log,
             emit=self._emit_connector_event,
             loaded_cap=config.limits.connector_tools,
+            workspace_root=lambda: self._workspace.root,
         )
+        self._import_paths = list(config.connectors.import_paths)
         self._connectors_started = False
         # Owned add/enable/reconnect flows, keyed by request id; and the names
         # they are working on, so a second flow for the same name is refused.
@@ -1000,6 +1010,7 @@ class AldwinHost:
             elif isinstance(
                 req,
                 ConnectorsListRequest
+                | ConnectorsImportRequest
                 | ConnectorsRemoveRequest
                 | ConnectorsDisableRequest
                 | ConnectorsToolPolicyRequest
@@ -1014,6 +1025,7 @@ class AldwinHost:
         self,
         scope: RequestScope,
         req: ConnectorsListRequest
+        | ConnectorsImportRequest
         | ConnectorsRemoveRequest
         | ConnectorsDisableRequest
         | ConnectorsToolPolicyRequest
@@ -1026,6 +1038,14 @@ class AldwinHost:
         try:
             if isinstance(req, ConnectorsRemoveRequest):
                 await self._connectors.remove(req.name)
+            elif isinstance(req, ConnectorsImportRequest):
+                report = await self._connectors.import_from_apps(
+                    paths=req.paths,
+                    dry_run=req.dry_run,
+                    rename_conflicts=req.rename_conflicts,
+                    extra_paths=self._import_paths,
+                )
+                await scope.emit(_import_event(req.id, report))
             elif isinstance(req, ConnectorsDisableRequest):
                 snapshot = await self._connectors.disable(req.name)
                 await scope.emit(_status_event(req.id, snapshot))
@@ -1092,6 +1112,15 @@ class AldwinHost:
             async def on_auth(prompt: AuthPrompt) -> None:
                 await scope.emit(_auth_event(req.id, prompt))
 
+            async def approve(request: ApprovalRequest) -> PolicyApprovalAnswer:
+                # Asked on this request's `re`, not the active turn's.
+                return await self._approvals.ask_request(
+                    re=req.id,
+                    request=request,
+                    door_version=self._negotiated_version,
+                    door_connected=not self._transport.closed and self._welcomed,
+                )
+
             try:
                 if isinstance(req, ConnectorsAddRequest):
                     result = await self._connectors.add(
@@ -1100,6 +1129,7 @@ class AldwinHost:
                         dry_run=req.dry_run,
                         no_browser=req.no_browser,
                         on_auth=on_auth,
+                        approve=approve,
                     )
                     if result.notice is not None:
                         await scope.emit(NoticeEvent(re=req.id, message=result.notice))
@@ -1108,7 +1138,7 @@ class AldwinHost:
                     else:
                         await scope.emit(_status_event(req.id, result.snapshot))
                 elif isinstance(req, ConnectorsEnableRequest):
-                    snapshot = await self._connectors.enable(name)
+                    snapshot = await self._connectors.enable(name, approve=approve)
                     await scope.emit(_status_event(req.id, snapshot))
                 elif isinstance(req, ConnectorsLoginRequest):
                     snapshot = await self._connectors.login(
@@ -1147,10 +1177,19 @@ class AldwinHost:
         """The connector a flow works on; for an add, checked or suggested."""
         if not isinstance(req, ConnectorsAddRequest):
             return req.name
-        check_url(req.url)
         existing = [s.name for s in self._connectors.snapshots()]
+        if req.url is not None and req.command is not None:
+            raise ConnectorConfigError("Give either a URL or a command, not both.")
+        if req.url is None and req.command is None:
+            raise ConnectorConfigError("Give a URL or a command.")
+        if req.command is not None:
+            command, args = parse_command_line(req.command)
+            suggested = suggest_name_for_command([command, *args], existing)
+        else:
+            check_url(req.url or "")
+            suggested = suggest_name(req.url or "", existing)
         if req.name is None:
-            return suggest_name(req.url, existing)
+            return suggested
         check_name(req.name, existing)
         return req.name
 
@@ -1576,6 +1615,16 @@ class AldwinHost:
 
 
 def _config_from(req: ConnectorsAddRequest, name: str) -> ConnectorConfig:
+    if req.command is not None:
+        command, args = parse_command_line(req.command)
+        return ConnectorConfig(
+            name=name,
+            command=command,
+            args=args,
+            env_allow=list(req.env_allow),
+            cwd=req.cwd or "workspace",
+            title=req.title,
+        )
     auth = "bearer" if req.token or req.token_env else req.auth
     oauth: OAuthSettings | None = None
     if auth == "oauth":
@@ -1622,6 +1671,36 @@ def _tool_infos(snapshot: ConnectorSnapshot) -> list[ConnectorToolInfo]:
     ]
 
 
+def _import_event(re_id: str, report: ImportReport) -> ConnectorsImportEvent:
+    return ConnectorsImportEvent(
+        re=re_id,
+        found=[
+            ImportSourceInfo(
+                app=f.app,
+                scope=f.scope,
+                path=str(f.path),
+                servers=f.servers,
+                error=f.error,
+            )
+            for f in report.found
+        ],
+        rows=[
+            ImportRowInfo(
+                name=row.name,
+                kind=row.kind,
+                status=row.status,
+                detail=row.detail,
+                app=result.app,
+            )
+            for result in report.results
+            for row in result.rows
+        ],
+        imported=sum(r.imported for r in report.results),
+        values=sum(r.values for r in report.results),
+        warnings=[*report.warnings, *(w for r in report.results for w in r.warnings)],
+    )
+
+
 def _connector_info(snapshot: ConnectorSnapshot) -> ConnectorInfo:
     return ConnectorInfo(
         name=snapshot.name,
@@ -1634,6 +1713,9 @@ def _connector_info(snapshot: ConnectorSnapshot) -> ConnectorInfo:
         tools=_tool_infos(snapshot),
         error=snapshot.error,
         retry_in_s=snapshot.retry_in_s,
+        transport=snapshot.transport,
+        command=snapshot.command,
+        note=snapshot.note,
     )
 
 

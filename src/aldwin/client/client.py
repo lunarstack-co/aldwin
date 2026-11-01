@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, AsyncIterator, Callable, Sequence
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Sequence,
+)
 from pathlib import Path
 from typing import Final, Literal, TypeVar
 
@@ -28,7 +34,12 @@ from aldwin.host.in_process import (
     WorkspaceSummary,
     bootstrap_host,
     check_openai_key,
+    connector_needs_approval,
     connectors_add_command,
+    connectors_add_local_command,
+    connectors_enable_command,
+    connectors_find_configs,
+    connectors_import_command,
     connectors_remove_command,
     connectors_set_enabled,
     connectors_summary,
@@ -55,6 +66,7 @@ from aldwin.protocol import (
     MIN_SUPPORTED_VERSION,
     PROTOCOL_VERSION,
     ApprovalAnswer,
+    ApprovalEvent,
     ApproveRequest,
     ConnectorAuth,
     ConnectorProbeEvent,
@@ -64,6 +76,8 @@ from aldwin.protocol import (
     ConnectorsDisableRequest,
     ConnectorsEnableRequest,
     ConnectorsEvent,
+    ConnectorsImportEvent,
+    ConnectorsImportRequest,
     ConnectorsListRequest,
     ConnectorsLoginRequest,
     ConnectorsLogoutRequest,
@@ -91,6 +105,10 @@ from aldwin.protocol import (
     TurnRequest,
 )
 
+# Answers a host `approval` event: the answer and an optional reason.
+ApprovalHandler = Callable[
+    [ApprovalEvent], Awaitable[tuple[ApprovalAnswer, str | None]]
+]
 _E = TypeVar("_E", bound=Event)
 
 
@@ -395,6 +413,26 @@ class AldwinClient:
         finally:
             self._queues.pop(request.id, None)
 
+    async def connectors_import(
+        self,
+        paths: Sequence[str] = (),
+        *,
+        dry_run: bool = False,
+        rename_conflicts: bool = False,
+    ) -> ConnectorsImportEvent:
+        """Import MCP servers from other agent apps' config files.
+
+        `dry_run` only lists the files found. Otherwise `paths` are imported,
+        or every readable file found when `paths` is empty. Nothing starts:
+        imported local commands are saved disabled.
+        """
+        return await self._one(
+            ConnectorsImportRequest(
+                paths=list(paths), dry_run=dry_run, rename_conflicts=rename_conflicts
+            ),
+            ConnectorsImportEvent,
+        )
+
     async def connectors_list(self) -> ConnectorsEvent:
         """Every connector, plus the `connectors.yaml` error if the file is bad."""
         return await self._one(ConnectorsListRequest(), ConnectorsEvent)
@@ -402,21 +440,30 @@ class AldwinClient:
     async def connectors_add(
         self,
         *,
-        url: str,
+        url: str | None = None,
+        command: str | None = None,
+        env_allow: Sequence[str] = (),
+        cwd: str | None = None,
         name: str | None = None,
         title: str | None = None,
         auth: ConnectorAuth = "none",
         token: str | None = None,
         token_env: str | None = None,
         dry_run: bool = False,
+        on_approval: ApprovalHandler | None = None,
     ) -> ConnectorProbeEvent | ConnectorStatusEvent:
-        """Probe (`dry_run`) or add a connector.
+        """Probe (`dry_run`) or add a connector: a remote `url` or a local
+        `command`. A local add asks first through `on_approval`; without one
+        the answer is no.
 
         Raises `ProtocolError` with `code="auth_required"` when the server needs
         a token, or `code="connector"` with the message to show.
         """
         request = ConnectorsAddRequest(
             url=url,
+            command=command,
+            env_allow=list(env_allow),
+            cwd=cwd,
             name=name,
             title=title,
             auth=auth,
@@ -425,8 +472,8 @@ class AldwinClient:
             dry_run=dry_run,
         )
         if dry_run:
-            return await self._one(request, ConnectorProbeEvent)
-        return await self._one(request, ConnectorStatusEvent)
+            return await self._one(request, ConnectorProbeEvent, on_approval)
+        return await self._one(request, ConnectorStatusEvent, on_approval)
 
     async def connectors_sign_in(
         self,
@@ -474,8 +521,13 @@ class AldwinClient:
     async def connectors_auth_token(self, name: str, token: str) -> None:
         await self._expect_done(ConnectorsAuthTokenRequest(name=name, token=token))
 
-    async def connectors_enable(self, name: str) -> ConnectorStatusEvent:
-        return await self._one(ConnectorsEnableRequest(name=name), ConnectorStatusEvent)
+    async def connectors_enable(
+        self, name: str, *, on_approval: ApprovalHandler | None = None
+    ) -> ConnectorStatusEvent:
+        """Turn a connector on; a local one not yet approved asks first."""
+        return await self._one(
+            ConnectorsEnableRequest(name=name), ConnectorStatusEvent, on_approval
+        )
 
     async def connectors_disable(self, name: str) -> ConnectorStatusEvent:
         return await self._one(
@@ -513,8 +565,17 @@ class AldwinClient:
         finally:
             self._queues.pop(HOST_EVENT_RE, None)
 
-    async def _one(self, request: Request, kind: type[_E]) -> _E:
-        """Send `request` and return its one `kind` event once it is `done`."""
+    async def _one(
+        self,
+        request: Request,
+        kind: type[_E],
+        on_approval: ApprovalHandler | None = None,
+    ) -> _E:
+        """Send `request` and return its one `kind` event once it is `done`.
+
+        An `approval` on this request goes to `on_approval`; with no handler it is
+        answered `no`, so nothing runs that nobody approved.
+        """
         self._ensure_reader()
         queue: asyncio.Queue[Event | None] = asyncio.Queue()
         self._queues[request.id] = queue
@@ -529,6 +590,15 @@ class AldwinClient:
                     )
                 if isinstance(event, kind):
                     found = event
+                elif isinstance(event, ApprovalEvent):
+                    answer, reason = (
+                        await on_approval(event)
+                        if on_approval is not None
+                        else ("no", None)
+                    )
+                    await self.approve(
+                        event.approval_id, answer, digest=event.digest, reason=reason
+                    )
                 elif isinstance(event, ErrorEvent):
                     raise ProtocolError(event.message, code=event.code)
                 elif isinstance(event, DoneEvent):
@@ -596,7 +666,12 @@ __all__ = [
     "WorkspaceSummary",
     "bootstrap",
     "check_openai_key",
+    "connector_needs_approval",
     "connectors_add_command",
+    "connectors_add_local_command",
+    "connectors_enable_command",
+    "connectors_find_configs",
+    "connectors_import_command",
     "connectors_remove_command",
     "connectors_set_enabled",
     "connectors_summary",

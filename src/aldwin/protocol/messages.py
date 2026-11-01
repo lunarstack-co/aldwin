@@ -46,6 +46,7 @@ ErrorCode = Literal[
 ConnectorStatus = Literal["connecting", "connected", "failed", "disabled", "needs_auth"]
 ConnectorAuth = Literal["none", "bearer", "oauth"]
 AuthMode = Literal["browser", "paste", "token"]
+ConnectorTransport = Literal["http", "stdio", "sse"]
 ToolSetting = Literal["auto", "ask", "off"]
 
 # `re` for events not tied to a request, such as a connector dropping.
@@ -200,11 +201,27 @@ class ConnectorsListRequest(RequestBase):
     type: Literal["connectors.list"] = "connectors.list"
 
 
+class ConnectorsImportRequest(RequestBase):
+    """Import MCP servers from other agent apps' config files.
+
+    `dry_run` only looks and answers with the files found. Otherwise the files
+    in `paths` are imported, or every readable file found when `paths` is empty.
+    """
+
+    type: Literal["connectors.import"] = "connectors.import"
+    paths: list[str] = Field(default_factory=list)
+    dry_run: bool = False
+    rename_conflicts: bool = False
+
+
 class ConnectorsAddRequest(RequestBase):
     """Add a connector, or with `dry_run` only probe it and report its tools."""
 
     type: Literal["connectors.add"] = "connectors.add"
-    url: str = Field(min_length=1)
+    url: str | None = Field(default=None, min_length=1)
+    command: str | None = Field(default=None, min_length=1)  # a local command line
+    env_allow: list[str] = Field(default_factory=list)
+    cwd: str | None = None  # an absolute folder for a local command; default workspace
     name: str | None = None
     title: str | None = None
     auth: ConnectorAuth = "none"
@@ -296,6 +313,7 @@ Request = Annotated[
     | SkillsShowRequest
     | TodoGetRequest
     | ConnectorsListRequest
+    | ConnectorsImportRequest
     | ConnectorsAddRequest
     | ConnectorsRemoveRequest
     | ConnectorsEnableRequest
@@ -454,7 +472,7 @@ class ConnectorInfo(BaseModel):
 
     name: str
     title: str
-    url: str
+    url: str | None = None
     enabled: bool = True
     status: ConnectorStatus = "disabled"
     auth: ConnectorAuth = "none"
@@ -462,6 +480,9 @@ class ConnectorInfo(BaseModel):
     tools: list[ConnectorToolInfo] = Field(default_factory=list)
     error: str | None = None
     retry_in_s: int | None = None
+    transport: ConnectorTransport = "http"
+    command: str | None = None  # how a local connector is started, for display
+    note: str | None = None
 
 
 class CatalogItem(BaseModel):
@@ -485,6 +506,43 @@ class ConnectorsEvent(EventBase):
     items: list[ConnectorInfo] = Field(default_factory=list)
     error: str | None = None
     catalog: list[CatalogItem] = Field(default_factory=list)
+
+
+class ImportSourceInfo(BaseModel):
+    """A config file another app keeps MCP servers in."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    app: str
+    scope: Literal["user", "project"] = "user"
+    path: str
+    servers: int = 0
+    error: str | None = None
+
+
+class ImportRowInfo(BaseModel):
+    """What happened to one server during an import."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    kind: Literal["local", "remote"]
+    status: Literal["imported", "skipped", "failed"]
+    detail: str
+    app: str
+
+
+class ConnectorsImportEvent(EventBase):
+    """The answer to `connectors.import`: the files found and, unless it was a
+    dry run, what was imported from them.
+    """
+
+    kind: Literal["connectors.import"] = "connectors.import"
+    found: list[ImportSourceInfo] = Field(default_factory=list)
+    rows: list[ImportRowInfo] = Field(default_factory=list)
+    imported: int = 0
+    values: int = 0  # secret values moved to the credential store
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ConnectorAuthEvent(EventBase):
@@ -544,6 +602,7 @@ Event = Annotated[
     | HistoryEvent
     | StatusEvent
     | ConnectorsEvent
+    | ConnectorsImportEvent
     | ConnectorStatusEvent
     | ConnectorProbeEvent
     | ConnectorAuthEvent

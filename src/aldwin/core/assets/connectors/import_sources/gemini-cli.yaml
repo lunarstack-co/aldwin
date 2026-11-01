@@ -1,0 +1,12 @@
+app: Gemini CLI
+homepage: https://geminicli.com/docs/tools/mcp-server/
+verified: 2026-11-01
+verified_from: docs
+format: json
+dialect: gemini
+servers_at: [[mcpServers]]
+locations:
+  - scope: user
+    paths: {any: ~/.gemini/settings.json}
+  - scope: project
+    paths: {any: "{workspace}/.gemini/settings.json"}

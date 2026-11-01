@@ -1,0 +1,12 @@
+app: Zed
+homepage: https://zed.dev/docs/ai/mcp
+verified: 2026-11-01
+verified_from: source
+format: jsonc
+dialect: zed
+servers_at: [[context_servers]]
+locations:
+  - scope: user
+    paths: {any: ~/.config/zed/settings.json}
+  - scope: project
+    paths: {any: "{workspace}/.zed/settings.json"}

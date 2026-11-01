@@ -1,0 +1,12 @@
+app: Cursor
+homepage: https://cursor.com/docs/context/mcp
+verified: 2026-11-01
+verified_from: docs
+format: json
+dialect: standard
+servers_at: [[mcpServers]]
+locations:
+  - scope: user
+    paths: {any: ~/.cursor/mcp.json}
+  - scope: project
+    paths: {any: "{workspace}/.cursor/mcp.json"}

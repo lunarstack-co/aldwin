@@ -1,0 +1,18 @@
+[mcp_servers.context7]
+command = "npx"
+args = ["-y", "@upstash/context7-mcp@4.4.4"]
+env_vars = ["LOCAL_TOKEN"]
+cwd = "/tmp"
+
+[mcp_servers.context7.env]
+MY_ENV_VAR = "fake-env-1"
+
+[mcp_servers.figma]
+url = "https://mcp.figma.com/mcp"
+bearer_token_env_var = "FIGMA_OAUTH_TOKEN"
+http_headers = { "X-Figma-Region" = "us-east-1" }
+
+[mcp_servers.linear]
+url = "https://mcp.linear.app/mcp"
+env_http_headers = { "Authorization" = "LINEAR_TOKEN", "X-Trace" = "TRACE_ID" }
+enabled = false

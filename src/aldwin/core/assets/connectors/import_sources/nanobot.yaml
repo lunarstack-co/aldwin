@@ -1,0 +1,12 @@
+app: nanobot
+homepage: https://github.com/HKUDS/nanobot
+verified: 2026-11-01
+verified_from: source
+format: json
+dialect: standard
+servers_at:
+  - [tools, mcp_servers]
+  - [tools, mcpServers]
+locations:
+  - scope: user
+    paths: {any: ~/.nanobot/config.json}

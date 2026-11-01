@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "weather": {
+      "command": "node",
+      "args": ["/opt/weather/index.js"],
+      "env": {"WEATHER_KEY": "fake-cline-1"},
+      "timeout": 60,
+      "disabled": false
+    },
+    "remote-tools": {
+      "type": "streamableHttp",
+      "url": "https://tools.example.com/mcp",
+      "headers": {"Authorization": "Bearer fake-cline-2"},
+      "disabled": true
+    }
+  }
+}
