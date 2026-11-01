@@ -71,6 +71,7 @@ from aldwin.protocol import (
     TodoUpdatedEvent,
     ToolCallEvent,
     ToolResultEvent,
+    find_pasted_secrets,
 )
 
 logger = logging.getLogger("aldwin.cli")
@@ -613,11 +614,23 @@ class TurnKeyListener:
             await asyncio.gather(*list(self._tasks), return_exceptions=True)
 
 
+class _FilteredFileHistory(FileHistory):
+    """File history that never writes a line holding a pasted token.
+
+    The line stays in memory, so up-arrow still finds it this session.
+    """
+
+    def store_string(self, string: str) -> None:
+        if find_pasted_secrets(string):
+            return
+        super().store_string(string)
+
+
 def _create_history(home: Path) -> History:
     history_path = home / "history"
     try:
         history_path.parent.mkdir(parents=True, exist_ok=True)
-        return FileHistory(str(history_path))
+        return _FilteredFileHistory(str(history_path))
     except OSError:
         return InMemoryHistory()
 

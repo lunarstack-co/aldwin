@@ -14,13 +14,31 @@ from agentling.errors import MemoryLoadError
 from agentling.memory import ActionStep, FinalStep, Memory, TaskStep
 
 from aldwin.core.home import FILE_MODE, atomic_write, home_dir
-from aldwin.protocol import HistoryItem
+from aldwin.protocol import HistoryItem, redact_pasted_secrets
 
 logger = logging.getLogger("aldwin.host.sessions")
 
 SESSIONS_SUBDIR: Final[str] = "sessions"
 MAX_TITLE_CHARS: Final[int] = 60
 MAX_PREVIEW_CHARS: Final[int] = 120
+
+
+def redact_strings(value: Any) -> Any:
+    """`value` with token-shaped text removed from every string inside it."""
+    # Decoded values, not JSON text: escaping turns a newline before a token
+    # into `\\n`, which hides the token's word boundary.
+    if isinstance(value, str):
+        return redact_pasted_secrets(value)
+    if isinstance(value, list):
+        return [redact_strings(item) for item in value]
+    if isinstance(value, dict):
+        return {key: redact_strings(item) for key, item in value.items()}
+    return value
+
+
+def redact_memory_json(raw: str) -> str:
+    """A `Memory.dump_json()` string with pasted tokens removed."""
+    return json.dumps(redact_strings(json.loads(raw)))
 
 
 def _utc_now_iso() -> str:
@@ -164,24 +182,38 @@ class SessionStore:
         *,
         interrupted: bool,
         todo: list[dict[str, str]] | None = None,
+        redact: bool = False,
     ) -> None:
-        """Atomically persist `stored` and `memory` to `stored.path` (mode `0600`)."""
+        """Atomically persist `stored` and `memory` to `stored.path` (mode `0600`).
+
+        With `redact`, token-shaped text is removed from everything written.
+        """
         stored.memory = memory
         stored.meta.updated_at = _utc_now_iso()
         stored.meta.interrupted = interrupted
         if todo is not None:
             stored.todo = list(todo)
         if not stored.meta.title:
-            stored.meta.title = derive_session_title(memory, stored.turns)
+            # Redact before the title is cut to length, or a cut token survives.
+            stored.meta.title = (
+                derive_session_title(
+                    Memory.load_json(redact_memory_json(memory.dump_json())),
+                    redact_strings(stored.turns),
+                )
+                if redact
+                else derive_session_title(memory, stored.turns)
+            )
 
-        payload: dict[str, Any] = {
-            "meta": asdict(stored.meta),
-            "memory": memory.dump_json(),
-        }
+        payload: dict[str, Any] = {"meta": asdict(stored.meta)}
         if stored.todo:
             payload["todo"] = stored.todo
         if stored.turns:
             payload["turns"] = stored.turns
+        if redact:
+            payload = redact_strings(payload)
+        payload["memory"] = (
+            redact_memory_json(memory.dump_json()) if redact else memory.dump_json()
+        )
         serialized = json.dumps(payload, indent=2) + "\n"
         atomic_write(stored.path, serialized, mode=FILE_MODE)
 

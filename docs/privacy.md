@@ -37,6 +37,16 @@ All local data lives in `~/.aldwin`. Set `ALDWIN_HOME=/path/to/dir` to use a dif
     └── approvals.jsonl     one redacted line per policy decision, rotated at 10 MB
 ```
 
+## Secrets pasted into chat
+
+If a message holds something shaped like a token (a GitHub or Slack token, an `sk-` API key, or a JSON Web Token), Aldwin still sends it to OpenAI with the rest of the message, because by then it has already been typed. It then keeps the token out of its own files:
+
+- the line is not written to `history`;
+- every later save of that conversation replaces token-shaped text with `‹redacted›`, in the messages, the title and the answers;
+- after the turn, the conversation the model sees on later turns carries `‹redacted›` instead of the token.
+
+`/new` starts a conversation that is saved as normal. Lines already in an older `history` file are not rewritten. To give Aldwin a token, use `/connectors` or the private prompt (`Token (hidden):`) it shows when a connector needs one.
+
 ## Logs
 
 - `logs/aldwin.log` records lifecycle events and errors only, never message content. Every record passes through a filter that redacts secret-shaped values (`sk-…`, `tvly-…`). Run `aldwin --debug` for more detail.

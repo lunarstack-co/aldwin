@@ -215,3 +215,20 @@ def test_unwritable_log_dir_warns_once_and_does_not_block_tools(
         r for r in caplog.records if "Could not write to approval log" in r.message
     ]
     assert len(warnings) == 1
+
+
+@pytest.mark.parametrize(
+    "sample",
+    [
+        "ghp_" + "a1B2" * 9,
+        "github_pat_11ABCDEFG0_" + "x" * 30,
+        "xoxb-1234567890-abcdefghij",
+        "sk-proj-" + "Abc123_x" * 3,
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTYifQ.c2lnbmF0dXJlLXZhbHVl",
+    ],
+)
+def test_secret_shapes_parity(sample: str) -> None:
+    """Every chat token shape is also redacted from logs, memory and panels."""
+    redacted = redact_secrets(f"value {sample} end")
+    assert sample not in redacted
+    assert REDACTED_PLACEHOLDER in redacted

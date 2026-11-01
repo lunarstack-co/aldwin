@@ -67,6 +67,10 @@ Every policy decision (`auto`, `asked`, `blocked`) writes one JSON line to `~/.a
 
 The log rotates at 10 MB, and secret-shaped tokens are replaced with `‹redacted›`. File contents, diffs, and tool outputs are never logged.
 
+## Secrets pasted into chat
+
+When a message looks like it holds a token, Aldwin shows `That looks like a secret. Don't paste secrets into chat; use /connectors or the private prompt.` before the reply. The turn still runs. The token is kept out of the input history and redacted from the saved conversation. See [Data and privacy](privacy.md#secrets-pasted-into-chat).
+
 ## Known limits
 
 - **Read, then send to the web.** Workspace reads and `web_fetch` both run without asking, so a prompt-injected document could try to send non-blocked workspace text out through a fetched URL. Secret files are blocked, all tool output is marked untrusted, and every `web_fetch` URL is recorded in the approval log.

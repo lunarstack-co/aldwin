@@ -111,6 +111,7 @@ from aldwin.host.sessions import (
     MAX_PREVIEW_CHARS,
     SessionStore,
     StoredSession,
+    redact_memory_json,
     shorten_one_line,
 )
 from aldwin.protocol import (
@@ -172,11 +173,17 @@ from aldwin.protocol import (
     ToolCallEvent,
     ToolResultEvent,
     TurnRequest,
+    find_pasted_secrets,
+    redact_pasted_secrets,
 )
 from aldwin.protocol.messages import SkillCatalogItem
 
 logger = logging.getLogger("aldwin.host.runner")
 
+PASTED_SECRET_NOTICE: Final[str] = (
+    "That looks like a secret. Don't paste secrets into chat; "
+    "use /connectors or the private prompt."
+)
 CIRCUIT_BREAKER_NOTICE: Final[str] = (
     "Stopped after 3 declined actions. Tell Aldwin what you'd like instead."
 )
@@ -626,6 +633,8 @@ class AldwinHost:
         self._turn_task: asyncio.Task[None] | None = None
         self._serve_task: asyncio.Task[None] | None = None
         self._todo: list[dict[str, str]] = list(self._stored_session.todo or [])
+        # Once a token is pasted, every later save of this session is redacted.
+        self._session_tainted = False
         self._host_flags: dict[str, bool] = {"skills_dirty": False}
         self._skills_fingerprint: tuple[tuple[str, int, int], ...] = ()
         self._skill_catalogue: list[LoadedSkill] = []
@@ -681,7 +690,19 @@ class AldwinHost:
             self._agent_session.memory,
             interrupted=interrupted,
             todo=self._todo,
+            redact=self._session_tainted,
         )
+
+    def _scrub_pasted_secrets(self) -> None:
+        """Remove a pasted token from the stored turn and the live conversation."""
+        turns = self._stored_session.turns
+        if turns:
+            turns[-1]["text"] = redact_pasted_secrets(turns[-1]["text"])
+        try:
+            raw = redact_memory_json(self._agent_session.memory.dump_json())
+            self._attach_session(restore_session(self._agent, raw))
+        except Exception:
+            logger.exception("couldn't redact the live conversation")
 
     def _on_circuit_breaker(self) -> None:
         """Interrupt `AgentSession` after 3 declined actions in one turn."""
@@ -907,6 +928,7 @@ class AldwinHost:
         self._persist_session(interrupted=False)
         self._policy_session.reset_turn()
         self._todo = []
+        self._session_tainted = False
         self._stored_session = self._session_store.create_new(model=self._model)
         self._connectors.reset_loaded()
         self._attach_session(new_session(self._agent))
@@ -1406,6 +1428,10 @@ class AldwinHost:
                     )
                 if picked:
                     record_skills_used(self._home, used_names)
+            pasted = bool(find_pasted_secrets(req.text))
+            if pasted:
+                self._session_tainted = True
+                await scope.emit(NoticeEvent(re=req.id, message=PASTED_SECRET_NOTICE))
             task_text = build_task(req.text, picked)
             if self._stored_session.turns is None:
                 self._stored_session.turns = []
@@ -1563,6 +1589,8 @@ class AldwinHost:
 
                 if final_status == "interrupted":
                     self._flush_partial_text(step_text_chunks)
+                    if pasted:
+                        self._scrub_pasted_secrets()
                     self._persist_session(interrupted=False)
                     if self._circuit_breaker_tripped and self._negotiated_version >= 2:
                         await scope.emit(
@@ -1577,6 +1605,8 @@ class AldwinHost:
                 reason: DoneReason = (
                     "max_steps" if final_status == "max_steps" else "answered"
                 )
+                if pasted:
+                    self._scrub_pasted_secrets()
                 self._persist_session(interrupted=False)
                 # Rebuild after the turn loop (never mid-tool) and emit
                 # notice/skills before `done` so the door still receives them.
@@ -1595,6 +1625,8 @@ class AldwinHost:
                 self._agent_session._interrupt.clear()
                 self._policy_session.clear_step_calls()
                 self._flush_partial_text(step_text_chunks)
+                if pasted:
+                    self._scrub_pasted_secrets()
                 self._persist_session(interrupted=False)
                 if not scope.terminated:
                     await scope.done("stopped")
@@ -1604,6 +1636,8 @@ class AldwinHost:
                 self._agent_session._interrupt.clear()
                 self._policy_session.clear_step_calls()
                 logger.exception("Turn %s failed", req.id)
+                if pasted:
+                    self._scrub_pasted_secrets()
                 self._persist_session(interrupted=True)
                 code, msg = classify_turn_error(exc, model=self._model)
                 if not scope.terminated:

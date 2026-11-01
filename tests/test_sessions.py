@@ -12,8 +12,8 @@ from agentling.memory import ActionStep, FinalStep, Memory, TaskStep, ToolResult
 from agentling.models import ChatMessage, ToolCall
 from fakes.model import FakeModel, FakeTurn
 
-from aldwin.host.sessions import SessionStore
-from aldwin.protocol import HistoryItem
+from aldwin.host.sessions import SessionStore, derive_session_title
+from aldwin.protocol import REDACTED, HistoryItem
 
 
 def test_session_save_creates_file_with_0600_and_derives_60_char_title(
@@ -240,3 +240,22 @@ async def test_fake_model_drives_two_step_agent_session_and_saves(
     assert reloaded.meta.interrupted is False
     assert len(reloaded.memory.steps) == 3
     assert len(fake_model.calls) == 2
+
+
+def test_redacted_session_loads(aldwin_home: Path) -> None:
+    """A redacted save hides a token on its own line and still loads."""
+    token = "ghp_" + "a1B2" * 9
+    store = SessionStore()
+    stored = store.create_new(model="gpt-4o")
+    stored.turns = [{"text": f"token:\n{token}", "skills": []}]
+    stored.memory.add(TaskStep(task=f"token:\n{token}"))
+    stored.memory.add(FinalStep(answer=f"Saved {token}."))
+
+    store.save(stored, stored.memory, interrupted=False, redact=True)
+
+    raw = stored.path.read_text("utf-8")
+    assert token not in raw and "a1B2a1B2a1B2" not in raw
+    saved = json.loads(raw)
+    memory = Memory.load_json(saved["memory"])
+    assert derive_session_title(memory, saved["turns"]) == f"token: {REDACTED}"
+    assert saved["meta"]["title"] == f"token: {REDACTED}"
