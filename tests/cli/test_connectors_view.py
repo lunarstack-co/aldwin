@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import io
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Any
 
 import pytest
@@ -20,6 +20,9 @@ from aldwin.protocol import (
     ConnectorsEvent,
     ConnectorStatusEvent,
     ConnectorToolInfo,
+    DoneEvent,
+    ErrorEvent,
+    Event,
     ToolCallEvent,
     ToolResultEvent,
 )
@@ -105,6 +108,23 @@ class FakeConnectorsClient:
     async def connectors_trust_hints(self, name: str, trust: bool) -> ConnectorsEvent:
         self.calls.append(("trust_hints", name, trust))
         return ConnectorsEvent(re="r", items=self.items)
+
+    # Sign-in is faked in `test_connectors_sign_in.py`; these tests never reach it.
+    async def connectors_sign_in(self, **kw: Any) -> AsyncGenerator[Event, None]:
+        raise AssertionError(f"unexpected sign-in: {kw}")
+        yield  # pragma: no cover - makes this an async generator
+
+    async def connectors_logout(self, name: str) -> ConnectorStatusEvent:
+        raise AssertionError(f"unexpected sign-out: {name}")
+
+    async def connectors_auth_paste(self, name: str, redirect_url: str) -> None:
+        raise AssertionError(f"unexpected paste: {name}")
+
+    async def connectors_auth_token(self, name: str, token: str) -> None:
+        raise AssertionError(f"unexpected token: {name}")
+
+    async def stop(self) -> DoneEvent | ErrorEvent:
+        return DoneEvent(re="r", reason="ok")
 
 
 def _renderer() -> tuple[ChatRenderer, io.StringIO]:

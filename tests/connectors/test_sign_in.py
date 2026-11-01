@@ -261,6 +261,7 @@ async def test_open_waits_longer_than_the_sign_in(
             config, auth=provider, on_tools_changed=_ignore, on_lost=_ignore
         ),
     )
+    assert signed is not None
     await signed.connection.close()
     assert timeouts and timeouts[0] > SIGN_IN_TIMEOUT_S
 
