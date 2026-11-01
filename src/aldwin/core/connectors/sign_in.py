@@ -7,7 +7,6 @@ succeed, so a sign-in that fails leaves no partial credentials file.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from urllib.parse import parse_qs, urlsplit
@@ -161,8 +160,7 @@ async def _first_result(
     finally:
         for waiter in waiters:
             waiter.cancel()
-        with contextlib.suppress(BaseException):
-            await asyncio.gather(*waiters, return_exceptions=True)
+        await asyncio.gather(*waiters, return_exceptions=True)
 
 
 def _seed_client_info(

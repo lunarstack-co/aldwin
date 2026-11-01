@@ -59,7 +59,6 @@ async def test_binds_the_first_port_on_loopback_only() -> None:
 
 
 async def test_busy_port_falls_back(held: list[socket.socket]) -> None:
-    """`TC-04` (unit half)."""
     _hold(held, 47823)
     callback = await LoopbackCallback.bind()
     assert callback.port == 47824
@@ -77,7 +76,6 @@ async def test_all_ports_busy(held: list[socket.socket]) -> None:
 
 
 async def test_wrong_state_rejected_then_right_state_accepted() -> None:
-    """`TC-05`."""
     callback = await LoopbackCallback.bind()
     callback.expect_state("good")
     base = f"http://127.0.0.1:{callback.port}/callback"

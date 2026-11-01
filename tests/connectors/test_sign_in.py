@@ -98,7 +98,6 @@ def serve() -> Callable[..., AbstractAsyncContextManager[OAuthFixture]]:
 async def test_dcr_sign_in_returns_tools_and_stores_credentials(
     oauth_server: Any, aldwin_home: Path
 ) -> None:
-    """`TC-01` (core half)."""
     store = FileCredentialStore(aldwin_home)
     signed = await _run(oauth_server, store)
     try:
@@ -118,7 +117,6 @@ async def test_dcr_sign_in_returns_tools_and_stores_credentials(
 
 
 async def test_cimd_used_when_advertised(serve: Any, aldwin_home: Path) -> None:
-    """`TC-02`."""
     async with serve(cimd=True) as fx:
         signed = await _run(fx, FileCredentialStore(aldwin_home))
         await signed.connection.close()
@@ -145,7 +143,6 @@ async def test_preregistered_client_skips_registration(
 
 
 async def test_no_s256_refused_before_browser(serve: Any, aldwin_home: Path) -> None:
-    """`TC-03`."""
     seen: list[str] = []
     async with serve(s256=False) as fx:
         with pytest.raises(SignInError) as info:
@@ -158,7 +155,6 @@ async def test_no_s256_refused_before_browser(serve: Any, aldwin_home: Path) -> 
 
 
 async def test_paste_completes_sign_in(oauth_server: Any, aldwin_home: Path) -> None:
-    """`TC-06` (core half)."""
     store = FileCredentialStore(aldwin_home)
     signed = await _run(oauth_server, store, paste=True)
     await signed.connection.close()
@@ -274,11 +270,12 @@ async def test_declined_in_the_browser(oauth_server: Any, aldwin_home: Path) -> 
     config = oauth_config(oauth_server)
 
     async def decline(url: str) -> None:
-        state = parse_qs(urlsplit(url).query)["state"][0]
+        # Answer on whichever port the callback bound; 47823 may still be busy.
+        query = parse_qs(urlsplit(url).query)
         async with httpx2.AsyncClient() as http:
             await http.get(
-                "http://127.0.0.1:47823/callback",
-                params={"error": "access_denied", "state": state},
+                query["redirect_uri"][0],
+                params={"error": "access_denied", "state": query["state"][0]},
             )
 
     with pytest.raises(SignInError) as info:

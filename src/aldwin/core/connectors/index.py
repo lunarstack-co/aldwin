@@ -64,7 +64,12 @@ class ToolIndex:
         return list(self._tools)
 
     def get(self, connector: str, name: str) -> IndexedTool | None:
-        return self._tools.get(connector, {}).get(name)
+        """Look a tool up by its server name or by the model name the prompt lists."""
+        entries = self._tools.get(connector, {})
+        found = entries.get(name)
+        if found is not None:
+            return found
+        return next((t for t in entries.values() if t.model_name == name), None)
 
     def names(self, connector: str) -> list[str]:
         return list(self._tools.get(connector, {}))

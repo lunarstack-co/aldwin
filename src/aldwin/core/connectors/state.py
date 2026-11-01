@@ -18,8 +18,8 @@ MAX_LISTED_TOOL_NAMES = 100
 
 ON_DEMAND_RULE = (
     "Connector tools load on demand: call find_connector_tools(query=…) or "
-    "find_connector_tools(connector=…, names=[…]) first, then call the tools it "
-    "returns."
+    "find_connector_tools(connector=…, names=[…]) with names listed below first, "
+    "then call the tools it returns."
 )
 
 
@@ -87,7 +87,9 @@ def format_connectors_block(snapshots: Sequence[ConnectorSnapshot]) -> str:
         ON_DEMAND_RULE,
     ]
     for snap in enabled:
-        usable = [t.name for t in snap.tools if t.effective != "off"]
+        # Model names only: a server's raw tool name could carry text that
+        # breaks out of this block.
+        usable = [t.model_name for t in snap.tools if t.effective != "off"]
         line = f"- {snap.name} ({snap.title}): {snap.status}, {len(usable)} tools"
         if snap.status == "failed":
             line += f"; needs attention: {snap.error or 'not connected'}"

@@ -40,7 +40,6 @@ def test_tokens_split_snake_and_camel_case() -> None:
 
 
 def test_search_by_name_token() -> None:
-    """`TC-01`."""
     index = ToolIndex()
     index.replace("alpha", FIXTURE)
     found = index.search("read")
@@ -48,7 +47,7 @@ def test_search_by_name_token() -> None:
 
 
 def test_search_by_description_and_camel_case() -> None:
-    """`TC-02`: a word in the name and the description scores higher."""
+    """A word in the name and the description scores higher."""
     index = ToolIndex()
     index.replace(
         "linear",
@@ -64,7 +63,6 @@ def test_search_by_description_and_camel_case() -> None:
 
 
 def test_search_no_match_and_limit() -> None:
-    """`TC-03`."""
     index = ToolIndex()
     index.replace("alpha", [_tool(f"thing_{i:02d}") for i in range(12)])
     assert len(index.search("thing", limit=5)) == 5
@@ -113,6 +111,8 @@ def test_replace_drop_get_and_names() -> None:
     assert index.connectors() == ["alpha"]
     assert index.names("alpha") == ["read_thing", "write_thing", "echo_nullable"]
     assert index.get("alpha", "read_thing") is FIXTURE[0]
+    assert index.get("alpha", "mcp__alpha__read_thing") is FIXTURE[0]
+    assert index.get("beta", "mcp__alpha__read_thing") is None
     assert index.get("alpha", "nope") is None
     assert index.get("nope", "read_thing") is None
 

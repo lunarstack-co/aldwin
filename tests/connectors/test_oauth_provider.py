@@ -45,7 +45,7 @@ async def test_valid_token_is_sent(oauth_server: Any, aldwin_home: Path) -> None
 async def test_expired_token_refreshes_once_silently(
     oauth_server: Any, aldwin_home: Path
 ) -> None:
-    """`TC-07`: the server expired the token; one refresh, then the call works."""
+    """The server expired the token; one refresh, then the call works."""
     store = FileCredentialStore(aldwin_home)
     seed_signed_in(oauth_server, store)
     oauth_server.expire_access_tokens()
@@ -97,7 +97,7 @@ async def test_revoked_refresh_needs_sign_in_without_discovery(
 async def test_two_refreshers_send_one_refresh(
     oauth_server: Any, aldwin_home: Path
 ) -> None:
-    """`TC-08`: the fence lets one refresh happen; the other adopts its tokens."""
+    """The fence lets one refresh happen; the other adopts its tokens."""
     store = FileCredentialStore(aldwin_home)
     seed_signed_in(oauth_server, store, expires_in=-5)
     config = oauth_config(oauth_server)

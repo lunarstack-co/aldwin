@@ -122,7 +122,6 @@ def _saved(home: Path) -> dict[str, Any]:
 async def test_add_signs_in_through_the_browser(
     rig: Rig, oauth_server: OAuthFixture, aldwin_home: Path
 ) -> None:
-    """`TC-01`."""
     events = await _sign_in(rig, browser, url=oauth_server.mcp_url)
 
     [prompt] = [e for e in events if isinstance(e, ConnectorAuthEvent)]
@@ -137,7 +136,6 @@ async def test_add_signs_in_through_the_browser(
 
 
 async def test_paste_mode_signs_in(rig: Rig, oauth_server: OAuthFixture) -> None:
-    """`TC-06`."""
     events = await _sign_in(rig, paste, url=oauth_server.mcp_url, no_browser=True)
     [prompt] = [e for e in events if isinstance(e, ConnectorAuthEvent)]
     assert prompt.mode == "paste"
@@ -219,7 +217,7 @@ async def test_oauth_connector_without_sign_in_waits_at_start(
     oauth_server: OAuthFixture,
     aldwin_home: Path,
 ) -> None:
-    """`TC-35`: no discovery, no browser; one notice on the next turn."""
+    """No discovery, no browser; one notice on the next turn."""
     connectors_path(aldwin_home).write_text(
         yaml.safe_dump(
             {
@@ -282,7 +280,7 @@ async def test_revoked_sign_in_moves_to_needs_auth(
 async def test_token_mode_asks_for_a_token(
     rig: Rig, oauth_server: OAuthFixture
 ) -> None:
-    """`TC-52`: a bearer server with no token asks through `connector.auth`."""
+    """A bearer server with no token asks through `connector.auth`."""
     client_id = oauth_server.register({"redirect_uris": ["http://127.0.0.1/cb"]})[1][
         "client_id"
     ]

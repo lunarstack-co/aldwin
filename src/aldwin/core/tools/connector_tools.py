@@ -60,8 +60,8 @@ class FindConnectorToolsTool(Tool):
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
-                    "Exact tool names on that connector, e.g. ['list_issues']. "
-                    "Needs connector."
+                    "Exact tool names on that connector as listed under "
+                    "<connectors>, e.g. ['mcp__linear__list_issues']. Needs connector."
                 ),
             },
         },

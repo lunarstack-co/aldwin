@@ -292,8 +292,12 @@ class _View:
         minutes = max(1, event.expires_in // 60)
         self._gap()
         self._line(f"Sign in to {title}", "bold")
-        opened = event.mode == "browser" and await asyncio.to_thread(
-            webbrowser.open, event.url or ""
+        # Only web addresses go to the browser; anything else is printed to paste.
+        web = (event.url or "").startswith(("https://", "http://"))
+        opened = (
+            event.mode == "browser"
+            and web
+            and await asyncio.to_thread(webbrowser.open, event.url or "")
         )
         if opened:
             self._line(

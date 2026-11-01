@@ -194,7 +194,7 @@ async def test_browser_sign_in_from_the_catalogue(opened: list[str]) -> None:
 async def test_over_ssh_the_address_is_pasted(
     opened: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`TC-06` (door half): a bad paste is refused and the prompt comes back."""
+    """A bad paste is refused and the prompt comes back."""
     monkeypatch.setenv("SSH_CONNECTION", "10.0.0.1 22 10.0.0.2 51000")
     client = FakeSignInClient(catalog=[NOTION])
     client.bad_pastes = 1
@@ -229,7 +229,6 @@ async def test_cancel_stops_the_sign_in(opened: list[str]) -> None:
 
 
 async def test_github_asks_for_a_token_with_help() -> None:
-    """`TC-52` (door half)."""
     client = FakeSignInClient(catalog=[GITHUB])
     out = await _run(client, "1", "1", secret="canary-9c1d")
     assert "GitHub needs a token." in out

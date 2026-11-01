@@ -70,8 +70,16 @@ async def test_query_scoped_to_a_connector() -> None:
     assert out == 'No connector tool matches "thing". Connected apps: alpha, beta.'
 
 
+async def test_names_accept_the_model_names_the_prompt_lists() -> None:
+    host = Host()
+    out = await host.tool().call(
+        {"connector": "beta", "names": ["mcp__beta__get_page"]}
+    )
+    assert out.startswith("mcp__beta__get_page: Fetch a page")
+    assert host.loads == [["mcp__beta__get_page"]]
+
+
 async def test_names_load_known_and_report_unknown() -> None:
-    """`TC-07`."""
     host = Host()
     out = await host.tool().call({"connector": "beta", "names": ["get_page", "nope"]})
     assert out == (
@@ -116,7 +124,6 @@ async def test_no_connectors_at_all() -> None:
     ],
 )
 async def test_validation(args: dict[str, object], message: str) -> None:
-    """`TC-08`."""
     host = Host()
     with pytest.raises(ToolCallError, match=message):
         await host.tool().call(args)

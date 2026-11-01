@@ -216,7 +216,7 @@ async def test_add_mid_conversation_offers_tools_once_loaded(
 async def test_tool_set_off_is_absent_from_index_and_schemas(
     manager: ConnectorManager, agent_session: AgentSession, fake_model: FakeModel
 ) -> None:
-    """`TC-04`: an off tool cannot be found or loaded."""
+    """An off tool cannot be found or loaded."""
     manager.attach(agent_session)
     config = ConnectorConfig(
         name="fixture", url=FIXTURE_URL, tools={"write_thing": "off"}
@@ -422,7 +422,7 @@ async def test_list_changed_updates_session_and_registry(
     agent_session: AgentSession,
     fixture_server: FixtureControls,
 ) -> None:
-    """`TC-12`: a changed list re-indexes; loaded tools follow it."""
+    """A changed list re-indexes; loaded tools follow it."""
     manager.attach(agent_session)
     await manager.add(
         ConnectorConfig(name="fixture", url=FIXTURE_URL), token=None, dry_run=False
@@ -774,7 +774,7 @@ async def test_session_starts_with_only_the_finder(
     agent_session: AgentSession,
     fake_model: FakeModel,
 ) -> None:
-    """`TC-05`: two connectors on, and the model is offered one extra tool."""
+    """Two connectors on, and the model is offered one extra tool."""
     builtin = set(agent_session.tools)
     mgr = _two_connectors(aldwin_home, policy_session, recorder)
     await mgr.start()
@@ -796,7 +796,6 @@ async def test_load_evicts_the_least_recently_used_at_the_cap(
     recorder: Recorder,
     agent_session: AgentSession,
 ) -> None:
-    """`TC-09`."""
     mgr = _two_connectors(aldwin_home, policy_session, recorder, loaded_cap=6)
     await mgr.start()
     try:
@@ -833,7 +832,7 @@ async def test_the_model_limit_is_never_exceeded(
     fake_model: FakeModel,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`TC-10`: the backstop under the configured cap."""
+    """The backstop under the configured cap."""
     import aldwin.host.connectors as host_connectors
 
     limit = len(agent_session.tools) + 1 + 4  # built-ins, the finder, four more
@@ -857,7 +856,6 @@ async def test_off_disable_and_remove_drop_loaded_tools(
     recorder: Recorder,
     agent_session: AgentSession,
 ) -> None:
-    """`TC-11`."""
     mgr = _two_connectors(aldwin_home, policy_session, recorder)
     await mgr.start()
     try:

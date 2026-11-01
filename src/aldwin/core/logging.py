@@ -9,6 +9,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Final
 
+from aldwin.core.connectors.errors import SignInError
 from aldwin.core.home import DIR_MODE, FILE_MODE, ensure_permissions, home_dir
 from aldwin.core.settings import mask_secret
 
@@ -61,8 +62,6 @@ class QuietOAuthFlowFilter(logging.Filter):
     """Drops the SDK's traceback for a sign-in Aldwin already explained."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        from aldwin.core.connectors.errors import SignInError
-
         if not record.name.startswith(MCP_LOGGER_NAME):
             return True
         error = record.exc_info[1] if record.exc_info else None
