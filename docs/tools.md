@@ -78,8 +78,11 @@ Notes live in `~/.aldwin/memory/notes/YYYY-MM-DD.md`. A rebuildable SQLite FTS5 
 | Tool | What it does | Needs approval? |
 |---|---|---|
 | `find_connector_tools` | Finds tools on connected apps by words (`query`) or by name (`connector` and `names`) and loads them for the rest of the conversation | No |
+| `propose_connector` | Proposes adding a connector when you ask Aldwin to connect an app: a catalogue app by `name`, an MCP server by `url`, or a local server by `command`. After your yes it runs the same sign-in as `/connectors` and loads the new app's tools | **Always** |
 
 Connector tools are not sent to the model up front. The system prompt lists each connected app's tool names; the model calls `find_connector_tools` to load the few it needs, then calls them. At most `limits.connector_tools` (default 40) stay loaded; past that the least recently used are dropped and can be found again. `/new` starts with none loaded. Each loaded tool keeps its own setting from `/connectors` (`auto`, `ask` or `off`), and an `off` tool can never be found.
+
+The system prompt also lists the catalogue apps you haven't added, so you can say "connect me to Linear". Aldwin then calls `propose_connector`, which always asks and is never granted for the session. Sign-in happens in your browser or in a hidden prompt; the model only ever sees one line such as `connected: linear, 23 tools loaded`. A server added by URL that isn't in the catalogue starts with every tool asking first, until you change that in `/connectors`.
 
 ## Skills
 

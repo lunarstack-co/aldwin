@@ -56,6 +56,7 @@ from aldwin.core.connectors.errors import (
     NeedsSignIn,
 )
 from aldwin.core.connectors.local import parse_command_line
+from aldwin.core.connectors.oauth_messages import needs_sign_in
 from aldwin.core.connectors.policy import tool_call_labels
 from aldwin.core.connectors.state import ConnectorSnapshot
 from aldwin.core.home import home_dir
@@ -642,6 +643,7 @@ class AldwinHost:
             emit=self._emit_connector_event,
             loaded_cap=config.limits.connector_tools,
             workspace_root=lambda: self._workspace.root,
+            turn_auth=self._auth_during_turn,
         )
         self._import_paths = list(config.connectors.import_paths)
         self._connectors_started = False
@@ -1215,6 +1217,13 @@ class AldwinHost:
                 for e in load_catalog()
             ],
         )
+
+    async def _auth_during_turn(self, prompt: AuthPrompt) -> None:
+        """Ask the user to sign in on the turn whose tool call needs it."""
+        scope = self._active_turn_scope
+        if scope is None or scope.terminated or self._negotiated_version < 2:
+            raise NeedsSignIn(needs_sign_in(prompt.title))
+        await scope.emit(_auth_event(scope.req_id, prompt))
 
     async def _emit_connector_event(self, event: ConnectorEvent) -> None:
         """Send a connector change on the running turn, or on the host stream."""

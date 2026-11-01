@@ -55,8 +55,8 @@ After that, `aldwin` picks up your latest conversation where you left off. Type 
 - **Web:** search the web and read pages.
 - **Terminal:** run shell commands, always with your approval.
 - **Planning:** keep a live checklist for longer jobs and do exact arithmetic and date maths.
-- **Skills:** nine built-in skills, your own skills in `~/.aldwin/skills/`, and an `@` picker to choose one for a message.
-- **Connectors:** add a remote MCP server, or a local one started from a command (macOS and Linux; not Windows), with `/connectors` and use its tools in any conversation. A local command runs only after you approve it, with a minimal environment, in your workspace folder. Tools the server marks read-only run automatically; anything else asks first. Connector tools load on demand, so any number of apps can stay connected without crowding the model. `aldwin connectors import` brings in the servers you already set up in other agent apps; see [docs/import-sources.md](docs/import-sources.md) for the apps it knows and how to add one.
+- **Skills:** ten built-in skills, your own skills in `~/.aldwin/skills/`, and an `@` picker to choose one for a message.
+- **Connectors:** add a remote MCP server, or a local one started from a command (macOS and Linux; not Windows), with `/connectors` and use its tools in any conversation. A local command runs only after you approve it, with a minimal environment, in your workspace folder. Tools the server marks read-only run automatically; anything else asks first. Connector tools load on demand, so any number of apps can stay connected without crowding the model. You can also just ask, for example "connect me to Linear": Aldwin proposes the connector and you approve it. `aldwin connectors import` brings in the servers you already set up in other agent apps; see [docs/import-sources.md](docs/import-sources.md) for the apps it knows and how to add one.
 
 See the [full tool list](https://github.com/lunarstack-co/aldwin/blob/main/docs/tools.md) and the [skills guide](https://github.com/lunarstack-co/aldwin/blob/main/docs/skills.md).
 

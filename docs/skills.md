@@ -4,9 +4,11 @@ A skill is a short markdown file that teaches Aldwin how to do a kind of job wel
 
 ## Default skills
 
-Aldwin ships nine default skills, loaded from the install:
+Aldwin ships ten default skills, loaded from the install:
 
-`using-aldwin`, `files`, `markdown-notes`, `documents`, `making-documents`, `web-research`, `memory`, `terminal`, `skill-creator`
+`using-aldwin`, `files`, `markdown-notes`, `documents`, `making-documents`, `web-research`, `memory`, `terminal`, `skill-creator`, `connectors`
+
+The `connectors` skill lists the apps Aldwin can connect to and tells it to use `propose_connector` when you ask it to connect one.
 
 The `making-documents` skill writes Office files via `run_command`. Enable it with the document-writing extra:
 

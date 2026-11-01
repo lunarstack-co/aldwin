@@ -75,6 +75,9 @@ class FakeHost:
         self._stop_gate = asyncio.Event()
         self.turn_started_event = asyncio.Event()
         self.approval_emitted_event = asyncio.Event()
+        # A scripted `connector.auth` waits here until the user answers it.
+        self.auth_emitted_event = asyncio.Event()
+        self._auth_gate = asyncio.Event()
 
         self.custom_persona = PersonaSummary(
             path=Path("/tmp/.aldwin/persona.md"),
@@ -187,6 +190,12 @@ class FakeHost:
         for ev in events:
             if ev.kind == "approval":
                 self.approval_emitted_event.set()
+            if ev.kind == "connector.auth":
+                self._auth_gate.clear()
+                self.auth_emitted_event.set()
+                yield ev
+                await self._auth_gate.wait()
+                continue
             yield ev
             await asyncio.sleep(0)
         if self.hang_until_stopped:
@@ -197,6 +206,7 @@ class FakeHost:
         self.stop_calls += 1
         self.requests.append(("stop",))
         self._stop_gate.set()
+        self._auth_gate.set()
         return DoneEvent(re="req_stop", reason="ok")
 
     async def approve(
@@ -211,6 +221,19 @@ class FakeHost:
         self.approval_details.append((approval_id, answer, digest, reason))
         self.requests.append(("approve", approval_id, answer))
         return DoneEvent(re="req_approve", reason="ok")
+
+    async def connectors_auth_paste(self, name: str, redirect_url: str) -> None:
+        self.requests.append(("auth_paste", name, redirect_url))
+        self._auth_gate.set()
+
+    async def connectors_auth_token(self, name: str, token: str) -> None:
+        # Never keep the token itself, even in a fake.
+        self.requests.append(("auth_token", name, len(token)))
+        self._auth_gate.set()
+
+    def release_auth(self) -> None:
+        """The sign-in finished on its own (the browser flow completed)."""
+        self._auth_gate.set()
 
     async def set_model(self, name: str) -> DoneEvent | ErrorEvent:
         cleaned = name.strip()

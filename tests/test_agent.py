@@ -384,5 +384,5 @@ def test_build_agent_performance_under_200ms(
     elapsed_ms = (time.perf_counter() - t0) * 1000
 
     # 9 defaults + 3 user skills
-    assert len(agent.skills) == 12
+    assert len(agent.skills) == 13
     assert elapsed_ms < 200.0
