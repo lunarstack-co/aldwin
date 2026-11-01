@@ -2,7 +2,7 @@
 
 An open-source personal assistant that works with your files and documents, knows good habits out of the box, and runs on your own computer, in your terminal, built on [Agentling](https://agentling.dev).
 
-![Aldwin 0.0.2 session: summarising a spreadsheet and a slide deck, then finding and fixing a TODO with diff approval](https://raw.githubusercontent.com/lunarstack-co/aldwin/main/docs/assets/demo.gif)
+![Aldwin 0.0.3 session: connecting a Linear workspace and asking about open issues](https://raw.githubusercontent.com/lunarstack-co/aldwin/main/docs/assets/demo.gif)
 
 ---
 
@@ -32,7 +32,7 @@ Then start Aldwin:
 aldwin
 ```
 
-Already on `0.0.1`? Upgrade in place and keep your conversation, memory, persona, and settings:
+Already on `0.0.2`? Upgrade in place and keep your conversation, memory, persona, and settings:
 
 ```bash
 uv tool upgrade aldwin
@@ -56,9 +56,31 @@ After that, `aldwin` picks up your latest conversation where you left off. Type 
 - **Terminal:** run shell commands, always with your approval.
 - **Planning:** keep a live checklist for longer jobs and do exact arithmetic and date maths.
 - **Skills:** ten built-in skills, your own skills in `~/.aldwin/skills/`, and an `@` picker to choose one for a message.
-- **Connectors:** add a remote MCP server, or a local one started from a command (macOS and Linux; not Windows), with `/connectors` and use its tools in any conversation. A local command runs only after you approve it, with a minimal environment, in your workspace folder. Tools the server marks read-only run automatically; anything else asks first. Connector tools load on demand, so any number of apps can stay connected without crowding the model. You can also just ask, for example "connect me to Linear": Aldwin proposes the connector and you approve it. `aldwin connectors import` brings in the servers you already set up in other agent apps; see [docs/import-sources.md](docs/import-sources.md) for the apps it knows and how to add one.
+- **Connectors:** connect Notion, Linear, GitHub, and more with `/connectors`; see the [Connectors](#connectors) section below.
 
 See the [full tool list](https://github.com/lunarstack-co/aldwin/blob/main/docs/tools.md) and the [skills guide](https://github.com/lunarstack-co/aldwin/blob/main/docs/skills.md).
+
+---
+
+## Connectors
+
+Aldwin can connect to your other apps as MCP servers. Add one with `/connectors`.
+
+**Catalogue:** pick Notion, Linear, GitHub, Context7, and others from the built-in catalogue. Sign in through your browser and Aldwin stores the token in `~/.aldwin/credentials` (mode 0600).
+
+**Any MCP server:** paste a URL to add any remote server that isn't in the catalogue.
+
+**Local servers:** run a server from a command, for example:
+
+```bash
+npx -y @modelcontextprotocol/server-filesystem /path/to/folder
+```
+
+Local servers start only after you approve the command. They run with a minimal environment in your workspace folder. Local servers are not supported on Windows.
+
+**Import:** `aldwin connectors import` brings in servers already configured in other agent apps.
+
+**Ask Aldwin to connect:** type "connect me to Notion" and Aldwin proposes the connector for you to approve.
 
 ---
 
@@ -72,6 +94,12 @@ Aldwin runs on your machine without a sandbox, so every tool call goes through a
 - **Commands get a clean environment.** API keys, tokens, and passwords in your shell are never passed to commands Aldwin runs.
 - **Everything read is untrusted.** Text from files, pages, and command output is treated as data, never as instructions.
 - **Every decision is logged** to `~/.aldwin/logs/approvals.jsonl`, with secrets redacted.
+- **Connector tools that only read run on Auto** based on the server's own hint. Turn the trust toggle off in `/connectors` and every tool from that server will ask first.
+- **Anything that changes something asks you first.** Connector tools the server does not mark read-only always show an approval.
+- **All connector output is treated as untrusted.** The same rule as for files and command output.
+- **Tokens stay local.** Sign-in tokens are kept in `~/.aldwin/credentials` (mode 0600) and never pass through the model.
+- **Local servers need approval and run in a clean environment.** If you edit the command by hand, Aldwin asks again before re-running it.
+- **Known limits:** a server can mark a write tool read-only, and Aldwin will trust that hint. A local server runs with your user's rights; there is no sandbox.
 
 Read the [safety model](https://github.com/lunarstack-co/aldwin/blob/main/docs/safety.md) for the full rules and known limits.
 
@@ -80,8 +108,9 @@ Read the [safety model](https://github.com/lunarstack-co/aldwin/blob/main/docs/s
 ## Data and privacy
 
 - **No telemetry.** Aldwin collects no analytics.
-- **Sent to OpenAI:** your prompts, recent conversation, your profile and recent notes, and anything Aldwin reads for the turn.
-- **Stays local:** everything else in `~/.aldwin`, including your API keys, saved conversations, and logs.
+- **Sent to OpenAI:** your prompts, recent conversation, your profile and recent notes, and anything Aldwin reads for the turn — including connector tool results.
+- **Stays local:** everything else in `~/.aldwin`, including your API keys, saved conversations, sign-in tokens, and logs. Connector tokens never go to the model.
+- **Platforms:** macOS 13+ and Linux. Local MCP servers are not supported on Windows.
 
 Read [data and privacy](https://github.com/lunarstack-co/aldwin/blob/main/docs/privacy.md) for the home folder layout and every network call Aldwin makes.
 
@@ -102,9 +131,9 @@ See all [commands, slash commands, and shortcuts](https://github.com/lunarstack-
 
 ## What's next
 
-Aldwin runs inside your terminal process; it isn't always-on yet. Closing the terminal stops any active task, and your conversation resumes next time you run `aldwin`. It works with your own OpenAI API key only; other providers and Windows are not supported in `0.0.2`.
+Aldwin runs inside your terminal process; it isn't always-on yet. Closing the terminal stops any active task, and your conversation resumes next time you run `aldwin`. It works with your own OpenAI API key only; other model providers and Windows are not yet supported.
 
-`0.0.3`: local models, better web search, and MCP.
+Next: local models and more web search providers.
 
 ---
 

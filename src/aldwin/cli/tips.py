@@ -20,6 +20,7 @@ TIPS: Final[tuple[str, ...]] = (
     "Use /workspace to set where file tools run",
     "Use /memory to browse notes and profile",
     "Use /new when context gets tight",
+    "Try: /connectors to connect Notion, Linear or GitHub",
 )
 
 _STATE_NAME: Final[str] = "last_tip.txt"

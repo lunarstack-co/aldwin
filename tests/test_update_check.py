@@ -304,7 +304,8 @@ def test_version_flag_does_not_call_pypi(monkeypatch: pytest.MonkeyPatch) -> Non
     res = CliRunner().invoke(app, ["--version"])
     assert res.exit_code == 0
     assert res.output.strip() == (
-        f"aldwin {__version__} (protocol v2, agentling {metadata.version('agentling')})"
+        f"aldwin {__version__} (protocol v2, agentling {metadata.version('agentling')},"
+        f" mcp {metadata.version('mcp')})"
     )
     assert calls == []
 

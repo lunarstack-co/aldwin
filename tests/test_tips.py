@@ -8,8 +8,8 @@ from aldwin.cli.tips import TIPS, next_tip
 
 
 def test_tips_count_and_themes() -> None:
-    """Fourteen tips covering core discoverability themes, including the 0.0.2 ones."""
-    assert len(TIPS) == 14
+    """Fifteen tips across core discoverability themes."""
+    assert len(TIPS) == 15
     joined = " ".join(TIPS).lower()
     for needle in (
         "@",
@@ -19,6 +19,7 @@ def test_tips_count_and_themes() -> None:
         "/verbose",
         "find every todo",
         "summarise report.pdf",
+        "/connectors",
     ):
         assert needle in joined
 

@@ -1,10 +1,10 @@
-# Aldwin 0.0.1 manual test script
+# Aldwin manual test script
 
-This script verifies the end-to-end user journey for Aldwin `0.0.1` on clean **macOS** and **Linux** environments before release (`ENG-384` `FR-11`, `FR-12`).
+This script verifies the end-to-end user journey on clean **macOS** and **Linux** environments before each release.
 
 ---
 
-## 1. Preparing clean environments (`OQ-1`)
+## 1. Preparing clean environments
 
 ### Option A: Clean Linux environment (Docker or GitHub Codespace)
 
@@ -33,7 +33,7 @@ unset OPENAI_API_KEY TAVILY_API_KEY ALDWIN_HOME NO_COLOR
 
 ---
 
-## 2. Step-by-step verification checklist (`FR-11`)
+## 2. Step-by-step verification checklist
 
 ### Step 1: Install and `--version`
 - **Action:**
@@ -41,7 +41,7 @@ unset OPENAI_API_KEY TAVILY_API_KEY ALDWIN_HOME NO_COLOR
   - After PyPI release: `uv tool install aldwin`.
   - Run `aldwin --version` and `ls -la ~/.aldwin`.
 - **Expected:**
-  - `aldwin --version` prints `aldwin 0.0.1` (or `0.0.1.dev0` pre-release) and exits `0` in `< 0.5 s`.
+  - `aldwin --version` prints the installed version and exits `0` in `< 0.5 s`.
   - `~/.aldwin` does **not** exist yet (`uv tool install` and `--version` have no side effects).
 - [ ] Pass / Fail
 
@@ -306,9 +306,9 @@ Needs a real model and an account with one catalogue app, for example Linear.
    - `grep -c redacted ~/.aldwin/sessions/*.json` prints at least `1` for the newest file (the marker is stored as `\u2039redacted\u203a`).
 3. Press up-arrow: the pasted line is still there for this session.
 
-## 3. Manual test run log template (`FR-12`)
+## 3. Manual test run log template
 
-Copy and paste the filled-in template below as a comment on Linear ticket **ENG-384** for each platform tested (`macOS` and `Linux`):
+Copy the template below and fill it in for each platform tested (`macOS` and `Linux`):
 
 ```markdown
 ### Manual test run: <Platform: macOS / Linux>
@@ -316,7 +316,7 @@ Copy and paste the filled-in template below as a comment on Linear ticket **ENG-
 - **Date:** YYYY-MM-DD
 - **OS & Version:** <e.g. macOS 15.x arm64 / Ubuntu 24.04 x86_64>
 - **Python Version:** <e.g. Python 3.11.x / 3.13.x>
-- **Aldwin Version:** `0.0.1`
+- **Aldwin Version:** `<version>`
 
 | Step | Scenario | Result (PASS/FAIL) | Notes / Linked Bug Ticket |
 |---|---|---|---|
@@ -337,7 +337,7 @@ Copy and paste the filled-in template below as a comment on Linear ticket **ENG-
 
 ---
 
-## 4. Release checklist (`ENG-385` `FR-8`)
+## 4. Release checklist
 
 Tick every item below on clean **macOS** and clean **Linux** (Python 3.11+) after installing from PyPI:
 

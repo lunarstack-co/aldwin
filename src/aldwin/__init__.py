@@ -5,7 +5,7 @@ from importlib.metadata import PackageNotFoundError, version
 try:
     __version__ = version("aldwin")
 except PackageNotFoundError:
-    __version__ = "0.0.2.1"
+    __version__ = "0.0.3"
 
 
 def format_version_string() -> str:
@@ -18,7 +18,14 @@ def format_version_string() -> str:
         agentling_version = version("agentling")
     except PackageNotFoundError:
         agentling_version = "unknown"
-    return f"aldwin {__version__} (protocol v2, agentling {agentling_version})"
+    try:
+        mcp_version = version("mcp")
+    except PackageNotFoundError:
+        mcp_version = "unknown"
+    return (
+        f"aldwin {__version__} (protocol v2, agentling {agentling_version},"
+        f" mcp {mcp_version})"
+    )
 
 
 __all__ = ["__version__", "format_version_string"]

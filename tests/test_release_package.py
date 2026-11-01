@@ -102,15 +102,16 @@ def built_distributions(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path,
 
 
 @pytest.mark.uninitialized_home
-def test_version_is_0_0_2_1(aldwin_home: Path) -> None:
-    """TC-01: pyproject.toml, aldwin.__version__, and `aldwin --version` are 0.0.2.1."""
+def test_version_is_0_0_3(aldwin_home: Path) -> None:
+    """TC-01: pyproject.toml, aldwin.__version__, and `aldwin --version` are 0.0.3."""
     pyproject_data = tomllib.loads(
         (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )
-    assert pyproject_data["project"]["version"] == "0.0.2.1"
-    assert aldwin.__version__ == "0.0.2.1"
+    assert pyproject_data["project"]["version"] == "0.0.3"
+    assert aldwin.__version__ == "0.0.3"
     expected = (
-        f"aldwin 0.0.2.1 (protocol v2, agentling {metadata.version('agentling')})"
+        f"aldwin 0.0.3 (protocol v2, agentling {metadata.version('agentling')},"
+        f" mcp {metadata.version('mcp')})"
     )
 
     runner = CliRunner()
@@ -171,8 +172,8 @@ def test_build_produces_sdist_and_wheel_under_1mb(
 ) -> None:
     """TC-01: `uv build` produces sdist and wheel in dist/ under the 1 MB budget."""
     wheel_path, sdist_path = built_distributions
-    assert wheel_path.name == "aldwin-0.0.2.1-py3-none-any.whl"
-    assert sdist_path.name == "aldwin-0.0.2.1.tar.gz"
+    assert wheel_path.name == "aldwin-0.0.3-py3-none-any.whl"
+    assert sdist_path.name == "aldwin-0.0.3.tar.gz"
 
     assert 0 < wheel_path.stat().st_size < MAX_DIST_BYTES
     assert 0 < sdist_path.stat().st_size < MAX_DIST_BYTES
@@ -201,7 +202,7 @@ def test_wheel_and_sdist_include_assets_and_exclude_dev_files(
         sdist_names = set(tf.getnames())
 
     for asset in EXPECTED_WHEEL_ASSETS:
-        expected_sdist_entry = f"aldwin-0.0.2.1/src/{asset}"
+        expected_sdist_entry = f"aldwin-0.0.3/src/{asset}"
         assert expected_sdist_entry in sdist_names, (
             f"Missing {expected_sdist_entry} in sdist"
         )
@@ -212,7 +213,7 @@ def test_wheel_and_sdist_include_assets_and_exclude_dev_files(
         "CHANGELOG.md",
         "pyproject.toml",
     ):
-        assert f"aldwin-0.0.2.1/{required_root_file}" in sdist_names
+        assert f"aldwin-0.0.3/{required_root_file}" in sdist_names
 
     for entry in sdist_names:
         rel_entry = entry.removeprefix("aldwin-0.0.2.1/")
