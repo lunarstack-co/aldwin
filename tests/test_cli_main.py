@@ -26,7 +26,8 @@ def test_cli_main_routes_to_chat_and_version(
     ver_res = runner.invoke(app, ["--version"])
     assert ver_res.exit_code == 0
     assert ver_res.output.strip() == (
-        f"aldwin {__version__} (protocol v2, agentling {metadata.version('agentling')})"
+        f"aldwin {__version__} (protocol v2, agentling {metadata.version('agentling')},"
+        f" mcp {metadata.version('mcp')})"
     )
     assert not aldwin_home.exists()
 

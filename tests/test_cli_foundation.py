@@ -89,7 +89,8 @@ def test_cli_invalid_config_exits_cleanly(aldwin_home: Path) -> None:
 def test_cli_version_fast_and_side_effect_free(aldwin_home: Path) -> None:
     """TC-12: aldwin --version prints version, exits 0 in < 0.5 s, creates no home."""
     expected = (
-        f"aldwin {__version__} (protocol v2, agentling {metadata.version('agentling')})"
+        f"aldwin {__version__} (protocol v2, agentling {metadata.version('agentling')},"
+        f" mcp {metadata.version('mcp')})"
     )
     in_proc = runner.invoke(app, ["--version"])
     assert in_proc.exit_code == 0

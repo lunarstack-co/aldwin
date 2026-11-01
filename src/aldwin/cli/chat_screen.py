@@ -79,11 +79,10 @@ logger = logging.getLogger("aldwin.cli")
 ESCAPE_FLUSH_DELAY: Final[float] = 0.05
 
 WHATS_NEW_TEXT: Final[str] = (
-    "Aldwin can now read, search and edit your files with a diff before every "
-    "change, read PDFs and Office files, keep a todo list for bigger jobs, and "
-    "use skills you pick with @. It never touches secret files like .env or "
-    "~/.ssh, and commands no longer see your API keys. Your conversation, "
-    "memory and persona are kept."
+    "Connect Aldwin to your other apps. Type /connectors to add Notion, Linear, "
+    "GitHub, Context7 and more, or any MCP server by URL. Tools that only read "
+    "run straight away; anything that changes something asks you first. Your "
+    "conversation, memory and settings are kept."
 )
 
 

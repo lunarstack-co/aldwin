@@ -677,6 +677,6 @@ def test_render_whats_new_copy_and_plain_mode() -> None:
     renderer.render_whats_new(WHATS_NEW_TEXT, version="0.0.2")
     text = console.export_text()
     assert "What's new in 0.0.2" in text
-    assert "pick with @" in text
-    assert ".env" in text
-    assert "~/.ssh" in text
+    assert "/connectors" in text
+    assert "MCP server" in text
+    assert "conversation, memory and settings" in text

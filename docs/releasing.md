@@ -1,6 +1,6 @@
 # Releasing Aldwin
 
-This runbook documents the repeatable process for cutting, verifying, and publishing an Aldwin release (`0.0.1` and `0.0.2+`).
+This runbook documents the repeatable process for cutting, verifying, and publishing an Aldwin release.
 
 Every git, tag, and publish command is run by the maintainer directly. Never include tool or AI attribution in commits, tags, or release notes.
 
@@ -54,7 +54,7 @@ Confirm that `docs/assets/demo.gif` is under `5 MB` and that `README.md` referen
 
 ---
 
-## 4. Build and inspect the distribution (`FR-5`)
+## 4. Build and inspect the distribution
 
 Clean `dist/`, build the source distribution and wheel, and validate package metadata:
 
@@ -72,7 +72,7 @@ uv run pytest tests/test_release_package.py
 
 ---
 
-## 5. Rehearse on TestPyPI (`FR-6`)
+## 5. Rehearse on TestPyPI
 
 Before publishing to production PyPI (where version numbers are permanently immutable), rehearse on TestPyPI.
 
@@ -96,14 +96,14 @@ Because TestPyPI does not mirror third-party dependencies (`pydantic`, `rich`, `
 uv tool install \
   --index-url https://test.pypi.org/simple/ \
   --extra-index-url https://pypi.org/simple/ \
-  aldwin==0.0.1
+  aldwin==<X.Y.Z>
 aldwin --version
 aldwin
 ```
 
 ---
 
-## 6. Publish to PyPI (`FR-7`)
+## 6. Publish to PyPI
 
 ### One-time PyPI Trusted Publisher setup
 On `https://pypi.org/manage/project/aldwin/settings/publishing/` (and TestPyPI), register the GitHub Actions Trusted Publisher:
@@ -116,8 +116,8 @@ On `https://pypi.org/manage/project/aldwin/settings/publishing/` (and TestPyPI),
 Tagging `v<X.Y.Z>` and pushing the tag runs `.github/workflows/release.yml`, verifies that the tag matches `pyproject.toml`, runs the full test suite + `twine check`, and publishes to PyPI via OIDC:
 
 ```bash
-git tag -a v0.0.1 -m "Aldwin 0.0.1"
-git push origin v0.0.1
+git tag -a v<X.Y.Z> -m "Aldwin <X.Y.Z>"
+git push origin v<X.Y.Z>
 ```
 
 ### Manual fallback (project-scoped PyPI API token)
@@ -129,7 +129,7 @@ UV_PUBLISH_TOKEN="<pypi-project-scoped-token>" uv publish
 
 ---
 
-## 7. Post-publish verification (`FR-8`)
+## 7. Post-publish verification
 
 On clean **macOS** and clean **Linux** (Python 3.11+) environments (see [`docs/manual-test.md`](./manual-test.md)):
 
@@ -143,14 +143,14 @@ Run through the 13 steps and 9 Release Checklist items in [`docs/manual-test.md`
 
 ---
 
-## 8. GitHub release (`FR-9`)
+## 8. GitHub release
 
-Create the GitHub release on tag `v0.0.1`, attaching the built wheel and sdist from `dist/`:
+Create the GitHub release on the version tag, attaching the built wheel and sdist from `dist/`:
 
 ```bash
-gh release create v0.0.1 dist/* \
-  --title "Aldwin 0.0.1" \
-  --notes-from-tag
+gh release create v<X.Y.Z> dist/* \
+  --title "Aldwin <X.Y.Z>" \
+  --notes-file release-notes.md
 ```
 
-*(Or pass `--notes-file` with the `0.0.1` section of `CHANGELOG.md`.)*
+*(Prepare `release-notes.md` from the `## [<X.Y.Z>]` section of `CHANGELOG.md` before running this command.)*

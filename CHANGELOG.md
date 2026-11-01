@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-11-01
+
+Aldwin can now connect to your other apps through MCP servers, and warns you when it detects a secret in your message.
+
+### Added
+
+- **Connectors:** connect Aldwin to Notion, Linear, GitHub, Context7, and other apps with `/connectors`. Each connector is an MCP server that adds tools to the current session.
+  - **Catalogue:** pick a service from the built-in list and sign in through your browser; Aldwin handles the OAuth flow and stores the token at `~/.aldwin/credentials/<name>.json` (mode 0600).
+  - **Custom URL:** paste any remote MCP server URL that is not in the catalogue.
+  - **Local servers:** run any MCP server from a shell command (for example `npx -y @modelcontextprotocol/server-filesystem /path`); the command is shown for approval before it starts, and re-approved after any hand edit. Local servers are not supported on Windows.
+  - **Import:** `aldwin connectors import` reads connector configs from other agent apps on your machine and adds compatible entries.
+  - **Ask Aldwin to connect:** type "connect me to Notion" and Aldwin proposes the right connector for you to approve.
+  - **On-demand tool loading:** tools are loaded from the server only when the model needs them, so the context window is not pre-filled with hundreds of tool definitions. Up to 40 connector tools can be active at once; `/new` clears the loaded set.
+  - **Trust toggle:** in `/connectors`, toggle trust on a server to control whether its read-only tools run on Auto or always ask first.
+- **Pasted-secret warning:** Aldwin detects patterns that look like API keys, tokens, or passwords in your message before it is sent to the model. It shows the detected pattern and asks you to confirm or cancel. If you confirm, the text is redacted from the session file and from `logs/approvals.jsonl` so it is not stored at rest.
+- **`mcp` version in `--version`:** `aldwin --version` now reports the installed `mcp` SDK version alongside `agentling`, for example `aldwin 0.0.3 (protocol v2, agentling 0.1.1, mcp 2.3.0)`.
+- **Connectors tip:** the rotating welcome-card tip now includes "Try: /connectors to connect Notion, Linear or GitHub" (15 tips total).
+
 ### Fixed
 
 - The `set_persona` tool always told the model the persona limit was 2,000 characters, even when `limits.persona_chars` was set to something else. With a lower limit the model wrote text that was then rejected. The tool now states the configured limit.
@@ -15,6 +33,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The "Stopped after N steps" notice always said 15, even when `limits.max_steps` in `~/.aldwin/config.yaml` was set to something else. It now shows the configured limit. `DoneEvent` carries the limit in a new optional `max_steps` field when `reason` is `max_steps`.
 - Some invalid `config.yaml` values produced garbled errors such as `'check_for_updates' must be Input should be a valid boolean…`. `check_for_updates` and `last_seen_version` now have proper messages, and a bad item in `run_command.env_allow` is named by its position (`run_command.env_allow[0]`).
 - Running `aldwin` (or `aldwin skills`) from a folder that had been deleted after you `cd`-ed into it crashed with a `FileNotFoundError` traceback. Aldwin now falls back to `~/aldwin_workspace`, the same as when it is launched from the home directory.
+
+### Security
+
+- Aldwin warns and asks for confirmation when it detects a secret-looking pattern in your message before sending it to the model. Confirmed messages have the detected text redacted in the session file and in `logs/approvals.jsonl`.
+- Connector sign-in tokens are stored at `~/.aldwin/credentials/<name>.json` (mode 0600) and never passed through the model or written to logs.
+- Local MCP server commands are shown for approval before they start and are re-approved after any hand edit. They run with a minimal environment (`clean_env`).
+- Connector tool output is wrapped in `<untrusted>` the same as file and command output, and is never trusted as instructions.
+- The `~/.aldwin/credentials/` path is blocked from every tool.
+
+### Upgrade notes
+
+- Upgrading from `0.0.2` or `0.0.2.1` keeps all your sessions, notes, memory index, persona, and settings. No migration runs on first launch; just `uv tool upgrade aldwin`.
+- There is no `connectors.yaml` or `credentials/` folder until you add a connector with `/connectors`.
+- The `mcp` package (~18-27 MB) is now a production dependency. Total installed size is higher than `0.0.2`; see Sizes below.
+
+### Known limitations
+
+- Local MCP servers run with your user's rights; there is no sandbox. A server can mark a write tool as `readOnlyHint: true`, and Aldwin will trust that hint.
+- Connector tools are loaded on demand and counted against `limits.connector_tools` (default 40). `/new` clears the loaded set if you need a fresh slate.
+- Only macOS 13+ and Linux are supported. Local MCP servers are not supported on Windows.
+
+### Sizes
+
+- Wheel: ~0.34 MB. Installed (no extras): to be confirmed in CI (Linux x86_64, Python 3.11–3.13). macOS arm64: see CI run.
 
 ## [0.0.2.1] - 2026-10-25
 
@@ -111,6 +153,7 @@ First public release of Aldwin: an open-source personal assistant that runs on y
 - **Fixed built-in toolset:** includes the five built-in tools (`web_search`, `web_fetch`, `run_command`, `remember`, `recall`); custom code tools cannot be added in `0.0.1` (drop-in Markdown skills in `~/.aldwin/skills/` are supported).
 - **macOS and Linux only:** requires Python `3.11+` on macOS or Linux. Windows is not supported yet.
 
+[0.0.3]: https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.3
 [0.0.2.1]: https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.2.1
 [0.0.2]: https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.2
 [0.0.1]: https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.1
