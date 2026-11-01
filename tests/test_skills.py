@@ -30,11 +30,11 @@ def _write_skill(
     )
 
 
-def test_tc01_fresh_home_nine_defaults(aldwin_home: Path) -> None:
+def test_tc01_fresh_home_ten_defaults(aldwin_home: Path) -> None:
     (aldwin_home / "skills").mkdir(exist_ok=True)
     cat = build_catalogue(aldwin_home, version="0.0.2", model="gpt-test")
     loaded = [e for e in cat if e.skill is not None]
-    assert len(loaded) == 9
+    assert len(loaded) == 10
     assert {e.name for e in loaded} == set(DEFAULT_SKILL_NAMES)
     assert all(e.source == "default" for e in loaded)
     assert not any((aldwin_home / "skills" / n).exists() for n in DEFAULT_SKILL_NAMES)

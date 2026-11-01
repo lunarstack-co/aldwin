@@ -1,0 +1,37 @@
+---
+name: connectors
+description: Connect an app (Linear, Notion, GitHub and others) when the user asks, with propose_connector. Use when the user wants Aldwin to reach an app it isn't connected to.
+---
+
+# Connectors
+
+A connector lets you use another app's tools: issues in Linear, pages in Notion, repositories in GitHub. Connected apps are listed under `<connectors>`, with the apps you can still add.
+
+## Apps you can add
+
+$catalogue
+
+## When to call propose_connector
+
+1. Only when the user asks to connect an app, or asks for something only an app can do and agrees to connect it.
+2. Use `name` for an app in the list above, `url` for an MCP server address the user gave you, or `command` for a local MCP server the user named. Give exactly one.
+3. The user sees an approval and signs in privately in their browser or a hidden prompt. You never see a password or token.
+4. When the result says `connected`, its tools are loaded: carry on with what the user asked, in the same reply.
+5. When the result says `cancelled` or `failed`, tell the user in one line and suggest `/connectors`. Do not propose the same connector again in this reply.
+
+## Secrets
+
+- Never ask the user to type or paste a token, password or API key into the chat. The sign-in asks for it privately.
+- If the user pastes one anyway, say it has already been sent to the model provider, suggest revoking it, and use propose_connector so the private prompt asks for a new one.
+
+## Not supported yet
+
+- Google (Gmail, Drive, Calendar), Slack and Microsoft. If the user runs their own MCP server for one of these, you can propose its URL.
+- Removing or turning off connectors: only the user does that, in `/connectors`.
+
+## Example
+
+User: "Connect to Linear and list my open issues."
+1. Call `propose_connector(name="linear")`.
+2. The result is `connected: linear, 23 tools loaded`.
+3. Call Linear's tool to list the user's open issues and answer.

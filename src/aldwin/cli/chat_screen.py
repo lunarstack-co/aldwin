@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import select
 import sys
@@ -56,6 +57,8 @@ from aldwin.client import (
 from aldwin.protocol import (
     ApprovalAnswer,
     ApprovalEvent,
+    ConnectorAuthEvent,
+    ConnectorStatusEvent,
     DoneEvent,
     ErrorEvent,
     Event,
@@ -185,7 +188,51 @@ class ChatClientProtocol(SlashCommandClient, Protocol):
         reason: str | None = None,
     ) -> DoneEvent | ErrorEvent: ...
 
+    async def connectors_auth_paste(self, name: str, redirect_url: str) -> None: ...
+
+    async def connectors_auth_token(self, name: str, token: str) -> None: ...
+
     async def close(self) -> None: ...
+
+
+# Events a sign-in in progress can produce; anything else means it ended.
+_SIGN_IN_PROGRESS_EVENTS = (
+    ConnectorAuthEvent,
+    ConnectorStatusEvent,
+    NoticeEvent,
+    StatusEvent,
+)
+
+
+async def _answer_auth_in_turn(
+    event: ConnectorAuthEvent,
+    *,
+    client: ChatClientProtocol,
+    console: Console,
+    listener: TurnKeyListener,
+    prompt_line: Callable[[str], Awaitable[str]],
+    prompt_secret: Callable[[str], Awaitable[str]],
+) -> None:
+    """Run the sign-in prompt with the turn's key listener out of the way."""
+    from aldwin.cli.connector_auth import answer_connector_auth
+
+    with listener.paused():
+        await answer_connector_auth(
+            event,
+            client=client,
+            line=lambda text, style: console.print(Text(f"  {text}", style=style)),
+            gap=console.print,
+            prompt_line=prompt_line,
+            prompt_secret=prompt_secret,
+        )
+
+
+async def _cancel_task(task: asyncio.Task[None] | None) -> None:
+    if task is None or task.done():
+        return
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
 
 
 def format_toolbar_model_segment(
@@ -1040,6 +1087,8 @@ async def _chat_loop(
                 console.print(Text(f"Queued: {preview}", style="muted"))
 
             turn_stopped_early = False
+            # A connector Aldwin proposed may need the user to sign in mid-turn.
+            auth_task: asyncio.Task[None] | None = None
             set_terminal_title(console.file, "Aldwin · working…", plain=boot.plain)
             try:
                 async with TurnKeyListener(
@@ -1049,6 +1098,12 @@ async def _chat_loop(
                     on_queue=_on_queue,
                 ) as listener:
                     async for ev in client.turn(user_text, skills=picked):
+                        if auth_task is not None and not isinstance(
+                            ev, _SIGN_IN_PROGRESS_EVENTS
+                        ):
+                            # The flow moved on; close the prompt before drawing.
+                            await _cancel_task(auth_task)
+                            auth_task = None
                         if isinstance(ev, SkillsUsedEvent):
                             _render_skills_used(console, ev)
                         elif isinstance(ev, SkillsEvent):
@@ -1104,6 +1159,19 @@ async def _chat_loop(
                                 digest=ev.digest or None,
                                 reason=reason,
                             )
+                        elif isinstance(ev, ConnectorAuthEvent):
+                            turn_renderer.pause_for_todo()
+                            await _cancel_task(auth_task)
+                            auth_task = asyncio.create_task(
+                                _answer_auth_in_turn(
+                                    ev,
+                                    client=client,
+                                    console=console,
+                                    listener=listener,
+                                    prompt_line=_prompt_line,
+                                    prompt_secret=_prompt_secret,
+                                )
+                            )
                         elif isinstance(ev, DoneEvent):
                             if (
                                 ev.reason == "stopped"
@@ -1125,6 +1193,7 @@ async def _chat_loop(
                     elif turn_stopped_early and not pending_queue:
                         restore_draft = user_text
             finally:
+                await _cancel_task(auth_task)
                 clear_terminal_title(console.file, plain=boot.plain)
                 turn_renderer.close()
                 session.set_busy(False)

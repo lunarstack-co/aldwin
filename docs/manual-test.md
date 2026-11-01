@@ -281,6 +281,21 @@ Use a real MCP config file from another editor or desktop app (a JSON file with 
 6. Start `aldwin` and open `/connectors`.
    - Expect: imported local servers show `disabled · review and enable`. Enable one: the approval panel appears, and after `y` it connects and the note is gone.
 
+### Step 18: Ask Aldwin to connect
+
+Needs a real model and an account with one catalogue app, for example Linear.
+
+1. Start `aldwin` in a fresh home (`ALDWIN_HOME=$(mktemp -d)`) and ask: "Connect me to Linear and list my open issues."
+   - Expect: an approval panel reading `Aldwin wants to add the Linear connector`, then `https://mcp.linear.app/mcp · sign in with your browser`, with the label `adds an external connector` and no "yes for this session" option.
+2. Press `y` and finish the sign-in in the browser.
+   - Expect: `Linear connected.` and, in the same reply, your open issues.
+3. Ask the same again.
+   - Expect: no panel; Aldwin says Linear is already connected and answers.
+4. Ask: "Connect to https://mcp.example.com/mcp", then answer `n`.
+   - Expect: the panel shows the URL, `custom server, not in the catalogue` and `Its tools will ask before running.`; after `n`, Aldwin says it didn't add it and nothing new appears in `/connectors`.
+5. Ask Aldwin to connect GitHub.
+   - Expect: a hidden `Token (hidden):` prompt, not a request to paste the token into the chat. Press Enter: the turn stops and nothing is saved.
+
 ## 3. Manual test run log template (`FR-12`)
 
 Copy and paste the filled-in template below as a comment on Linear ticket **ENG-384** for each platform tested (`macOS` and `Linux`):

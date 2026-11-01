@@ -118,6 +118,28 @@ def test_block_is_empty_without_enabled_connectors() -> None:
     assert format_connectors_block([_snap("old", "disabled", enabled=False)]) == ""
 
 
+def test_block_lists_apps_available_to_connect() -> None:
+    alone = format_connectors_block([], available=["linear", "notion"])
+    assert alone.startswith("<connectors>") and alone.endswith("</connectors>")
+    assert (
+        "Available to connect (only when the user asks; call propose_connector): "
+        "linear, notion"
+    ) in alone
+    assert "find_connector_tools" not in alone
+    both = format_connectors_block([_snap("alpha", "connected")], available=["linear"])
+    assert both.index("- alpha") < both.index("Available to connect")
+
+
+def test_block_lists_saved_connectors_that_are_off() -> None:
+    block = format_connectors_block([], saved_off=["everything", "github"])
+    assert (
+        "Saved but turned off (only when the user asks; call propose_connector "
+        "with the name to turn one on): everything, github"
+    ) in block
+    both = format_connectors_block([], available=["linear"], saved_off=["github"])
+    assert both.index("Saved but turned off") < both.index("Available to connect")
+
+
 def test_system_message_appends_the_block_after_environment(aldwin_home: Path) -> None:
     text = build_system_message(
         "base", aldwin_home, LimitsConfig(), connectors_block=lambda: "<connectors>x"

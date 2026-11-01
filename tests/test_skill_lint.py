@@ -30,10 +30,8 @@ _ALDWIN_HOME_ACCESS = re.compile(
 
 def _skill_text(name: str) -> tuple[str, Path]:
     root = Path(str(files("aldwin.core.assets").joinpath("skills") / name))
-    if name == "using-aldwin":
-        path = root / SKILL_TEMPLATE_FILENAME
-    else:
-        path = root / SKILL_FILENAME
+    template = root / SKILL_TEMPLATE_FILENAME
+    path = template if template.is_file() else root / SKILL_FILENAME
     return path.read_text(encoding="utf-8"), path
 
 
@@ -79,3 +77,16 @@ def test_tc26_lint_rejects_aldwin_home_access() -> None:
 def test_tc27_lint_rejects_retry_after_refusal() -> None:
     bad = "If refused, retry with a rephrased command."
     assert _RETRY_AFTER.search(bad)
+
+
+def test_connectors_skill_lists_the_catalogue_and_keeps_secrets_out() -> None:
+    from aldwin.core.connectors.catalog import load_catalog
+    from aldwin.core.skills import default_skill_text
+
+    text = default_skill_text("connectors")
+    for entry in load_catalog():
+        assert f"- {entry.name} ({entry.title}): {entry.purpose}" in text
+    assert re.search(
+        r"(?i)never ask the user to type or paste a token, password or api key", text
+    )
+    assert "$catalogue" not in text

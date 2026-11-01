@@ -5,18 +5,30 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+import asyncio
+import json
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Final
 
 from agentling import Tool
 from agentling.tools import ToolCallError
 
+from aldwin.core.connectors.errors import ConnectorError
 from aldwin.core.connectors.index import IndexedTool, ToolIndex
 from aldwin.core.connectors.mcp_tool import sanitize_description
+from aldwin.core.connectors.proposal import (
+    ConnectorProposal,
+    ProposeOutcome,
+    format_outcome,
+)
+from aldwin.core.policy import ApprovalPreview
 
 MAX_NAMES = 20
 MAX_RESULT_DESCRIPTION_CHARS = 160
+# The add flow's own sign-in wait is 5 minutes; this bounds the whole proposal.
+PROPOSE_CAP_S: Final[float] = 360.0
+MAX_PREVIEWS: Final[int] = 8
 
 
 @dataclass(frozen=True)
@@ -30,6 +42,10 @@ class LoadResult:
 
 
 LoadFn = Callable[[Sequence[IndexedTool]], LoadResult]
+ResolveFn = Callable[[dict[str, Any]], ConnectorProposal]
+# The preview the user approves, plus the launch digest of a local command.
+PreviewFn = Callable[[ConnectorProposal], tuple[ApprovalPreview, str | None]]
+ProposeFn = Callable[[ConnectorProposal, str | None], Awaitable[ProposeOutcome]]
 
 
 class FindConnectorToolsTool(Tool):
@@ -126,6 +142,104 @@ def _describe(tool: IndexedTool) -> str:
     text = text[:MAX_RESULT_DESCRIPTION_CHARS] or tool.title or tool.name
     how = "runs automatically" if tool.auto else "asks the user first"
     return f"{tool.model_name}: {text} ({how})"
+
+
+class ProposeConnectorTool(Tool):
+    """Propose adding a connector, or turning a saved one on. Always asks."""
+
+    name = "propose_connector"
+    description = (
+        "Propose adding a connector (a connected app) when the user asks you to "
+        "connect one. Give exactly one of: name (an app listed as available under "
+        "<connectors>, or a saved connector), url (an MCP server address) or "
+        "command (a local MCP server's command line). The user approves it and "
+        "signs in privately; you get back one line saying what happened. Never ask "
+        "the user to type or paste a token or password into the chat."
+    )
+    parallel_safe = False
+    timeout = 400.0
+    max_output_chars = 500
+    parameters: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": "An available app, e.g. 'linear', or a saved connector.",
+            },
+            "url": {
+                "type": "string",
+                "description": "An MCP server address, e.g. 'https://mcp.example.com/mcp'.",
+            },
+            "command": {
+                "type": "string",
+                "description": "A local server's command line, e.g. 'npx -y pkg@1'.",
+            },
+            "args": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Arguments for command, if not in the command line.",
+            },
+        },
+        "additionalProperties": False,
+    }
+
+    def __init__(
+        self, *, resolve: ResolveFn, preview: PreviewFn, propose: ProposeFn
+    ) -> None:
+        self._resolve = resolve
+        self._preview = preview
+        self._propose = propose
+        # What the user was last shown: arguments, fingerprint, launch digest.
+        self._previewed: dict[str, tuple[str, str | None]] = {}
+
+    def prepare_approval(self, **args: Any) -> ApprovalPreview:
+        proposal = self._proposal(args)
+        try:
+            preview, digest = self._preview(proposal)
+        except ConnectorError as exc:
+            raise ToolCallError(exc.message) from None
+        key = _args_key(args)
+        self._previewed.pop(key, None)
+        self._previewed[key] = (proposal.fingerprint(), digest)
+        # Declined proposals are never run; keep only the most recent few.
+        while len(self._previewed) > MAX_PREVIEWS:
+            del self._previewed[next(iter(self._previewed))]
+        return preview
+
+    async def forward(self, **args: Any) -> str:
+        shown = self._previewed.pop(_args_key(args), None)
+        try:
+            proposal = self._proposal(args)
+        except ToolCallError:
+            if shown is None:
+                raise
+            return format_outcome(ProposeOutcome("changed", ""))
+        if shown is None or shown[0] != proposal.fingerprint():
+            return format_outcome(ProposeOutcome("changed", proposal.name))
+        try:
+            async with asyncio.timeout(PROPOSE_CAP_S):
+                outcome = await self._propose(proposal, shown[1])
+        except TimeoutError:
+            outcome = ProposeOutcome(
+                "sign_in_failed", proposal.name, reason="timed out"
+            )
+        return format_outcome(outcome)
+
+    def _proposal(self, args: dict[str, Any]) -> ConnectorProposal:
+        try:
+            return self._resolve(args)
+        except ConnectorError as exc:
+            raise ToolCallError(exc.message) from None
+
+
+def build_propose_connector_tool(
+    *, resolve: ResolveFn, preview: PreviewFn, propose: ProposeFn
+) -> Tool:
+    return ProposeConnectorTool(resolve=resolve, preview=preview, propose=propose)
+
+
+def _args_key(args: dict[str, Any]) -> str:
+    return json.dumps({k: v for k, v in args.items() if v}, sort_keys=True)
 
 
 def build_find_connector_tools_tool(*, index: ToolIndex, load: LoadFn) -> Tool:

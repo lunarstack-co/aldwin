@@ -27,6 +27,7 @@ MAX_DESCRIPTION_CHARS: Final[int] = 200
 Source = Literal["default", "user", "user override"]
 
 DEFAULT_SKILL_NAMES: Final[tuple[str, ...]] = (
+    "connectors",
     "documents",
     "files",
     "making-documents",
@@ -154,14 +155,9 @@ def _load_default_skill(
     version: str,
     model: str,
 ) -> LoadedSkill:
-    """Load one packaged default skill (templated for `using-aldwin`)."""
+    """Load one packaged default skill (rendered when it ships a template)."""
     folder = _assets_skills_root() / name
-    if name == "using-aldwin":
-        tmpl_path = folder / SKILL_TEMPLATE_FILENAME
-        raw = tmpl_path.read_text(encoding="utf-8")
-        text = Template(raw).safe_substitute(version=version, model=model)
-    else:
-        text = (folder / SKILL_FILENAME).read_text(encoding="utf-8")
+    text = _default_skill_source(folder, version=version, model=model)
     skill = _skill_from_text(text=text, folder=folder, expect_name=name)
     skill, flags = _lockdown(skill, user=False)
     return LoadedSkill(
@@ -379,11 +375,33 @@ def default_skill_text(
     name: str, *, version: str = "0.0.2", model: str = "gpt-5"
 ) -> str:
     """Return the packaged SKILL.md text for `name` (rendered if templated)."""
-    folder = _assets_skills_root() / name
-    if name == "using-aldwin":
-        raw = (folder / SKILL_TEMPLATE_FILENAME).read_text(encoding="utf-8")
-        return Template(raw).safe_substitute(version=version, model=model)
-    return (folder / SKILL_FILENAME).read_text(encoding="utf-8")
+    return _default_skill_source(
+        _assets_skills_root() / name, version=version, model=model
+    )
+
+
+def _default_skill_source(folder: Path, *, version: str, model: str) -> str:
+    """A default skill's text: `SKILL.md`, or its template rendered with the
+    version, the model and the connector catalogue.
+    """
+    template = folder / SKILL_TEMPLATE_FILENAME
+    if not template.is_file():
+        return (folder / SKILL_FILENAME).read_text(encoding="utf-8")
+    raw = template.read_text(encoding="utf-8")
+    return Template(raw).safe_substitute(
+        version=version, model=model, catalogue=_catalogue_lines()
+    )
+
+
+def _catalogue_lines() -> str:
+    from aldwin.core.connectors.catalog import load_catalog
+
+    try:
+        entries = load_catalog()
+    except Exception:  # a broken catalogue must not stop skills loading
+        logger.exception("connector catalogue could not be loaded for skills")
+        return "(catalogue unavailable; use /connectors)"
+    return "\n".join(f"- {e.name} ({e.title}): {e.purpose}" for e in entries)
 
 
 def skills_fingerprint(home: Path) -> tuple[tuple[str, int, int], ...]:

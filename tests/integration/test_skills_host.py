@@ -188,7 +188,7 @@ async def test_hand_edit_triggers_rebuild_before_turn(
 
 
 @pytest.mark.asyncio
-async def test_skills_list_nine_defaults(skills_host: SkillsHost) -> None:
+async def test_skills_list_ten_defaults(skills_host: SkillsHost) -> None:
     client, _model, _host, home = skills_host
     event = await client.skills_list()
     defaults = [
@@ -196,7 +196,7 @@ async def test_skills_list_nine_defaults(skills_host: SkillsHost) -> None:
         for i in event.items
         if i.source == "default" and not any(f.startswith("error:") for f in i.flags)
     ]
-    assert len(defaults) == 9
+    assert len(defaults) == 10
     cat = build_catalogue(home, version="0.0.2", model="gpt-test")
     assert {e.name for e in cat if e.skill and e.source == "default"} == {
         i.name for i in defaults

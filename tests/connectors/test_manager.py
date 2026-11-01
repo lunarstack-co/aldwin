@@ -767,14 +767,14 @@ async def _add(mgr: ConnectorManager, *names: str) -> None:
         )
 
 
-async def test_session_starts_with_only_the_finder(
+async def test_session_starts_with_only_the_finder_and_proposer(
     aldwin_home: Path,
     policy_session: PolicySession,
     recorder: Recorder,
     agent_session: AgentSession,
     fake_model: FakeModel,
 ) -> None:
-    """Two connectors on, and the model is offered one extra tool."""
+    """Two connectors on, and the model is offered two extra tools."""
     builtin = set(agent_session.tools)
     mgr = _two_connectors(aldwin_home, policy_session, recorder)
     await mgr.start()
@@ -782,7 +782,7 @@ async def test_session_starts_with_only_the_finder(
         mgr.attach(agent_session)
         await _add(mgr, "alpha", "beta")
         sent = await _next_call_tools(fake_model, agent_session)
-        assert sent == builtin | {"find_connector_tools"}
+        assert sent == builtin | {"find_connector_tools", "propose_connector"}
         assert mgr._index.connectors() == ["alpha", "beta"]
         assert [s.error for s in mgr.snapshots()] == [None, None]
         assert mgr.take_turn_notices() == []
@@ -835,7 +835,7 @@ async def test_the_model_limit_is_never_exceeded(
     """The backstop under the configured cap."""
     import aldwin.host.connectors as host_connectors
 
-    limit = len(agent_session.tools) + 1 + 4  # built-ins, the finder, four more
+    limit = len(agent_session.tools) + 2 + 4  # built-ins, finder, proposer, four
     monkeypatch.setattr(host_connectors, "MAX_MODEL_TOOLS", limit)
     mgr = _two_connectors(aldwin_home, policy_session, recorder)
     await mgr.start()

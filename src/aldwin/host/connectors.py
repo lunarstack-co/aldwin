@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from agentling import AgentSession, Tool
 
 from aldwin.core.approval_log import ApprovalLogger
-from aldwin.core.connectors.catalog import catalog_entry
+from aldwin.core.connectors.catalog import CatalogEntry, load_catalog
 from aldwin.core.connectors.config import (
     ConnectorConfig,
     ConnectorsLoad,
@@ -55,6 +55,8 @@ from aldwin.core.connectors.errors import (
     ConnectorError,
     ConnectorNotApproved,
     NeedsSignIn,
+    SignInCancelled,
+    SignInError,
     SignInTimedOut,
 )
 from aldwin.core.connectors.importer import (
@@ -86,6 +88,11 @@ from aldwin.core.connectors.oauth_messages import (
     nothing_waiting,
 )
 from aldwin.core.connectors.policy import connector_policy
+from aldwin.core.connectors.proposal import (
+    ConnectorProposal,
+    ProposeOutcome,
+    resolve_proposal,
+)
 from aldwin.core.connectors.state import (
     ConnectorSnapshot,
     ConnectorStatus,
@@ -94,6 +101,8 @@ from aldwin.core.connectors.state import (
 )
 from aldwin.core.policy import (
     ApprovalAnswer,
+    ApprovalPreview,
+    ApprovalRequest,
     PolicyAskFn,
     PolicySession,
     register_runtime_policy,
@@ -103,6 +112,7 @@ from aldwin.core.policy import (
 from aldwin.core.tools.connector_tools import (
     LoadResult,
     build_find_connector_tools_tool,
+    build_propose_connector_tool,
 )
 from aldwin.core.workspace import default_workspace_root
 
@@ -124,8 +134,35 @@ DEFAULT_LOADED_CAP = 40
 _CONNECTOR_TOOL_PREFIX = "mcp__"
 AuthMode = Literal["browser", "paste", "token"]
 SSE_UNSUPPORTED = "SSE is not supported"
+PROPOSE_TOOL = "propose_connector"
+ADDS_CONNECTOR = "adds an external connector"
+CUSTOM_SERVER = "custom server, not in the catalogue"
+_SIGN_IN_HOW: dict[str, str] = {
+    "oauth": "sign in with your browser",
+    "bearer": "needs a personal access token",
+}
 NEEDS_APPROVAL = "needs approval: open /connectors to enable it"
 WINDOWS_UNSUPPORTED = "local servers are not supported on Windows"
+
+
+def _text_arg(args: dict[str, Any], key: str) -> str | None:
+    value = args.get(key)
+    if not isinstance(value, str):
+        return None
+    return value.strip() or None
+
+
+def _approve_if_unchanged(launch_digest: str | None) -> PolicyAskFn:
+    """Answer the add flow's own question with the yes the user already gave
+    in `propose_connector`, but only for the exact command they were shown.
+    """
+
+    async def approve(request: ApprovalRequest) -> ApprovalAnswer:
+        if launch_digest is not None and request.digest == launch_digest:
+            return ApprovalAnswer("yes", "user", "approved in propose_connector")
+        return ApprovalAnswer("no", "user", "the command changed after approval")
+
+    return approve
 
 
 def _local_servers_supported() -> bool:
@@ -435,8 +472,12 @@ class ConnectorManager:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         loaded_cap: int = DEFAULT_LOADED_CAP,
         workspace_root: Callable[[], Path] | None = None,
+        turn_auth: OnAuth | None = None,
     ) -> None:
         self.admin = admin
+        # How a proposal made during a turn reaches the user to sign in.
+        self._turn_auth = turn_auth
+        self._catalog: tuple[CatalogEntry, ...] | None = None
         # Local servers run in the session's workspace, read when each one starts.
         self._workspace_root = workspace_root or (
             lambda: default_workspace_root(admin.home)
@@ -460,8 +501,15 @@ class ConnectorManager:
         # Loaded tools by model name: the connector and the tick last used at.
         self._loaded: dict[str, tuple[str, int]] = {}
         self._tick = itertools.count()
-        [self._finder] = wrap_tools_with_policy(
-            [build_find_connector_tools_tool(index=self._index, load=self.load)],
+        self._finder, self._proposer = wrap_tools_with_policy(
+            [
+                build_find_connector_tools_tool(index=self._index, load=self.load),
+                build_propose_connector_tool(
+                    resolve=self.resolve_proposal,
+                    preview=self.preview_proposal,
+                    propose=self.propose,
+                ),
+            ],
             session=policy_session,
             ask=ask,
             approval_log=approval_log,
@@ -487,6 +535,7 @@ class ConnectorManager:
         self._join_peers(
             [
                 self._finder,
+                self._proposer,
                 *(t for live in self._live.values() for t in live.tools.values()),
             ]
         )
@@ -771,8 +820,9 @@ class ConnectorManager:
             others = sum(
                 1 for n in session.tools if not n.startswith(_CONNECTOR_TOOL_PREFIX)
             )
-            if self._finder.name not in session.tools:
-                others += 1
+            others += sum(
+                1 for t in (self._finder, self._proposer) if t.name not in session.tools
+            )
         return max(0, min(self._loaded_cap, MAX_MODEL_TOOLS - others))
 
     def _evict(self, *, keep: int) -> list[str]:
@@ -801,6 +851,7 @@ class ConnectorManager:
         self._evict(keep=self._cap())
         wanted = {name: available[name] for name in self._loaded if name in available}
         wanted[self._finder.name] = self._finder
+        wanted[self._proposer.name] = self._proposer
         stale = [
             n
             for n in session.tools
@@ -849,7 +900,9 @@ class ConnectorManager:
         """Token mode: ask the user for a token and wait for `auth_token`."""
         future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
         self._auth_waits[config.name] = _AuthWait("token", token=future)
-        entry = catalog_entry(config.name)
+        entry = next(
+            (e for e in self._catalog_entries() if e.name == config.name), None
+        )
         try:
             await on_auth(
                 AuthPrompt(
@@ -984,7 +1037,119 @@ class ConnectorManager:
         return out
 
     def context_block(self) -> str:
-        return format_connectors_block(self.snapshots())
+        available = [
+            e.name for e in self._catalog_entries() if e.name not in self._configs
+        ]
+        saved_off = [c.name for c in self._configs.values() if not c.enabled]
+        return format_connectors_block(
+            self.snapshots(), available=available, saved_off=saved_off
+        )
+
+    # --- proposals from the model --------------------------------------------
+
+    def resolve_proposal(self, args: dict[str, Any]) -> ConnectorProposal:
+        """The connector `propose_connector`'s arguments point at."""
+        return resolve_proposal(
+            name=_text_arg(args, "name"),
+            url=_text_arg(args, "url"),
+            command=_text_arg(args, "command"),
+            args=args.get("args") or None,
+            catalog=self._catalog_entries(),
+            configs=self._configs,
+        )
+
+    def preview_proposal(
+        self, proposal: ConnectorProposal
+    ) -> tuple[ApprovalPreview, str | None]:
+        """What the user approves, and the launch digest of a local command.
+
+        A local command is checked here (the command floor, the folder, that the
+        program exists) so a doomed proposal never reaches the panel.
+        """
+        config = proposal.config
+        enabling = proposal.kind == "enable"
+        if config.kind == "local":
+            root = self._workspace_root()
+            spec = self.admin.launch_spec(config, workspace_root=root)
+            require_command(spec)
+            request = local_approval_request(
+                spec, config, tool=PROPOSE_TOOL, workspace_root=root
+            )
+            verb = "turn on" if enabling else "run"
+            preview = ApprovalPreview(
+                summary=f"Aldwin wants to {verb} a local connector: {config.name}",
+                detail=request.detail,
+                risky=(ADDS_CONNECTOR, *request.risky),
+            )
+            return preview, request.digest
+        how = _SIGN_IN_HOW.get(config.auth, "")
+        detail = f"{config.server_url} · {how}" if how else config.server_url
+        risky: tuple[str, ...] = (ADDS_CONNECTOR,)
+        if enabling:
+            summary = f"Aldwin wants to turn on the {config.display_title} connector"
+        elif proposal.kind == "catalog":
+            summary = f"Aldwin wants to add the {config.display_title} connector"
+        else:
+            summary = f"Aldwin wants to add a connector: {config.name}"
+            detail += "\nIts tools will ask before running."
+            risky = (ADDS_CONNECTOR, CUSTOM_SERVER)
+        return ApprovalPreview(summary=summary, detail=detail, risky=risky), None
+
+    async def propose(
+        self, proposal: ConnectorProposal, launch_digest: str | None
+    ) -> ProposeOutcome:
+        """Run an approved proposal with the same flows as `/connectors`, then
+        load the new connector's tools so the turn can use them at once.
+        """
+        name = proposal.name
+        if name in self._auth_waits:
+            return ProposeOutcome("failed", name, reason=f"{name} is busy")
+        approve = _approve_if_unchanged(launch_digest)
+        try:
+            if proposal.kind == "enable":
+                snapshot = await self.enable(name, approve=approve)
+                if snapshot.status == "needs_auth" and self._turn_auth is not None:
+                    snapshot = await self.login(name, on_auth=self._turn_auth)
+            else:
+                added = await self.add(
+                    proposal.config,
+                    token=None,
+                    dry_run=False,
+                    on_auth=self._turn_auth,
+                    approve=approve,
+                )
+                snapshot = added.snapshot
+        except ConnectorNotApproved:
+            return ProposeOutcome("changed", name)
+        except SignInCancelled:
+            return ProposeOutcome("cancelled", name)
+        except SignInTimedOut:
+            return ProposeOutcome("sign_in_failed", name, reason="timed out")
+        except SignInError as exc:
+            return ProposeOutcome("sign_in_failed", name, reason=exc.message)
+        except ConnectorError as exc:
+            return ProposeOutcome("failed", name, reason=exc.message)
+        if snapshot.status != "connected":
+            reason = snapshot.error or snapshot.status.replace("_", " ")
+            return ProposeOutcome("failed", name, reason=reason)
+        indexed = [
+            tool
+            for tool_name in self._index.names(name)
+            if (tool := self._index.get(name, tool_name)) is not None
+        ]
+        result = self.load(indexed)
+        return ProposeOutcome(
+            "connected", name, tools=len(indexed), loaded=len(result.loaded)
+        )
+
+    def _catalog_entries(self) -> tuple[CatalogEntry, ...]:
+        if self._catalog is None:
+            try:
+                self._catalog = load_catalog()
+            except Exception:  # a broken catalogue must not stop the session
+                logger.exception("connector catalogue could not be loaded")
+                self._catalog = ()
+        return self._catalog
 
     def labels(self, model_name: str) -> tuple[str | None, str | None]:
         """`(connector title, server tool name)` for a connector tool, else Nones."""

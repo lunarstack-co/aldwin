@@ -5,13 +5,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
-import webbrowser
 from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from typing import Literal, Protocol
 
 from prompt_toolkit.input import Input
 from rich.text import Text
 
+from aldwin.cli.connector_auth import answer_connector_auth
 from aldwin.cli.picker import Row, row_text
 from aldwin.cli.render import ChatRenderer
 from aldwin.client import ProtocolError, sanitize_display_text
@@ -427,72 +427,14 @@ class _View:
             await _cancel(answering)
 
     async def _answer(self, event: ConnectorAuthEvent) -> None:
-        title = sanitize_display_text(event.title)
-        if event.mode == "token":
-            await self._answer_token(event, title)
-            return
-        url = sanitize_display_text(event.url or "")
-        minutes = max(1, event.expires_in // 60)
-        self._gap()
-        self._line(f"Sign in to {title}", "bold")
-        # Only web addresses go to the browser; anything else is printed to paste.
-        web = (event.url or "").startswith(("https://", "http://"))
-        opened = (
-            event.mode == "browser"
-            and web
-            and await asyncio.to_thread(webbrowser.open, event.url or "")
+        await answer_connector_auth(
+            event,
+            client=self.client,
+            line=self._line,
+            gap=self._gap,
+            prompt_line=self.prompt_line,
+            prompt_secret=self.prompt_secret,
         )
-        if opened:
-            self._line(
-                "Your browser should open. If it doesn't, open this link "
-                f"(it works for {minutes} minutes):",
-                "muted",
-            )
-        else:
-            self._line(
-                f"Open this link in a browser (it works for {minutes} minutes):",
-                "muted",
-            )
-        self._line(url, "accent")
-        self._gap()
-        if opened:
-            self._line("Waiting for you to finish in the browser…", "muted")
-        else:
-            self._line(
-                "Sign in, then paste the address the browser ends on "
-                "(it starts with http://127.0.0.1).",
-                "muted",
-            )
-        while True:
-            try:
-                raw = await self.prompt_line(
-                    "  Paste the address, or press Enter to cancel: "
-                )
-            except (EOFError, KeyboardInterrupt):
-                raw = ""
-            if not raw.strip():
-                await self.client.stop()
-                return
-            try:
-                await self.client.connectors_auth_paste(event.name, raw.strip())
-                return
-            except ProtocolError as exc:
-                self._line(str(exc), "warn")
-
-    async def _answer_token(self, event: ConnectorAuthEvent, title: str) -> None:
-        self._gap()
-        self._line(f"{title} needs a token.", "bold")
-        if event.token_help_url:
-            help_url = sanitize_display_text(event.token_help_url)
-            self._line(f"Create one at {help_url}", "muted")
-        try:
-            token = (await self.prompt_secret("  Token (hidden): ")).strip()
-        except (EOFError, KeyboardInterrupt):
-            token = ""
-        if not token:
-            await self.client.stop()
-            return
-        await self.client.connectors_auth_token(event.name, token)
 
     # --- manage -------------------------------------------------------------
 

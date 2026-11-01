@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from aldwin.cli import connectors_view
+from aldwin.cli import connector_auth
 from aldwin.cli.connectors_view import handle_connectors_command
 from aldwin.client import ProtocolError
 from aldwin.protocol import (
@@ -140,7 +140,7 @@ def opened(monkeypatch: pytest.MonkeyPatch) -> list[str]:
         urls.append(url)
         return True
 
-    monkeypatch.setattr(connectors_view.webbrowser, "open", fake_open)
+    monkeypatch.setattr(connector_auth.webbrowser, "open", fake_open)
     monkeypatch.delenv("SSH_CONNECTION", raising=False)
     return urls
 
@@ -212,7 +212,7 @@ async def test_over_ssh_the_address_is_pasted(
 async def test_browser_that_cannot_open_falls_back_to_paste(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(connectors_view.webbrowser, "open", lambda _url: False)
+    monkeypatch.setattr(connector_auth.webbrowser, "open", lambda _url: False)
     monkeypatch.delenv("SSH_CONNECTION", raising=False)
     client = FakeSignInClient(catalog=[NOTION])
     out = await _run(client, "1", "1", "http://127.0.0.1:47823/callback?code=c")

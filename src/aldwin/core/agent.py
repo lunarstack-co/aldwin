@@ -60,6 +60,8 @@ _RESERVED_SKILL_NAMES: Final[frozenset[str]] = frozenset(
         "todo",
         "calculate",
         "create_skill",
+        "find_connector_tools",
+        "propose_connector",
     }
 )
 
