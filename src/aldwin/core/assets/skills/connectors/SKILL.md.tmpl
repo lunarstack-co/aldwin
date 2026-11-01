@@ -22,7 +22,7 @@ $catalogue
 ## Secrets
 
 - Never ask the user to type or paste a token, password or API key into the chat. The sign-in asks for it privately.
-- If the user pastes one anyway, say it has already been sent to the model provider, suggest revoking it, and use propose_connector so the private prompt asks for a new one.
+- If the user pastes one anyway, Aldwin replaces it with ‹redacted› before you see it. Don't ask them to paste it again; use propose_connector so the private prompt asks for it.
 
 ## Not supported yet
 
