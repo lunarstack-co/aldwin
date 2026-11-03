@@ -141,7 +141,7 @@ Next: local models and more web search providers.
 
 Contributions are welcome. Read the [contributing guide](https://github.com/lunarstack-co/aldwin/blob/main/CONTRIBUTING.md) to get set up, and see the [docs index](https://github.com/lunarstack-co/aldwin/blob/main/docs/README.md) for the protocol, test, and release docs.
 
-Found a bug or have an idea? Open an issue on [GitHub Issues](https://github.com/lunarstack-co/aldwin/issues).
+Have a question or an idea? Start a [discussion](https://github.com/lunarstack-co/aldwin/discussions). Found a bug? Open an [issue](https://github.com/lunarstack-co/aldwin/issues).
 
 ---
 
