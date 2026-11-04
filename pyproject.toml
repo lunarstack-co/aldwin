@@ -23,7 +23,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "agentling>=0.1.1,<0.2",
+    "agentling>=0.2,<0.3",
     "typer>=0.15.0",
     "rich>=13.9.0",
     "prompt-toolkit>=3.0.48",

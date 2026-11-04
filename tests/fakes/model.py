@@ -8,15 +8,15 @@ from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from agentling.models import (
+from agentling import (
     ChatMessage,
     Delta,
-    Model,
+    FinishReason,
     ToolCallDelta,
-    ToolSpec,
+    ToolDefinition,
     Usage,
-    agglomerate_deltas,
 )
+from agentling.testing import ScriptedModel
 
 
 @dataclass
@@ -120,7 +120,7 @@ class FakeTurn:
 
     @classmethod
     def raise_(cls, exc: Exception) -> FakeTurn:
-        """Raise `exc` when the model is called (`FR-3` alias for `error`)."""
+        """Raise `exc` when the model is called (alias for `error`)."""
         return cls(exc=exc)
 
     @classmethod
@@ -135,7 +135,7 @@ def text(
     deltas: int | None = None,
     usage: Usage | None = None,
 ) -> FakeTurn:
-    """Build a scripted text turn (`FR-3`)."""
+    """Build a scripted text turn."""
     return FakeTurn.text(chunks, deltas=deltas, usage=usage)
 
 
@@ -147,7 +147,7 @@ def tool_call(
     content: str | None = None,
     usage: Usage | None = None,
 ) -> FakeTurn:
-    """Build a scripted tool-call turn (`FR-3`)."""
+    """Build a scripted tool-call turn."""
     return FakeTurn.tool_call(
         name,
         arguments,
@@ -162,76 +162,27 @@ def final(
     *,
     usage: Usage | None = None,
 ) -> FakeTurn:
-    """Build a scripted final-answer turn (`FR-3`)."""
+    """Build a scripted final-answer turn."""
     return FakeTurn.final(answer, usage=usage)
 
 
 def raise_(exc: Exception) -> FakeTurn:
-    """Build a scripted exception turn (`FR-3`)."""
+    """Build a scripted exception turn."""
     return FakeTurn.raise_(exc)
 
 
 def hang(*, prefix_chunks: Sequence[str] = ()) -> FakeTurn:
-    """Build a scripted hanging turn that waits until cancelled (`FR-3`)."""
+    """Build a scripted hanging turn that waits until cancelled."""
     return FakeTurn.hang(prefix_chunks=prefix_chunks)
 
 
-class FakeModel(Model):
-    """Scripted, network-free Agentling `Model` for unit and integration tests."""
-
-    def __init__(self, turns: Sequence[FakeTurn] = ()) -> None:
-        self._turns: list[FakeTurn] = list(turns)
-        self.calls: list[list[ChatMessage]] = []
-        self.tool_specs: list[list[ToolSpec] | None] = []
-
-    @property
-    def received_messages(self) -> list[ChatMessage]:
-        """Return the `ChatMessage` list from the most recent model call."""
-        return self.calls[-1] if self.calls else []
-
-    def add_turns(self, *turns: FakeTurn) -> None:
-        """Append scripted turns to the replay queue."""
-        self._turns.extend(turns)
-
-    def _next_turn(self) -> FakeTurn:
-        if not self._turns:
-            return FakeTurn.text(["ok"])
-        return self._turns.pop(0)
-
-    async def generate(
-        self,
-        messages: Sequence[ChatMessage],
-        tools: Sequence[ToolSpec] | None = None,
-    ) -> ChatMessage:
-        """Collect `stream()` deltas into a single `ChatMessage`."""
-        deltas: list[Delta] = []
-        async for delta in self.stream(messages, tools=tools):
-            deltas.append(delta)
-        return agglomerate_deltas(deltas)
-
-    async def stream(
-        self,
-        messages: Sequence[ChatMessage],
-        tools: Sequence[ToolSpec] | None = None,
-    ) -> AsyncIterator[Delta]:
-        """Replay the next scripted `FakeTurn` as `Delta` chunks."""
-        self.calls.append(list(messages))
-        self.tool_specs.append(list(tools) if tools is not None else None)
-        turn = self._next_turn()
-
-        if turn.exc is not None:
-            raise turn.exc
-
-        for chunk in turn.chunks:
-            yield Delta(content=chunk)
-            await asyncio.sleep(0)
-
-        if turn.hang_forever:
-            turn.hang_started.set()
-            await turn.hang_release.wait()
-
-        for idx, (call_id, name, arguments) in enumerate(turn.tool_calls):
-            yield Delta(
+def _to_scripted_turn(turn: FakeTurn) -> Exception | list[Delta]:
+    if turn.exc is not None:
+        return turn.exc
+    deltas: list[Delta] = [Delta(content=chunk) for chunk in turn.chunks]
+    for idx, (call_id, name, arguments) in enumerate(turn.tool_calls):
+        deltas.append(
+            Delta(
                 tool_calls=[
                     ToolCallDelta(
                         index=idx,
@@ -241,5 +192,62 @@ class FakeModel(Model):
                     )
                 ]
             )
+        )
+    finish_reason: FinishReason = "tool_calls" if turn.tool_calls else "stop"
+    deltas.append(Delta(usage=turn.usage, finish_reason=finish_reason))
+    return deltas
 
-        yield Delta(usage=turn.usage)
+
+class FakeModel(ScriptedModel):
+    """Scripted, network-free Agentling `Model` for unit and integration tests."""
+
+    def __init__(self, turns: Sequence[FakeTurn] = ()) -> None:
+        super().__init__([])
+        self._fake_turns: list[FakeTurn] = list(turns)
+        self.tool_specs: list[list[ToolDefinition] | None] = []
+
+    @property
+    def received_messages(self) -> list[ChatMessage]:
+        """Return the `ChatMessage` list from the most recent model call."""
+        return self.calls[-1] if self.calls else []
+
+    def add_turns(self, *turns: FakeTurn) -> None:
+        """Append scripted turns to the replay queue."""
+        self._fake_turns.extend(turns)
+
+    def clear_turns(self) -> None:
+        """Clear any unconsumed turns from the replay queue."""
+        self._fake_turns.clear()
+
+    def _next_turn(self) -> FakeTurn:
+        if not self._fake_turns:
+            return FakeTurn.text(["ok"])
+        return self._fake_turns.pop(0)
+
+    async def stream(
+        self,
+        messages: Sequence[ChatMessage],
+        tools: Sequence[ToolDefinition] = (),
+    ) -> AsyncIterator[Delta]:
+        """Replay the next scripted `FakeTurn` via `ScriptedModel.stream`."""
+        self.tool_specs.append(list(tools))
+        turn = self._next_turn()
+        scripted = _to_scripted_turn(turn)
+        while len(self._turns) < len(self.calls):
+            self._turns.append([])
+        self._turns.append(scripted)
+
+        if turn.hang_forever:
+            self.calls.append(list(messages))
+            self.tools.append(list(tools))
+            for chunk in turn.chunks:
+                yield Delta(content=chunk)
+                await asyncio.sleep(0)
+            turn.hang_started.set()
+            await turn.hang_release.wait()
+            return
+
+        async for delta in super().stream(messages, tools):
+            yield delta
+            if delta.content:
+                await asyncio.sleep(0)

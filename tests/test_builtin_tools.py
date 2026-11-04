@@ -77,10 +77,10 @@ def test_builtin_tools_returns_exact_six_names(aldwin_home: Path) -> None:
     assert names == BUILTIN_TOOL_NAMES
 
     for tool_obj in tools:
-        schema = tool_obj.to_schema()
-        assert schema["type"] == "function"
-        assert schema["function"]["name"] == tool_obj.name
-        assert schema["function"]["description"]
+        defn = tool_obj.definition
+        assert defn.name == tool_obj.name
+        assert defn.description
+        assert isinstance(defn.parameters, dict)
 
 
 def test_list_builtin_tools_metadata() -> None:

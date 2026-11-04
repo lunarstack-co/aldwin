@@ -5,9 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from agentling import Agent
+from agentling import Agent, ChatMessage, ToolCall
 from agentling.memory import ActionStep, TaskStep, ToolResult
-from agentling.models import ChatMessage, ToolCall
 from fakes.model import FakeModel, FakeTurn
 
 from aldwin.client import AldwinClient

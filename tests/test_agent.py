@@ -60,8 +60,9 @@ def test_build_agent_default_config(
     assert agent.max_tool_output_chars == 10_000
     assert agent.context_manager is not None
     assert "using-aldwin" in agent.skills
-    assert "stub_tool" in agent._base_tools
-    assert "final_answer" in agent._base_tools
+    session = agent.start()
+    assert "stub_tool" in session.tools
+    assert "final_answer" in session.tools
 
 
 def test_load_skills_skips_broken_and_reports_invalid(
@@ -214,10 +215,11 @@ def test_load_skills_handles_missing_dir_missing_file_and_blank_fields(
 def test_build_and_rebuild_agent_default_openai_model_and_validation(
     aldwin_home: Path,
 ) -> None:
-    """`build_agent` builds a `RetryingModel` when `model=None` and validates names."""
+    """`build_agent` builds an `OpenAIChatModel` when `model=None`."""
+    from agentling import RetryPolicy
     from pydantic import SecretStr
 
-    from aldwin.core.models import RetryingModel
+    from aldwin.core.providers.openai_chat import OpenAIChatModel
 
     ensure_home(aldwin_home)
     secrets = SecretsConfig(openai_api_key=SecretStr("sk-test-1234567890"))
@@ -226,7 +228,8 @@ def test_build_and_rebuild_agent_default_openai_model_and_validation(
         secrets,
         home=aldwin_home,
     )
-    assert isinstance(agent.model, RetryingModel)
+    assert isinstance(agent.model, OpenAIChatModel)
+    assert isinstance(agent.retry, RetryPolicy)
 
     rebuilt, updated = rebuild_agent(
         AldwinConfig(model="gpt-4o"),
@@ -235,7 +238,8 @@ def test_build_and_rebuild_agent_default_openai_model_and_validation(
         "gpt-4.1",
         home=aldwin_home,
     )
-    assert isinstance(rebuilt.model, RetryingModel)
+    assert isinstance(rebuilt.model, OpenAIChatModel)
+    assert isinstance(rebuilt.retry, RetryPolicy)
     assert updated.model == "gpt-4.1"
 
     with pytest.raises(ValueError, match="model_name"):

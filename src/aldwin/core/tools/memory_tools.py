@@ -175,9 +175,11 @@ class RememberTool(Tool):
         self,
         home: Path | None = None,
         *,
+        session_context: Any = None,
         session_id_getter: Callable[[], str] | None = None,
     ) -> None:
         self._home = home
+        self._session_context = session_context
         self._session_id_getter = session_id_getter
 
     def _prepare_replace(self, text: str, replace: str) -> _ReplaceState:
@@ -273,11 +275,14 @@ class RememberTool(Tool):
         cleaned = sanitize_note_text(text)
         if len(cleaned) > MAX_NOTE_CHARS:
             raise ToolCallError(f"note too long (limit {MAX_NOTE_CHARS} characters)")
-        session_id = (
-            self._session_id_getter()
-            if self._session_id_getter is not None
-            else "default"
-        )
+        if self._session_context is not None and getattr(
+            self._session_context, "session_id", None
+        ):
+            session_id = str(self._session_context.session_id)
+        elif self._session_id_getter is not None:
+            session_id = self._session_id_getter()
+        else:
+            session_id = "default"
         try:
             status = await asyncio.to_thread(
                 remember_note,
@@ -492,11 +497,16 @@ class ForgetTool(Tool):
 def build_memory_tools(
     home: Path | None = None,
     *,
+    session_context: Any = None,
     session_id_getter: Callable[[], str] | None = None,
 ) -> tuple[RememberTool, RecallTool, ForgetTool]:
     """Construct `(RememberTool, RecallTool, ForgetTool)` for `home`."""
     return (
-        RememberTool(home=home, session_id_getter=session_id_getter),
+        RememberTool(
+            home=home,
+            session_context=session_context,
+            session_id_getter=session_id_getter,
+        ),
         RecallTool(home=home),
         ForgetTool(home=home),
     )

@@ -7,9 +7,8 @@ import os
 from pathlib import Path
 
 import pytest
-from agentling import Agent, tool
+from agentling import Agent, ChatMessage, ToolCall, tool
 from agentling.memory import ActionStep, FinalStep, Memory, TaskStep, ToolResult
-from agentling.models import ChatMessage, ToolCall
 from fakes.model import FakeModel, FakeTurn
 
 from aldwin.host.sessions import SessionStore
@@ -240,3 +239,55 @@ async def test_fake_model_drives_two_step_agent_session_and_saves(
     assert reloaded.meta.interrupted is False
     assert len(reloaded.memory.steps) == 3
     assert len(fake_model.calls) == 2
+
+
+async def test_resume_003_memory_session_fixture_upgrades_to_version_2(
+    aldwin_home: Path,
+    fake_model: FakeModel,
+) -> None:
+    """A 0.0.3 session JSON (memory v1) resumes a turn and saves as memory v2."""
+    sessions_dir = aldwin_home / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    store = SessionStore(sessions_dir)
+
+    v1_memory_json = json.dumps(
+        {
+            "version": 1,
+            "steps": [
+                {"type": "task", "data": {"task": "Explain 0.0.3"}},
+                {"type": "final", "data": {"answer": "It had connectors."}},
+            ],
+        }
+    )
+    session_file = sessions_dir / "2026-10-30_003test.json"
+    session_payload = {
+        "meta": {
+            "id": "2026-10-30_003test",
+            "created_at": "2026-10-30T10:00:00+00:00",
+            "updated_at": "2026-10-30T10:00:00+00:00",
+            "model": "gpt-4o",
+            "title": "Explain 0.0.3",
+            "interrupted": False,
+        },
+        "memory": v1_memory_json,
+    }
+    session_file.write_text(json.dumps(session_payload), encoding="utf-8")
+
+    loaded = store.load_latest()
+    assert loaded is not None
+    assert loaded.meta.id == "2026-10-30_003test"
+    assert len(loaded.memory.steps) == 2
+
+    fake_model.add_turns(FakeTurn.text(["0.0.4 with Agentling 0.2.0."]))
+    agent = Agent(model=fake_model)
+    session = agent.start()
+    session.memory = loaded.memory
+    async for _ev in session.run("What comes next?", stream=True, reset=False):
+        pass
+
+    store.save(loaded, session.memory, interrupted=False)
+
+    saved_raw = json.loads(session_file.read_text(encoding="utf-8"))
+    saved_memory = json.loads(saved_raw["memory"])
+    assert saved_memory["version"] == 2
+    assert len(saved_memory["steps"]) == 4

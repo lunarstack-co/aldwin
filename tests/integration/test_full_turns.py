@@ -5,10 +5,9 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-import httpx
-import openai
+from agentling import ModelConnectionError
 from agentling.memory import ActionStep, FinalStep, TaskStep
 from conftest import auto_approve, collect
 from fakes.model import FakeModel, final, hang, raise_, text, tool_call
@@ -174,8 +173,9 @@ async def test_model_error_emits_single_error_event(
     fake_model: FakeModel,
 ) -> None:
     """TC-17: Unrecoverable model failure emits 1 `ErrorEvent` and 0 `DoneEvent`s."""
-    req = httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
-    fake_model.add_turns(raise_(openai.APIConnectionError(request=cast(Any, req))))
+    fake_model.add_turns(
+        raise_(ModelConnectionError("connection dropped", retryable=False))
+    )
 
     events = await collect(host_client.turn("Hello"))
 
