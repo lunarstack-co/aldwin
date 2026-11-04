@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Final, Literal
+from urllib.parse import urlsplit
 
 import yaml
 from pydantic import (
@@ -18,6 +19,7 @@ from pydantic import (
     SecretStr,
     StrictInt,
     ValidationError,
+    ValidationInfo,
     field_validator,
     model_validator,
 )
@@ -50,6 +52,17 @@ _EXPECTED_FIELD_TYPES: Final[dict[str, str]] = {
     "connectors": "a mapping of connector settings",
     "connectors.import_paths": "a list of paths",
     "connectors.import_paths.*": "a path (a string)",
+    "providers": "a mapping of custom provider settings",
+    "providers.*": "a mapping of provider settings",
+    "providers.*.shape": "'openai_chat', 'anthropic', or 'ollama'",
+    "providers.*.base_url": (
+        "an HTTP or HTTPS URL (non-loopback http:// requires local: true)"
+    ),
+    "providers.*.secret": (
+        "an environment variable name or secret key name (a string)"
+    ),
+    "providers.*.title": "a string display title",
+    "providers.*.local": "true or false",
     "openai_api_key": "a string API key",
     "tavily_api_key": "a string API key",
 }
@@ -67,6 +80,7 @@ def _describe_error_location(
 
     List indices become ``[n]`` in the name and ``*`` in the lookup key, so
     ``("run_command", "env_allow", 0)`` reads as ``run_command.env_allow[0]``.
+    Dict keys under ``providers.<name>.<field>`` match ``providers.*.<field>``.
     """
     name = ""
     key_parts: list[str] = []
@@ -77,22 +91,48 @@ def _describe_error_location(
         else:
             name = f"{name}.{part}" if name else str(part)
             key_parts.append(str(part))
-    return name or "<root>", _EXPECTED_FIELD_TYPES.get(".".join(key_parts))
+    full_key = ".".join(key_parts)
+    expected = _EXPECTED_FIELD_TYPES.get(full_key)
+    if expected is None and len(key_parts) >= 2 and key_parts[0] == "providers":
+        if len(key_parts) == 3:
+            expected = _EXPECTED_FIELD_TYPES.get(f"providers.*.{key_parts[2]}")
+        elif len(key_parts) == 2:
+            expected = _EXPECTED_FIELD_TYPES.get("providers.*")
+    return name or "<root>", expected
 
 
 class ConfigError(Exception):
     """Raised when ``config.yaml`` or ``secrets.yaml`` contains invalid values."""
 
-    def __init__(self, file: Path, field: str, expected: str, detail: str = "") -> None:
-        self.file = file
-        self.field = field
-        self.expected = expected
-        self.detail = detail
-        suffix = f" ({detail})" if detail else ""
-        super().__init__(
-            f"Invalid configuration in {file}: '{field}' must be {expected}{suffix}. "
-            f"Fix the value in {file.name}, or delete the file to restore defaults."
-        )
+    def __init__(
+        self,
+        file: Path | str | None = None,
+        field: str | None = None,
+        expected: str | None = None,
+        detail: str = "",
+        message: str | None = None,
+    ) -> None:
+        if message is not None or (field is None and expected is None):
+            # Single-string message form (e.g. unknown provider in model reference)
+            msg = message if message is not None else str(file)
+            self.file = file if isinstance(file, Path) else Path("config.yaml")
+            self.field = field or "model"
+            self.expected = expected or ""
+            self.detail = detail
+            super().__init__(msg)
+        else:
+            path = file if isinstance(file, Path) else Path(str(file or "config.yaml"))
+            self.file = path
+            self.field = field or ""
+            self.expected = expected or ""
+            self.detail = detail
+            suffix = f" ({detail})" if detail else ""
+            msg = (
+                f"Invalid configuration in {path}: '{self.field}' must be "
+                f"{self.expected}{suffix}. Fix the value in {path.name}, or "
+                "delete the file to restore defaults."
+            )
+            super().__init__(msg)
 
 
 class LimitsConfig(BaseModel):
@@ -126,6 +166,56 @@ class ConnectorsConfig(BaseModel):
     import_paths: list[str] = Field(default_factory=list)
 
 
+ProviderShape = Literal["openai_chat", "anthropic", "ollama"]
+_VALID_SHAPES: Final[frozenset[str]] = frozenset({"openai_chat", "anthropic", "ollama"})
+
+
+class ProviderConfig(BaseModel):
+    """Configuration for a custom or overridden provider in ``config.yaml``."""
+
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+
+    shape: ProviderShape | None = None
+    local: bool | None = None
+    base_url: str | None = None
+    secret: str | None = None
+    title: str | None = None
+
+    @field_validator("shape", mode="before")
+    @classmethod
+    def _validate_shape(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("shape must be a string")
+        cleaned = value.strip().lower()
+        if cleaned not in _VALID_SHAPES:
+            raise ValueError(f"invalid shape '{value}'")
+        return cleaned
+
+    @field_validator("base_url")
+    @classmethod
+    def _validate_base_url(cls, value: str | None, info: ValidationInfo) -> str | None:
+        if value is None:
+            return None
+        from aldwin.core.providers.registry import is_loopback_host
+
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("base_url must be a non-empty string")
+        parts = urlsplit(cleaned)
+        if parts.scheme not in {"http", "https"} or not parts.hostname:
+            raise ValueError("base_url must be an HTTP or HTTPS URL")
+        if parts.scheme == "http":
+            host = parts.hostname or ""
+            is_local = bool(info.data.get("local", False))
+            if not is_loopback_host(host) and not is_local:
+                raise ValueError(
+                    "non-loopback http:// requires local: true (or use https://)"
+                )
+        return cleaned
+
+
 ThemeName = Literal["auto", "dark", "light", "colour_blind", "plain"]
 
 
@@ -141,6 +231,24 @@ class AldwinConfig(BaseModel):
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
     run_command: RunCommandConfig = Field(default_factory=RunCommandConfig)
     connectors: ConnectorsConfig = Field(default_factory=ConnectorsConfig)
+    providers: dict[str, ProviderConfig] = Field(default_factory=dict)
+
+    @field_validator("providers", mode="before")
+    @classmethod
+    def _normalize_providers(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        normalized: dict[str, Any] = {}
+        for raw_key, raw_val in value.items():
+            if not isinstance(raw_key, str):
+                raise ValueError("provider name must be a string")
+            key = raw_key.strip().lower()
+            if not key:
+                raise ValueError("provider name must not be empty")
+            if key in normalized:
+                raise ValueError(f"duplicate provider key '{raw_key}'")
+            normalized[key] = raw_val
+        return normalized
 
     @field_validator("theme", mode="before")
     @classmethod
@@ -311,6 +419,19 @@ def _warn_unknown_config_keys(raw: dict[str, Any], config_path: Path) -> None:
                 config_path,
             )
 
+    raw_providers = raw.get("providers")
+    if isinstance(raw_providers, dict):
+        known_provider_fields = set(ProviderConfig.model_fields.keys())
+        for prov_name, prov_val in raw_providers.items():
+            if isinstance(prov_val, dict):
+                for key in sorted(set(prov_val.keys()) - known_provider_fields):
+                    logger.warning(
+                        "Ignoring unknown key 'providers.%s.%s' in %s",
+                        prov_name,
+                        key,
+                        config_path,
+                    )
+
 
 def _filter_secret_env_allow(names: list[str]) -> list[str]:
     """Filter secret-shaped variable names from `run_command.env_allow`."""
@@ -366,6 +487,8 @@ def load_config(home: Path | None = None) -> AldwinConfig:
         parsed = {**parsed, "limits": {}}
     if "run_command" in parsed and parsed["run_command"] is None:
         parsed = {**parsed, "run_command": {}}
+    if "providers" in parsed and parsed["providers"] is None:
+        parsed = {**parsed, "providers": {}}
 
     try:
         cfg = AldwinConfig.model_validate(parsed)
@@ -379,6 +502,29 @@ def load_config(home: Path | None = None) -> AldwinConfig:
             expected=expected or "a valid value",
             detail="" if expected else str(first.get("msg", "")),
         ) from None
+
+    from aldwin.core.providers.registry import (
+        load_builtin_providers,
+        validate_model_ref,
+    )
+
+    builtin_names = {b.name for b in load_builtin_providers()}
+    for prov_name, prov_cfg in cfg.providers.items():
+        if prov_name.strip().lower() not in builtin_names:
+            if prov_cfg.shape is None:
+                raise ConfigError(
+                    file=config_path,
+                    field=f"providers.{prov_name}.shape",
+                    expected=_EXPECTED_FIELD_TYPES["providers.*.shape"],
+                )
+            if prov_cfg.base_url is None:
+                raise ConfigError(
+                    file=config_path,
+                    field=f"providers.{prov_name}.base_url",
+                    expected=_EXPECTED_FIELD_TYPES["providers.*.base_url"],
+                )
+
+    validate_model_ref(cfg.model, cfg, file=config_path)
 
     if cfg.run_command.env_allow:
         filtered = _filter_secret_env_allow(cfg.run_command.env_allow)
@@ -423,6 +569,11 @@ def update_config_model(model: str, home: Path | None = None) -> None:
             field="model",
             expected="a non-empty string",
         )
+
+    existing_cfg = load_config(root) if config_path.exists() else AldwinConfig()
+    from aldwin.core.providers.registry import validate_model_ref
+
+    validate_model_ref(cleaned, existing_cfg, file=config_path)
 
     updated = _set_yaml_scalar_key(_read_config_source(config_path), "model", cleaned)
     atomic_write(config_path, updated, mode=FILE_MODE)
