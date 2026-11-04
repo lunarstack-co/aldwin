@@ -187,7 +187,7 @@ async def test_open_in_process_client_and_inspect_helpers(
         second_hello = await client.connect()
         assert isinstance(second_hello, DoneEvent)
         assert second_hello.reason == "ok"
-        assert client.model == "gpt-4o"
+        assert client.model == "openai/gpt-4o"
         assert client.session_id
         assert client.updated_at is not None
 

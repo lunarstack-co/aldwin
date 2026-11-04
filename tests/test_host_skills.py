@@ -205,9 +205,12 @@ async def test_picked_skill_does_not_widen_hardline(
         FakeTurn.text(["blocked"]),
     )
     transport = InProcessTransport()
-    host = AldwinHost(transport, home=aldwin_home, workspace=ws)
-    host._agent.model = fake_model
-    host._agent_session = host._agent.start()
+    host = AldwinHost(
+        transport,
+        home=aldwin_home,
+        workspace=ws,
+        agent_builder=_builder(fake_model, aldwin_home),
+    )
     await host.start()
     client = AldwinClient(transport.connect())
     try:

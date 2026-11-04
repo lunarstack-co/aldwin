@@ -31,7 +31,7 @@ def _imported_modules(tree: ast.AST) -> set[str]:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 modules.add(alias.name)
-        elif isinstance(node, ast.ImportFrom) and node.module:
+        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
             modules.add(node.module)
             for alias in node.names:
                 modules.add(f"{node.module}.{alias.name}")
@@ -153,16 +153,15 @@ def test_connector_dependencies_pinned() -> None:
     assert "openai" not in locked
 
 
-def test_no_openai_imported_in_src() -> None:
-    """No file under `src/aldwin` imports `openai`."""
-    violations: list[str] = []
-    for path in sorted(SRC_ALDWIN.rglob("*.py")):
-        tree = ast.parse(path.read_text("utf-8"), filename=str(path))
-        imported = _imported_modules(tree)
-        for mod in imported:
-            if mod == "openai" or mod.startswith("openai."):
-                violations.append(f"{path}: forbidden import {mod!r}")
-    assert violations == []
+def test_doors_never_import_providers() -> None:
+    """A door (`aldwin.cli`) must never import `aldwin.core.providers`."""
+    assert (
+        check_forbidden_imports(
+            SRC_ALDWIN / "cli",
+            ("aldwin.core.providers",),
+        )
+        == []
+    )
 
 
 def test_no_private_agentling_imports_in_src() -> None:

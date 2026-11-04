@@ -57,6 +57,7 @@ from aldwin.core.workspace import (
 
 if TYPE_CHECKING:
     from aldwin.client.client import AldwinClient
+    from aldwin.core.providers import ModelInfo
     from aldwin.protocol import ApprovalEvent, Event, Request
 
 logger = logging.getLogger("aldwin.host")
@@ -167,6 +168,26 @@ async def verify_active_openai_key(home: Path | None = None) -> KeyCheckResult:
     if not key:
         return "invalid"
     return await check_openai_key(key)
+
+
+async def list_models_for(
+    provider: str,
+    home: Path | None = None,
+) -> list[ModelInfo]:
+    """List available models for `provider`, returning [] on error."""
+    from aldwin.core.providers import get_backend
+    from aldwin.core.settings import load_config, load_secrets
+
+    root = (home if home is not None else home_dir()).expanduser().resolve()
+    config = load_config(root)
+    secrets = load_secrets(root)
+
+    try:
+        backend = get_backend(provider, config=config, secrets=secrets, home=root)
+        return await backend.list_models()
+    except Exception as exc:
+        logger.warning("Failed to list models for provider %r: %s", provider, exc)
+        return []
 
 
 async def list_available_models(
@@ -732,6 +753,7 @@ __all__ = [
     "get_persona_text",
     "get_skills_report",
     "list_available_models",
+    "list_models_for",
     "mark_whats_new_seen",
     "mask_secret",
     "open_in_process_client",

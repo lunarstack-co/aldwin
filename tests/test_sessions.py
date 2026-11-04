@@ -156,7 +156,7 @@ def test_atomic_save_survives_interrupted_write_and_skips_corrupt_file(
     stored.path.write_text(json.dumps({"bad": "shape"}), encoding="utf-8")
     fallback = store.load_latest(default_model="gpt-4o-mini")
     assert fallback.meta.id != stored.meta.id
-    assert fallback.meta.model == "gpt-4o-mini"
+    assert fallback.meta.model == "openai/gpt-4o-mini"
 
 
 def test_render_history_windows_last_limit_and_summarises_tools(
@@ -291,3 +291,39 @@ async def test_resume_003_memory_session_fixture_upgrades_to_version_2(
     saved_memory = json.loads(saved_raw["memory"])
     assert saved_memory["version"] == 2
     assert len(saved_memory["steps"]) == 4
+
+
+def test_legacy_bare_model_id_normalized(aldwin_home: Path) -> None:
+    """Loading a 0.0.3 session with a bare model ID normalizes it to openai/<id>."""
+    sessions_dir = aldwin_home / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    store = SessionStore(sessions_dir)
+
+    session_file = sessions_dir / "2026-10-25_legacy.json"
+    session_payload = {
+        "meta": {
+            "id": "2026-10-25_legacy",
+            "created_at": "2026-10-25T10:00:00+00:00",
+            "updated_at": "2026-10-25T10:00:00+00:00",
+            "model": "gpt-4o",
+            "title": "Legacy session",
+            "interrupted": False,
+        },
+        "memory": json.dumps({"version": 2, "steps": []}),
+    }
+    session_file.write_text(json.dumps(session_payload), encoding="utf-8")
+
+    loaded = store.load_file(session_file)
+    assert loaded is not None
+    assert loaded.meta.model == "openai/gpt-4o"
+
+
+def test_save_session_full_provider_ref(aldwin_home: Path) -> None:
+    """Saving a session preserves the full provider/model reference."""
+    store = SessionStore()
+    stored = store.create_new(model="anthropic/claude-3-7-sonnet")
+    assert stored.meta.model == "anthropic/claude-3-7-sonnet"
+
+    store.save(stored, stored.memory, interrupted=False)
+    raw = json.loads(stored.path.read_text(encoding="utf-8"))
+    assert raw["meta"]["model"] == "anthropic/claude-3-7-sonnet"
