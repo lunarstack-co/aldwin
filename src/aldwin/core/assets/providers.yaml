@@ -1,0 +1,87 @@
+# Built-in providers offered in Aldwin. URLs and defaults are checked before
+# each release against official live documentation.
+version: 1
+providers:
+  - name: openai
+    title: OpenAI
+    shape: openai_chat
+    base_url: https://api.openai.com/v1
+    secret: openai_api_key
+    env_var: OPENAI_API_KEY
+    local: false
+    docs_url: https://platform.openai.com/docs
+    signup_url: https://platform.openai.com/signup
+    key_hint: sk-...
+    default_port: null
+
+  - name: anthropic
+    title: Anthropic
+    shape: anthropic
+    base_url: https://api.anthropic.com
+    secret: anthropic_api_key
+    env_var: ANTHROPIC_API_KEY
+    local: false
+    docs_url: https://docs.anthropic.com
+    signup_url: https://console.anthropic.com
+    key_hint: sk-ant-...
+    default_port: null
+
+  - name: gemini
+    title: Google Gemini
+    shape: openai_chat
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai
+    secret: gemini_api_key
+    env_var: GEMINI_API_KEY
+    local: false
+    docs_url: https://ai.google.dev/gemini-api/docs
+    signup_url: https://aistudio.google.com
+    key_hint: AIzaSy...
+    default_port: null
+
+  - name: openrouter
+    title: OpenRouter
+    shape: openai_chat
+    base_url: https://openrouter.ai/api/v1
+    secret: openrouter_api_key
+    env_var: OPENROUTER_API_KEY
+    local: false
+    docs_url: https://openrouter.ai/docs
+    signup_url: https://openrouter.ai/keys
+    key_hint: sk-or-...
+    default_port: null
+
+  - name: deepseek
+    title: DeepSeek
+    shape: openai_chat
+    base_url: https://api.deepseek.com/v1
+    secret: deepseek_api_key
+    env_var: DEEPSEEK_API_KEY
+    local: false
+    docs_url: https://api-docs.deepseek.com
+    signup_url: https://platform.deepseek.com
+    key_hint: sk-...
+    default_port: null
+
+  - name: ollama
+    title: Ollama
+    shape: ollama
+    base_url: http://localhost:11434
+    secret: null
+    env_var: null
+    local: true
+    docs_url: https://ollama.com
+    signup_url: null
+    key_hint: null
+    default_port: 11434
+
+  - name: lmstudio
+    title: LM Studio
+    shape: openai_chat
+    base_url: http://localhost:1234/v1
+    secret: null
+    env_var: null
+    local: true
+    docs_url: https://lmstudio.ai/docs
+    signup_url: null
+    key_hint: null
+    default_port: 1234

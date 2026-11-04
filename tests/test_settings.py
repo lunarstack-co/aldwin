@@ -393,3 +393,65 @@ def test_connectors_import_paths_must_be_a_list(aldwin_home: Path) -> None:
         encoding="utf-8",
     )
     assert load_config(aldwin_home).connectors.import_paths == ["~/team/mcp.toml"]
+
+
+def test_load_config_providers_validation_and_unknown_warnings(
+    aldwin_home: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Custom providers in config.yaml validate shape, base_url, and warn on typos."""
+    config_path = aldwin_home / "config.yaml"
+
+    # Empty providers: section defaults to empty dict
+    atomic_write(config_path, "model: gpt-4o\nproviders:\n")
+    assert load_config(aldwin_home).providers == {}
+
+    # Missing shape on new custom provider raises ConfigError on providers.<name>.shape
+    atomic_write(
+        config_path,
+        "providers:\n  office-gpu:\n    base_url: https://gpu.internal/v1\n",
+    )
+    with pytest.raises(ConfigError) as exc_shape:
+        load_config(aldwin_home)
+    assert exc_shape.value.file == config_path
+    assert exc_shape.value.field == "providers.office-gpu.shape"
+    assert (
+        "'providers.office-gpu.shape' must be 'openai_chat', 'anthropic', or 'ollama'"
+        in str(exc_shape.value)
+    )
+
+    # Missing base_url on new custom provider raises ConfigError on base_url
+    atomic_write(
+        config_path,
+        "providers:\n  office-gpu:\n    shape: openai_chat\n",
+    )
+    with pytest.raises(ConfigError) as exc_url:
+        load_config(aldwin_home)
+    assert exc_url.value.file == config_path
+    assert exc_url.value.field == "providers.office-gpu.base_url"
+
+    # Duplicate casefolded keys in providers: raise ConfigError
+    atomic_write(
+        config_path,
+        "providers:\n"
+        "  OpenAI:\n"
+        "    base_url: https://proxy1.internal/v1\n"
+        "  openai:\n"
+        "    base_url: https://proxy2.internal/v1\n",
+    )
+    with pytest.raises(ConfigError) as exc_dup:
+        load_config(aldwin_home)
+    assert "providers" in exc_dup.value.field
+
+    # Unknown keys inside a provider block log a warning and load cleanly
+    atomic_write(
+        config_path,
+        "providers:\n"
+        "  office-gpu:\n"
+        "    shape: openai_chat\n"
+        "    base_url: https://gpu.internal/v1\n"
+        "    extra_typo: 123\n",
+    )
+    with caplog.at_level(logging.WARNING, logger="aldwin.core.settings"):
+        cfg = load_config(aldwin_home)
+    assert "office-gpu" in cfg.providers
+    assert "Ignoring unknown key 'providers.office-gpu.extra_typo'" in caplog.text

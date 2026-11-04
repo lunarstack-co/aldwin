@@ -229,6 +229,30 @@ def test_core_never_imports_protocol_host_client_or_cli() -> None:
     )
 
 
+def test_core_providers_never_imports_doors() -> None:
+    """`aldwin.core.providers` must never import doors or host/protocol."""
+    forbidden = (
+        "aldwin.cli",
+        "aldwin.client",
+        "aldwin.host",
+        "aldwin.protocol",
+    )
+    assert check_forbidden_imports(SRC_ALDWIN / "core" / "providers", forbidden) == []
+
+
+def test_no_vendor_sdks_imported_in_src() -> None:
+    """No module under `src/aldwin` imports vendor SDK packages."""
+    vendor_sdks = ("openai", "anthropic", "google", "ollama")
+    violations: list[str] = []
+    for path in sorted(SRC_ALDWIN.rglob("*.py")):
+        tree = ast.parse(path.read_text("utf-8"), filename=str(path))
+        imported = _imported_modules(tree)
+        for mod in imported:
+            if any(mod == sdk or mod.startswith(f"{sdk}.") for sdk in vendor_sdks):
+                violations.append(f"{path}: forbidden vendor SDK import {mod!r}")
+    assert violations == []
+
+
 def test_builtin_tools_match_builtin_tool_names(aldwin_home: Path) -> None:
     """`FR-8`: `builtin_tools()` returns the expected tool names."""
     tools = builtin_tools(_dummy_ask, home=aldwin_home, secrets=SecretsConfig())
