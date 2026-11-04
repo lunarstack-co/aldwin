@@ -3,24 +3,23 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-import httpx
-import openai
+import pytest
+from agentling import (
+    ModelConnectionError,
+    ModelRateLimitError,
+    ModelServerError,
+    RetryPolicy,
+)
 from fakes.model import FakeModel, FakeTurn
 
 from aldwin.client import AldwinClient
 from aldwin.core.agent import build_agent
 from aldwin.core.home import ensure_home
-from aldwin.core.models import RetryingModel
 from aldwin.core.settings import AldwinConfig, SecretsConfig
 from aldwin.host import AldwinHost, AskFn, InProcessTransport
 from aldwin.protocol import DoneEvent, ErrorEvent, Event, StatusEvent, TextEvent
-
-
-def _http_response(status_code: int) -> httpx.Response:
-    req = httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
-    return httpx.Response(status_code, request=req)
 
 
 async def _collect(client: AldwinClient, text: str) -> list[Event]:
@@ -32,14 +31,11 @@ async def _collect(client: AldwinClient, text: str) -> list[Event]:
 
 async def test_host_emits_retry_status_events_then_answers(
     aldwin_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Two 429 errors emit two `StatusEvent`s before the streamed answer."""
     ensure_home(aldwin_home)
-    err_429 = openai.RateLimitError(
-        "Rate limit reached",
-        response=cast(Any, _http_response(429)),
-        body=None,
-    )
+    err_429 = ModelRateLimitError("Rate limit reached")
     fake_model = FakeModel(
         turns=[
             FakeTurn.error(err_429),
@@ -48,20 +44,27 @@ async def test_host_emits_retry_status_events_then_answers(
         ]
     )
 
-    async def zero_sleep(_delay: float) -> None:
+    from agentling import AgentSession
+
+    async def fast_sleep(_self: Any, _delay: float) -> None:
         return None
 
+    monkeypatch.setattr(AgentSession, "_sleep_unless_interrupted", fast_sleep)
+
     def builder(model_name: str, ask: AskFn) -> Any:
-        retrying = RetryingModel(
-            fake_model, max_retries=3, sleep=zero_sleep, jitter=0.0
-        )
-        return build_agent(
+        agent = build_agent(
             AldwinConfig(model=model_name),
             SecretsConfig(),
             ask,
             home=aldwin_home,
-            model=retrying,
+            model=fake_model,
         )
+        agent.retry = RetryPolicy(
+            max_retries=3,
+            base_delay=1.0,
+            jitter=0.0,
+        )
+        return agent
 
     transport = InProcessTransport()
     host = AldwinHost(transport, agent_builder=builder)
@@ -88,11 +91,11 @@ async def test_host_emits_retry_status_events_then_answers(
 
 async def test_host_emits_retry_statuses_on_connection_errors(
     aldwin_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Connection failures emit 'No internet' status lines then model_unavailable."""
     ensure_home(aldwin_home)
-    req = httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
-    err_conn = openai.APIConnectionError(request=cast(Any, req))
+    err_conn = ModelConnectionError("connection dropped")
     fake_model = FakeModel(
         turns=[
             FakeTurn.error(err_conn),
@@ -102,20 +105,27 @@ async def test_host_emits_retry_statuses_on_connection_errors(
         ]
     )
 
-    async def zero_sleep(_delay: float) -> None:
+    from agentling import AgentSession
+
+    async def fast_sleep(_self: Any, _delay: float) -> None:
         return None
 
+    monkeypatch.setattr(AgentSession, "_sleep_unless_interrupted", fast_sleep)
+
     def builder(model_name: str, ask: AskFn) -> Any:
-        retrying = RetryingModel(
-            fake_model, max_retries=3, sleep=zero_sleep, jitter=0.0
-        )
-        return build_agent(
+        agent = build_agent(
             AldwinConfig(model=model_name),
             SecretsConfig(),
             ask,
             home=aldwin_home,
-            model=retrying,
+            model=fake_model,
         )
+        agent.retry = RetryPolicy(
+            max_retries=3,
+            base_delay=1.0,
+            jitter=0.0,
+        )
+        return agent
 
     transport = InProcessTransport()
     host = AldwinHost(transport, agent_builder=builder)
@@ -141,14 +151,11 @@ async def test_host_emits_retry_statuses_on_connection_errors(
 
 async def test_host_emits_3_retry_statuses_then_rate_limited_on_503(
     aldwin_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Three failed retries on 503 emit busy status then rate_limited."""
     ensure_home(aldwin_home)
-    err_503 = openai.InternalServerError(
-        "Service unavailable",
-        response=cast(Any, _http_response(503)),
-        body=None,
-    )
+    err_503 = ModelServerError("Service unavailable")
     fake_model = FakeModel(
         turns=[
             FakeTurn.error(err_503),
@@ -158,20 +165,27 @@ async def test_host_emits_3_retry_statuses_then_rate_limited_on_503(
         ]
     )
 
-    async def zero_sleep(_delay: float) -> None:
+    from agentling import AgentSession
+
+    async def fast_sleep(_self: Any, _delay: float) -> None:
         return None
 
+    monkeypatch.setattr(AgentSession, "_sleep_unless_interrupted", fast_sleep)
+
     def builder(model_name: str, ask: AskFn) -> Any:
-        retrying = RetryingModel(
-            fake_model, max_retries=3, sleep=zero_sleep, jitter=0.0
-        )
-        return build_agent(
+        agent = build_agent(
             AldwinConfig(model=model_name),
             SecretsConfig(),
             ask,
             home=aldwin_home,
-            model=retrying,
+            model=fake_model,
         )
+        agent.retry = RetryPolicy(
+            max_retries=3,
+            base_delay=1.0,
+            jitter=0.0,
+        )
+        return agent
 
     transport = InProcessTransport()
     host = AldwinHost(transport, agent_builder=builder)

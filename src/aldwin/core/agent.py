@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from agentling import Agent, AgentSession, Memory, Model, Skill, Tool
+from agentling import Agent, AgentSession, Memory, Model, RetryPolicy, Skill, Tool
 
 from aldwin.core.approval_log import ApprovalLogger
 from aldwin.core.context import build_context
@@ -134,9 +134,12 @@ def coerce_policy_ask(ask: AnyAskFn | None) -> PolicyAskFn:
     return _adapted
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SessionContext:
-    """Per-session dependencies injected into tools via `build_tools`."""
+    """Per-session dependencies injected into tools via `build_tools`.
+
+    Mutable so `session_id` can be updated on `/new` and session restore.
+    """
 
     workspace: Workspace
     policy_session: PolicySession
@@ -147,6 +150,7 @@ class SessionContext:
     secrets: SecretsConfig | None = None
     persona_cap: int = 2000
     env_allow: tuple[str, ...] = ()
+    session_id: str = "default"
     session_id_getter: Callable[[], str] | None = None
     host_flags: dict[str, bool] | None = None
     model_name: str = ""
@@ -205,6 +209,7 @@ def build_tools(
         ),
         *build_memory_tools(
             home=root,
+            session_context=session_ctx,
             session_id_getter=session_ctx.session_id_getter,
         ),
         build_persona_tool(
@@ -342,6 +347,7 @@ def build_agent(
     session_id_getter: Callable[[], str] | None = None,
     host_flags: dict[str, bool] | None = None,
     connectors_block: Callable[[], str] | None = None,
+    session_context: SessionContext | None = None,
 ) -> Agent:
     """Assemble Aldwin's `Agent` from `config`, `secrets`, and `ask`."""
     import aldwin
@@ -367,9 +373,9 @@ def build_agent(
         active_model = build_openai_model(
             config.model,
             api_key=api_key,
-            on_retry=on_retry,
         )
 
+    active_ctx: SessionContext | None = None
     if tools is not None:
         active_tools: tuple[Tool, ...] = tuple(tools)
     else:
@@ -381,7 +387,10 @@ def build_agent(
         active_policy = policy_session
         if active_policy is None:
             active_policy = PolicySession(workspace=active_ws, home=root)
-        ctx = SessionContext(
+        session_id_val = (
+            session_id_getter() if session_id_getter is not None else "default"
+        )
+        active_ctx = session_context or SessionContext(
             workspace=active_ws,
             policy_session=active_policy,
             ask=coerce_policy_ask(ask),
@@ -391,11 +400,12 @@ def build_agent(
             secrets=secrets,
             persona_cap=config.limits.persona_chars,
             env_allow=tuple(config.run_command.env_allow),
+            session_id=session_id_val,
             session_id_getter=session_id_getter,
             host_flags=flags,
             model_name=config.model,
         )
-        active_tools = tuple(build_tools(ctx))
+        active_tools = tuple(build_tools(active_ctx))
 
     catalogue = build_catalogue(
         root,
@@ -457,9 +467,17 @@ def build_agent(
         tool_timeout=DEFAULT_TOOL_TIMEOUT,
         max_tool_output_chars=DEFAULT_MAX_TOOL_OUTPUT_CHARS,
         context_manager=context_manager,
+        retry=RetryPolicy(
+            max_retries=3,
+            base_delay=1.0,
+            jitter=0.2,
+            on_retry=on_retry,
+        ),
     )
     setattr(agent, "invalid_skills", invalid)
     setattr(agent, "skill_catalogue", catalogue)
+    if active_ctx is not None:
+        setattr(agent, "session_context", active_ctx)
     return agent
 
 

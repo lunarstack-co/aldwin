@@ -502,8 +502,7 @@ async def test_remember_tool_schema_forbids_target_paths(aldwin_home: Path) -> N
     """TC-18: `RememberTool` accepts only `text` and cannot touch profile or persona."""
     ensure_home(aldwin_home)
     remember_tool = RememberTool(aldwin_home)
-    schema = remember_tool.to_schema()
-    params = schema["function"]["parameters"]
+    params = remember_tool.definition.parameters
 
     assert set(params["properties"].keys()) == {"text", "replace"}
     assert params["required"] == ["text"]
@@ -622,6 +621,60 @@ async def test_host_remember_tool_binds_active_session_id(
         note_path = aldwin_home / "memory" / "notes" / f"{today_str}.md"
         content = note_path.read_text(encoding="utf-8")
         assert f"src=session:{host.stored_session.meta.id} -->" in content
+    finally:
+        await client.close()
+        await host.stop_host()
+
+
+async def test_remember_tool_updates_session_id_on_new_conversation(
+    aldwin_home: Path,
+    fake_model: FakeModel,
+) -> None:
+    """`RememberTool` tags notes with the new session ID after `new_conversation()`."""
+    from aldwin.client import AldwinClient
+    from aldwin.host import AldwinHost, InProcessTransport
+
+    ensure_home(aldwin_home)
+    fake_model.add_turns(
+        FakeTurn.tool_call("remember", {"text": "Session 1 fact"}),
+        FakeTurn.text(["Saved 1."]),
+        FakeTurn.tool_call("remember", {"text": "Session 2 fact"}),
+        FakeTurn.text(["Saved 2."]),
+    )
+
+    transport = InProcessTransport()
+    host = AldwinHost(
+        transport,
+        agent_builder=lambda model_name, ask: build_agent(
+            AldwinConfig(model=model_name),
+            SecretsConfig(),
+            ask,
+            home=aldwin_home,
+            model=fake_model,
+        ),
+    )
+    await host.start()
+    client = AldwinClient(transport.connect())
+
+    try:
+        await client.connect()
+        async for _ev in client.turn("Remember first"):
+            pass
+
+        s1_id = host.stored_session.meta.id
+
+        await host.new_conversation()
+        s2_id = host.stored_session.meta.id
+        assert s1_id != s2_id
+
+        async for _ev in client.turn("Remember second"):
+            pass
+
+        today_str = datetime.now().astimezone().date().isoformat()
+        note_path = aldwin_home / "memory" / "notes" / f"{today_str}.md"
+        content = note_path.read_text(encoding="utf-8")
+        assert f"src=session:{s1_id} -->" in content
+        assert f"src=session:{s2_id} -->" in content
     finally:
         await client.close()
         await host.stop_host()

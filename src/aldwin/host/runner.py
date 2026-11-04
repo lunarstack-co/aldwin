@@ -20,6 +20,7 @@ from agentling import (
     FinalEvent,
     StepEvent,
     TextDelta,
+    Usage,
 )
 from agentling import (
     ToolCallEvent as AgentlingToolCallEvent,
@@ -28,12 +29,12 @@ from agentling import (
     ToolResultEvent as AgentlingToolResultEvent,
 )
 from agentling.memory import FinalStep
-from agentling.models import Usage
 from agentling.tools import ToolCallError
 
 import aldwin
 from aldwin.core.agent import (
     AnyAskFn,
+    SessionContext,
     build_agent,
     new_session,
     restore_session,
@@ -61,7 +62,6 @@ from aldwin.core.connectors.policy import tool_call_labels
 from aldwin.core.connectors.state import ConnectorSnapshot
 from aldwin.core.home import home_dir
 from aldwin.core.models import (
-    RetryingModel,
     classify_model_error,
     retry_status_message,
 )
@@ -71,7 +71,6 @@ from aldwin.core.policy import (
 from aldwin.core.policy import (
     ApprovalRequest,
     PolicySession,
-    PolicyWrappedTool,
     compute_digest,
     sanitize_display_text,
 )
@@ -85,10 +84,10 @@ from aldwin.core.skills import (
     to_catalog_items,
 )
 from aldwin.core.skills_recent import load_skills_recent, record_skills_used
-from aldwin.core.tools import RememberTool, summarize_tool_result
 from aldwin.core.tools import documents as document_tools
 from aldwin.core.tools import download as download_tools
 from aldwin.core.tools import edits as edit_tools
+from aldwin.core.tools import summarize_tool_result
 from aldwin.core.tools.files import row_summary as file_row_summary
 from aldwin.core.tools.files import running_summary as file_running_summary
 from aldwin.core.tools.memory_tools import running_summary as memory_running_summary
@@ -635,6 +634,20 @@ class AldwinHost:
         self._skills_fingerprint: tuple[tuple[str, int, int], ...] = ()
         self._skill_catalogue: list[LoadedSkill] = []
 
+        self._session_context = SessionContext(
+            workspace=self._workspace,
+            policy_session=self._policy_session,
+            ask=self.ask_policy,
+            approval_log=self._approval_log,
+            home=self._home,
+            secrets=load_secrets(self._home),
+            persona_cap=config.limits.persona_chars,
+            env_allow=tuple(config.run_command.env_allow),
+            session_id=self._stored_session.meta.id,
+            host_flags=self._host_flags,
+            model_name=self._model,
+        )
+
         self._approvals = ApprovalBroker(
             self._transport.send_event,
             approval_log=self._approval_log,
@@ -729,6 +742,11 @@ class AldwinHost:
     def _default_build_agent(self, model_name: str, ask: AnyAskFn) -> Agent:
         config = load_config(self._home).model_copy(update={"model": model_name})
         secrets = load_secrets(self._home)
+        self._session_context.secrets = secrets
+        self._session_context.persona_cap = config.limits.persona_chars
+        self._session_context.env_allow = tuple(config.run_command.env_allow)
+        self._session_context.session_id = self._stored_session.meta.id
+        self._session_context.model_name = model_name
         return build_agent(
             config,
             secrets,
@@ -737,9 +755,10 @@ class AldwinHost:
             workspace=self._workspace,
             policy_session=self._policy_session,
             approval_log=self._approval_log,
-            session_id_getter=lambda: self._stored_session.meta.id,
             host_flags=self._host_flags,
             connectors_block=self._connectors.context_block,
+            on_retry=self.on_retry,
+            session_context=self._session_context,
         )
 
     def _attach_session(self, session: AgentSession) -> None:
@@ -797,16 +816,14 @@ class AldwinHost:
         else:
             agent = self._default_build_agent(model_name, self.ask_policy)
 
-        if isinstance(agent.model, RetryingModel) and agent.model.on_retry is None:
-            agent.model.on_retry = self.on_retry
-        for tool_obj in agent._base_tools.values():
-            inner = (
-                tool_obj.inner_tool
-                if isinstance(tool_obj, PolicyWrappedTool)
-                else tool_obj
-            )
-            if isinstance(inner, RememberTool) and inner._session_id_getter is None:
-                inner._session_id_getter = lambda: self._stored_session.meta.id
+        ctx = getattr(agent, "session_context", None)
+        if isinstance(ctx, SessionContext):
+            self._session_context = ctx
+            ctx.session_id = self._stored_session.meta.id
+
+        retry = getattr(agent, "retry", None)
+        if retry is not None and retry.on_retry is None:
+            agent.retry = replace(retry, on_retry=self.on_retry)
         return agent
 
     async def on_retry(
@@ -913,6 +930,7 @@ class AldwinHost:
         self._policy_session.reset_turn()
         self._todo = []
         self._stored_session = self._session_store.create_new(model=self._model)
+        self._session_context.session_id = self._stored_session.meta.id
         self._connectors.reset_loaded()
         self._attach_session(new_session(self._agent))
 
@@ -1381,14 +1399,14 @@ class AldwinHost:
                 logger.exception("connector reconcile failed; continuing the turn")
             for message in self._connectors.take_turn_notices():
                 await scope.emit(NoticeEvent(re=req.id, message=message))
-            self._agent_session._interrupt.clear()
             step_text_chunks: list[str] = []
-            streamed_before_tools: str = ""
+            turn_streamed_chunks: list[str] = []
             tool_start_times: dict[str, float] = {}
             tool_running: dict[str, str] = {}
             todo_call_items: dict[str, Any] = {}
             final_status: str = "completed"
             final_usage: Usage | None = None
+            final_finish_reason: str | None = None
 
             picked: list[LoadedSkill] = []
             if self._negotiated_version >= 2:
@@ -1435,15 +1453,13 @@ class AldwinHost:
                         if not step_text_chunks:
                             self._persist_session(interrupted=True)
                         step_text_chunks.append(ev.text)
+                        turn_streamed_chunks.append(ev.text)
                         await scope.emit(TextEvent(re=req.id, delta=ev.text))
                     elif isinstance(ev, AgentlingToolCallEvent):
                         if step_text_chunks:
-                            streamed_before_tools = "".join(step_text_chunks)
                             step_text_chunks.clear()
                         call = ev.tool_call
                         self._persist_session(interrupted=True)
-                        if call.name == "final_answer":
-                            continue
                         self._connectors.note_tool_used(call.name)
                         self._policy_session.enqueue_step_call(
                             call.id,
@@ -1498,16 +1514,6 @@ class AldwinHost:
                         )
                     elif isinstance(ev, AgentlingToolResultEvent):
                         res = ev.result
-                        if res.name == "final_answer":
-                            if not res.is_error:
-                                answer_text = str(res.content)
-                                if answer_text and answer_text != streamed_before_tools:
-                                    step_text_chunks.append(answer_text)
-                                    await scope.emit(
-                                        TextEvent(re=req.id, delta=answer_text)
-                                    )
-                            streamed_before_tools = ""
-                            continue
                         started = tool_start_times.pop(res.tool_call_id, None)
                         explicit_ms = getattr(res.content, "duration_ms", None)
                         if isinstance(explicit_ms, int):
@@ -1563,12 +1569,15 @@ class AldwinHost:
                         )
                     elif isinstance(ev, StepEvent):
                         step_text_chunks.clear()
-                        streamed_before_tools = ""
                         self._policy_session.clear_step_calls()
                         self._persist_session(interrupted=True)
                     elif isinstance(ev, FinalEvent):
                         final_status = ev.status
                         final_usage = ev.usage
+                        final_finish_reason = getattr(ev, "finish_reason", None)
+                        if ev.answer and not turn_streamed_chunks:
+                            step_text_chunks.append(ev.answer)
+                            await scope.emit(TextEvent(re=req.id, delta=ev.answer))
 
                 if final_status == "interrupted":
                     self._flush_partial_text(step_text_chunks)
@@ -1593,6 +1602,15 @@ class AldwinHost:
                     self._rebuild_agent_for_skills()
                     await scope.emit(NoticeEvent(re=req.id, message="skills reloaded"))
                     await scope.emit(self._skills_event(req.id))
+                if final_finish_reason == "length":
+                    await scope.emit(
+                        NoticeEvent(
+                            re=req.id,
+                            message=(
+                                "The answer was cut off by the model's length limit."
+                            ),
+                        )
+                    )
                 await scope.done(
                     reason,
                     usage=_to_token_usage(final_usage),
@@ -1601,7 +1619,6 @@ class AldwinHost:
 
             except asyncio.CancelledError:
                 self._approvals.cancel_all()
-                self._agent_session._interrupt.clear()
                 self._policy_session.clear_step_calls()
                 self._flush_partial_text(step_text_chunks)
                 self._persist_session(interrupted=False)
@@ -1610,7 +1627,6 @@ class AldwinHost:
                 raise
             except Exception as exc:
                 self._approvals.cancel_all()
-                self._agent_session._interrupt.clear()
                 self._policy_session.clear_step_calls()
                 logger.exception("Turn %s failed", req.id)
                 self._persist_session(interrupted=True)

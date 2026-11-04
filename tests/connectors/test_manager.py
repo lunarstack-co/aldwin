@@ -162,8 +162,11 @@ async def manager(
 def _names(specs: list[Any] | None) -> set[str]:
     out: set[str] = set()
     for spec in specs or []:
-        fn = spec.get("function", spec)
-        out.add(fn["name"])
+        if isinstance(spec, dict):
+            fn = spec.get("function", spec)
+            out.add(fn["name"])
+        else:
+            out.add(getattr(spec, "name", ""))
     return out
 
 

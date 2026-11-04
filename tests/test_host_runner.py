@@ -5,15 +5,20 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
-import httpx
-import openai
 import pytest
-from agentling import Agent, Tool, tool
+from agentling import (
+    Agent,
+    ModelAuthError,
+    ModelConnectionError,
+    ModelRateLimitError,
+    Tool,
+    Usage,
+    tool,
+)
 from agentling.errors import ModelError
 from agentling.memory import FinalStep
-from agentling.models import Usage
 from fakes.model import FakeModel, FakeTurn
 
 from aldwin.client import AldwinClient, ProtocolError
@@ -36,6 +41,7 @@ from aldwin.protocol import (
     Event,
     HelloRequest,
     HistoryRequest,
+    NoticeEvent,
     SetModelRequest,
     TextEvent,
     TokenUsage,
@@ -270,33 +276,17 @@ async def test_error_classification_saves_session_and_hides_tracebacks(
     ensure_home(aldwin_home)
     log_path = setup_logging(aldwin_home)
 
-    req = httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
-    resp_401 = httpx.Response(401, request=req)
-    resp_429 = httpx.Response(429, request=req)
-
     fake_model.add_turns(
-        FakeTurn.error(
-            openai.AuthenticationError(
-                "invalid api key",
-                response=cast(Any, resp_401),
-                body=None,
-            )
-        ),
-        FakeTurn.error(
-            openai.RateLimitError(
-                "rate limit",
-                response=cast(Any, resp_429),
-                body=None,
-            )
-        ),
-        FakeTurn.error(openai.APIConnectionError(request=cast(Any, req))),
+        FakeTurn.error(ModelAuthError("invalid api key")),
+        FakeTurn.error(ModelRateLimitError("rate limit")),
+        FakeTurn.error(ModelConnectionError("connection dropped")),
         FakeTurn.error(RuntimeError("secret_internal_details")),
     )
 
     transport = InProcessTransport()
     host = AldwinHost(
         transport,
-        agent_builder=lambda _m, _ask: Agent(model=fake_model),
+        agent_builder=lambda _m, _ask: Agent(model=fake_model, retry=None),
     )
     await host.start()
     client = AldwinClient(transport.connect())
@@ -776,6 +766,77 @@ async def test_turn_final_answer_with_streamed_prefix_does_not_duplicate(
         await host.stop_host()
 
 
+async def test_turn_length_finish_reason_emits_notice(
+    aldwin_home: Path,
+) -> None:
+    """An answer cut off by `finish_reason='length'` emits a notice before `done`."""
+    from agentling import Delta
+    from agentling.testing import ScriptedModel
+
+    ensure_home(aldwin_home)
+    scripted = ScriptedModel(
+        [
+            [
+                Delta(content="Partial text"),
+                Delta(
+                    finish_reason="length",
+                    usage=Usage(input_tokens=10, output_tokens=5),
+                ),
+            ]
+        ]
+    )
+    transport = InProcessTransport()
+    host = AldwinHost(
+        transport,
+        agent_builder=lambda _m, _ask: Agent(model=scripted),
+    )
+    await host.start()
+    client = AldwinClient(transport.connect())
+
+    try:
+        await client.connect()
+        events = await _collect_turn(client, "write essay")
+        notices = [ev.message for ev in events if isinstance(ev, NoticeEvent)]
+        assert notices == ["The answer was cut off by the model's length limit."]
+        assert isinstance(events[-1], DoneEvent)
+        assert events[-1].reason == "answered"
+    finally:
+        await client.close()
+        await host.stop_host()
+
+
+async def test_idle_interrupt_and_stop_do_not_abort_next_turn(
+    aldwin_home: Path,
+    fake_model: FakeModel,
+) -> None:
+    """An idle `interrupt()` or `stop` request does not abort the next turn."""
+    ensure_home(aldwin_home)
+    fake_model.add_turns(FakeTurn.text(["Normal answer."]))
+    transport = InProcessTransport()
+    host = AldwinHost(
+        transport,
+        agent_builder=lambda _m, _ask: Agent(model=fake_model),
+    )
+    await host.start()
+    client = AldwinClient(transport.connect())
+
+    try:
+        await client.connect()
+        host._agent_session.interrupt()
+        stop_reply = await client.stop()
+        assert isinstance(stop_reply, DoneEvent)
+        assert stop_reply.reason == "ok"
+
+        events = await _collect_turn(client, "hello")
+        texts = [ev.delta for ev in events if isinstance(ev, TextEvent)]
+        assert texts == ["Normal answer."]
+        assert isinstance(events[-1], DoneEvent)
+        assert events[-1].reason == "answered"
+    finally:
+        await client.close()
+        await host.stop_host()
+
+
 async def test_turn_malformed_final_answer_error_recovers(
     aldwin_home: Path,
     fake_model: FakeModel,
@@ -926,7 +987,7 @@ async def test_three_denials_in_one_turn_triggers_circuit_breaker_and_resets(
         assert turn1_events[-1].reason == "stopped"
 
         # Turn 2: count resets to 0
-        fake_model._turns.clear()
+        fake_model.clear_turns()
         fake_model.add_turns(
             FakeTurn.tool_call("run_command", {"command": "echo ok"}, call_id="c_ok"),
             FakeTurn.text(["Succeeded in turn 2."]),

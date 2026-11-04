@@ -139,17 +139,60 @@ def test_startup_never_loads_mcp_or_sign_in() -> None:
 
 
 def test_connector_dependencies_pinned() -> None:
-    """`TC-26`: Agentling 0.1.1 and `mcp` 2.x are pinned and `loopback` is a marker."""
+    """Agentling 0.2.x and `mcp` 2.x are pinned and `openai` is absent from lock."""
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text("utf-8"))
     deps = pyproject["project"]["dependencies"]
-    assert "agentling>=0.1.1,<0.2" in deps
+    assert "agentling>=0.2,<0.3" in deps
     assert "mcp>=2.3,<3" in deps
     markers = pyproject["tool"]["pytest"]["ini_options"]["markers"]
     assert any(m.startswith("loopback:") for m in markers)
 
     lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text("utf-8"))
     locked = {p["name"]: p["version"] for p in lock["package"]}
-    assert Version(locked["agentling"]) >= Version("0.1.1")
+    assert Version(locked["agentling"]) >= Version("0.2.0")
+    assert "openai" not in locked
+
+
+def test_no_openai_imported_in_src() -> None:
+    """No file under `src/aldwin` imports `openai`."""
+    violations: list[str] = []
+    for path in sorted(SRC_ALDWIN.rglob("*.py")):
+        tree = ast.parse(path.read_text("utf-8"), filename=str(path))
+        imported = _imported_modules(tree)
+        for mod in imported:
+            if mod == "openai" or mod.startswith("openai."):
+                violations.append(f"{path}: forbidden import {mod!r}")
+    assert violations == []
+
+
+def test_no_private_agentling_imports_in_src() -> None:
+    """No file under `src/aldwin` imports private Agentling modules or attributes."""
+    forbidden = ("agentling.models", "agentling.agent")
+    violations: list[str] = []
+    private_reach_in = re.compile(r"\._(interrupt|base_tools)\b")
+    for path in sorted(SRC_ALDWIN.rglob("*.py")):
+        text = path.read_text("utf-8")
+        tree = ast.parse(text, filename=str(path))
+        imported = _imported_modules(tree)
+        for target in forbidden:
+            if any(m == target or m.startswith(f"{target}.") for m in imported):
+                violations.append(f"{path}: forbidden import {target!r}")
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and (node.module == "agentling" or node.module.startswith("agentling."))
+            ):
+                for alias in node.names:
+                    if alias.name.startswith("_"):
+                        sym = f"{node.module}.{alias.name}"
+                        violations.append(f"{path}: forbidden private import {sym}")
+        for n, line in enumerate(text.splitlines(), 1):
+            if private_reach_in.search(line):
+                violations.append(
+                    f"{path}:{n}: forbidden reach-in to Agentling private attribute"
+                )
+    assert violations == []
 
 
 def test_no_private_validate_calls() -> None:
