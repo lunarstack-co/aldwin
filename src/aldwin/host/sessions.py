@@ -144,11 +144,12 @@ class SessionStore:
         now = _utc_now_iso()
         session_id = f"{_local_date_str()}_{uuid4().hex[:8]}"
         path = self.sessions_dir / f"{session_id}.json"
+        full_model = model if "/" in model else f"openai/{model}"
         meta = SessionMeta(
             id=session_id,
             created_at=now,
             updated_at=now,
-            model=model,
+            model=full_model,
             title="",
             interrupted=False,
         )
@@ -212,6 +213,10 @@ class SessionStore:
         loaded_sessions.sort(key=lambda item: (item[0], item[1]), reverse=True)
         return loaded_sessions[0][2]
 
+    def load_file(self, path: Path) -> StoredSession | None:
+        """Parse one session file, returning `None` if corrupt."""
+        return self._try_load_file(path)
+
     def _try_load_file(self, path: Path) -> StoredSession | None:
         """Parse one session file, logging a warning and returning `None` if corrupt."""
         try:
@@ -230,11 +235,13 @@ class SessionStore:
             else:
                 interrupted = _is_memory_interrupted(memory)
             turns = _normalise_turns_payload(raw_obj.get("turns"))
+            raw_model = str(raw_meta["model"])
+            full_model = raw_model if "/" in raw_model else f"openai/{raw_model}"
             meta = SessionMeta(
                 id=str(raw_meta["id"]),
                 created_at=str(raw_meta["created_at"]),
                 updated_at=str(raw_meta["updated_at"]),
-                model=str(raw_meta["model"]),
+                model=full_model,
                 title=str(raw_meta.get("title", ""))
                 or derive_session_title(memory, turns or None),
                 interrupted=interrupted,

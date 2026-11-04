@@ -13,7 +13,7 @@ from agentling import Agent, AgentSession, Memory, Model, RetryPolicy, Skill, To
 from aldwin.core.approval_log import ApprovalLogger
 from aldwin.core.context import build_context
 from aldwin.core.home import home_dir, read_base_instructions
-from aldwin.core.models import RetryCallback, build_openai_model
+from aldwin.core.models import RetryCallback
 from aldwin.core.policy import (
     ApprovalAnswer,
     ApprovalRequest,
@@ -24,9 +24,8 @@ from aldwin.core.policy import (
 )
 from aldwin.core.settings import (
     AldwinConfig,
+    ConfigError,
     SecretsConfig,
-    load_secrets,
-    resolve_key,
 )
 from aldwin.core.skills import build_task as build_task  # noqa: F401  # public re-export
 from aldwin.core.workspace import Workspace
@@ -315,22 +314,6 @@ def load_skills(skills_dir: Path) -> SkillLoadResult:
     return SkillLoadResult(valid=valid, invalid=invalid)
 
 
-def _resolve_openai_key(
-    secrets: SecretsConfig | None,
-    home: Path,
-) -> str | None:
-    """Resolve the OpenAI API key from environment first, then `secrets` or disk."""
-    resolved = resolve_key("openai", home)
-    if resolved.key:
-        return resolved.key
-    if secrets is not None:
-        direct = secrets.get_secret("openai")
-        if direct:
-            return direct
-    loaded = load_secrets(home)
-    return loaded.get_secret("openai")
-
-
 def build_agent(
     config: AldwinConfig,
     secrets: SecretsConfig | None = None,
@@ -369,11 +352,33 @@ def build_agent(
     if model is not None:
         active_model: Model = model
     else:
-        api_key = _resolve_openai_key(secrets, root)
-        active_model = build_openai_model(
-            config.model,
-            api_key=api_key,
+        from aldwin.core.providers import (
+            get_backend,
+            get_provider,
+            parse_model_ref,
+            resolve_provider_key,
         )
+
+        model_ref = parse_model_ref(config.model)
+        provider_entry = get_provider(model_ref.provider, config)
+        if provider_entry is None:
+            raise ConfigError(
+                Path("config.yaml"),
+                field="model",
+                expected=f"a known provider (got {model_ref.provider!r})",
+            )
+        if provider_entry.secret and not provider_entry.local:
+            api_key = resolve_provider_key(provider_entry, secrets=secrets, home=root)
+            if not api_key:
+                env_name = provider_entry.env_var or provider_entry.secret.upper()
+                msg = (
+                    f"No API key for {provider_entry.title}. "
+                    f"Run `aldwin setup` or set {env_name}."
+                )
+                raise ConfigError(file=Path("config.yaml"), field="model", message=msg)
+
+        backend = get_backend(provider_entry, config=config, secrets=secrets, home=root)
+        active_model = backend.build_model(model_ref.model)
 
     active_ctx: SessionContext | None = None
     if tools is not None:

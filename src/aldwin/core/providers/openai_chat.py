@@ -1,17 +1,20 @@
-"""A model adapter for OpenAI-compatible chat-completions endpoints.
+"""A model adapter and backend for OpenAI-compatible chat-completions endpoints.
 
 Works with OpenAI and with servers that copy its API (LM Studio, vLLM, Ollama's
-/v1, OpenRouter and others): point `base_url` at them. Streams text and tool
-calls over httpx and maps HTTP failures to Agentling's ModelError classes. It
-never retries; the agent loop does.
+/v1, OpenRouter, Google Gemini OpenAI-compat, DeepSeek, and others): point
+`base_url` at them. Streams text, reasoning, and tool calls over httpx and maps
+HTTP failures to Agentling's ModelError classes. It never retries; the agent
+loop does.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 from collections.abc import AsyncIterator, Sequence
-from typing import Any
+from typing import Any, Final
+from urllib.parse import urlsplit
 
 import httpx
 from agentling import (
@@ -31,7 +34,47 @@ from agentling import (
     Usage,
 )
 
-_FINISH_REASONS: dict[str, FinishReason] = {
+from aldwin.core.providers.base import AccessStatus, ModelInfo
+from aldwin.core.providers.registry import ProviderEntry, is_loopback_host
+
+logger = logging.getLogger("aldwin.core.providers.openai_chat")
+
+_CHAT_MODEL_PREFIXES: Final[tuple[str, ...]] = (
+    "gpt-4o",
+    "gpt-4.1",
+    "gpt-5",
+    "o1",
+    "o3",
+    "o4",
+    "chatgpt-",
+)
+
+_NON_CHAT_MARKERS: Final[tuple[str, ...]] = (
+    "embedding",
+    "whisper",
+    "tts",
+    "dall-e",
+    "moderation",
+    "realtime",
+    "audio",
+    "transcribe",
+    "search",
+    "image",
+    "instruct",
+    "babbage",
+    "davinci",
+)
+
+
+def is_chat_model(model_id: str) -> bool:
+    """Return `True` if `model_id` is an OpenAI chat-completions model."""
+    lowered = model_id.strip().lower()
+    if not lowered or not lowered.startswith(_CHAT_MODEL_PREFIXES):
+        return False
+    return not any(marker in lowered for marker in _NON_CHAT_MARKERS)
+
+
+_FINISH_REASONS: Final[dict[str, FinishReason]] = {
     "stop": "stop",
     "tool_calls": "tool_calls",
     "function_call": "tool_calls",
@@ -39,6 +82,9 @@ _FINISH_REASONS: dict[str, FinishReason] = {
     "content_filter": "content_filter",
     "error": "error",
 }
+
+# Base URLs confirmed to reject the stream_options parameter.
+_BASE_URLS_WITHOUT_STREAM_OPTIONS: set[str] = set()
 
 
 class OpenAIChatModel:
@@ -53,6 +99,7 @@ class OpenAIChatModel:
         timeout: float = 60.0,
         transport: httpx.AsyncBaseTransport | None = None,
         extra_body: dict[str, Any] | None = None,
+        local: bool = False,
     ) -> None:
         """Create the adapter.
 
@@ -67,6 +114,7 @@ class OpenAIChatModel:
             extra_body: Fields merged into every request body last, so they
                 win: sampling settings such as temperature, or a
                 server's own options.
+            local: Whether the model runs locally.
         """
         self.model = model
         self.api_key = (
@@ -76,6 +124,26 @@ class OpenAIChatModel:
         self.timeout = timeout
         self.transport = transport
         self.extra_body = dict(extra_body or {})
+        self.local = local
+
+    def _build_headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        if "openrouter.ai" in self.base_url.lower():
+            headers["HTTP-Referer"] = "https://askaldwin.com"
+            headers["X-Title"] = "Aldwin"
+        return headers
+
+    def _is_local_connection(self) -> bool:
+        if self.local:
+            return True
+        try:
+            parsed = urlsplit(self.base_url)
+            host = parsed.hostname or ""
+            return is_loopback_host(host)
+        except Exception:
+            return False
 
     async def stream(
         self,
@@ -83,42 +151,97 @@ class OpenAIChatModel:
         tools: Sequence[ToolDefinition] = (),
     ) -> AsyncIterator[Delta]:
         """Stream one assistant turn as Deltas."""
-        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        headers = self._build_headers()
+        url_key = self.base_url.rstrip("/").lower()
+        include_stream_options = url_key not in _BASE_URLS_WITHOUT_STREAM_OPTIONS
         decoder = _TurnDecoder()
+
         try:
             async with httpx.AsyncClient(
                 transport=self.transport, timeout=self.timeout
             ) as client:
+                body = {
+                    **request_body(
+                        self.model,
+                        messages,
+                        tools,
+                        include_stream_options=include_stream_options,
+                    ),
+                    **self.extra_body,
+                }
+                retry_without_stream_options = False
                 async with client.stream(
                     "POST",
                     f"{self.base_url}/chat/completions",
-                    json={
-                        **request_body(self.model, messages, tools),
-                        **self.extra_body,
-                    },
+                    json=body,
                     headers=headers,
                 ) as response:
-                    if response.status_code != 200:
+                    if response.status_code == 400 and include_stream_options:
+                        error_bytes = await response.aread()
+                        error_text = error_bytes.decode(errors="replace")
+                        if "stream_options" in error_text:
+                            _BASE_URLS_WITHOUT_STREAM_OPTIONS.add(url_key)
+                            retry_without_stream_options = True
+                        else:
+                            raise error_for_response(response)
+                    elif response.status_code != 200:
                         await response.aread()
                         raise error_for_response(response)
-                    async for line in response.aiter_lines():
-                        delta = decoder.decode(line)
-                        if delta is not None:
-                            yield delta
-                    if not decoder.saw_event:
-                        content_type = response.headers.get("content-type", "none")
-                        raise ModelServerError(
-                            "The endpoint answered without an event stream "
-                            f"(Content-Type: {content_type}). Check that base_url "
-                            "points at an OpenAI-compatible API, usually ending "
-                            "in /v1.",
-                            retryable=False,
-                        )
+                    else:
+                        async for line in response.aiter_lines():
+                            delta = decoder.decode(line)
+                            if delta is not None:
+                                yield delta
+
+                        if not decoder.saw_event:
+                            content_type = response.headers.get("content-type", "none")
+                            raise ModelServerError(
+                                "The endpoint answered without an event stream "
+                                f"(Content-Type: {content_type}). Check that base_url "
+                                "points at an OpenAI-compatible API, usually ending in "
+                                "/v1.",
+                                retryable=False,
+                            )
+
+                if retry_without_stream_options:
+                    retry_body = {
+                        **request_body(
+                            self.model,
+                            messages,
+                            tools,
+                            include_stream_options=False,
+                        ),
+                        **self.extra_body,
+                    }
+                    async with client.stream(
+                        "POST",
+                        f"{self.base_url}/chat/completions",
+                        json=retry_body,
+                        headers=headers,
+                    ) as retry_response:
+                        if retry_response.status_code != 200:
+                            await retry_response.aread()
+                            raise error_for_response(retry_response)
+                        async for line in retry_response.aiter_lines():
+                            delta = decoder.decode(line)
+                            if delta is not None:
+                                yield delta
+                        if not decoder.saw_event:
+                            content_type = retry_response.headers.get(
+                                "content-type", "none"
+                            )
+                            raise ModelServerError(
+                                "The endpoint answered without an event stream "
+                                f"(Content-Type: {content_type}). Check that "
+                                "base_url points at an OpenAI-compatible API, "
+                                "usually ending in /v1.",
+                                retryable=False,
+                            )
         except httpx.TimeoutException as exc:
             raise ModelTimeoutError(f"Request timed out: {exc}") from exc
         except httpx.TransportError as exc:
-            raise ModelConnectionError(
-                f"Could not reach {self.base_url}: {exc}"
+            raise _connection_error(
+                self.base_url, exc, self._is_local_connection()
             ) from exc
         except httpx.HTTPError as exc:
             raise ModelServerError(f"Bad response from {self.base_url}: {exc}") from exc
@@ -128,14 +251,17 @@ def request_body(
     model: str,
     messages: Sequence[ChatMessage],
     tools: Sequence[ToolDefinition],
+    *,
+    include_stream_options: bool = True,
 ) -> dict[str, Any]:
     """Build the chat-completions request for one streamed turn."""
     body: dict[str, Any] = {
         "model": model,
         "messages": [_wire_message(message) for message in messages],
         "stream": True,
-        "stream_options": {"include_usage": True},
     }
+    if include_stream_options:
+        body["stream_options"] = {"include_usage": True}
     if tools:
         body["tools"] = [
             {
@@ -178,11 +304,7 @@ def _wire_message(message: ChatMessage) -> dict[str, Any]:
 
 
 class _TurnDecoder:
-    """Turns one turn's server-sent-event lines into Deltas.
-
-    Remembers whether any event arrived, and which tool call a fragment
-    belongs to when the server leaves out `index`.
-    """
+    """Turns one turn's server-sent-event lines into Deltas."""
 
     def __init__(self) -> None:
         self.saw_event = False
@@ -212,11 +334,6 @@ class _TurnDecoder:
         return self._delta(chunk)
 
     def _delta(self, chunk: dict[str, Any]) -> Delta | None:
-        """Convert a parsed chunk, dropping ones that carry nothing.
-
-        The first chunk usually holds only the role. The loop stops retrying
-        once any Delta arrives, so an empty one must not be yielded.
-        """
         choices = chunk.get("choices") or []
         choice: dict[str, Any] = choices[0] if choices else {}
         wire_delta: dict[str, Any] = choice.get("delta") or {}
@@ -256,12 +373,6 @@ class _TurnDecoder:
         )
 
     def _index_for(self, index: object, call_id: str | None, name: str | None) -> int:
-        """The fragment's call index, or a stand-in when the server sends none.
-
-        Without an index, a fragment with an id this turn hasn't seen, or with
-        a name and no id, starts the next call. Anything else continues the
-        latest call.
-        """
         if isinstance(index, int):
             if call_id is not None:
                 self._call_by_id.setdefault(call_id, index)
@@ -278,7 +389,6 @@ class _TurnDecoder:
 
 
 def _usage(raw: dict[str, Any]) -> Usage:
-    """Read token counts, including the optional detail breakdowns."""
     prompt_details = raw.get("prompt_tokens_details") or {}
     completion_details = raw.get("completion_tokens_details") or {}
     return Usage(
@@ -287,6 +397,17 @@ def _usage(raw: dict[str, Any]) -> Usage:
         cached_input_tokens=prompt_details.get("cached_tokens") or 0,
         reasoning_tokens=completion_details.get("reasoning_tokens") or 0,
     )
+
+
+def _connection_error(
+    base_url: str, exc: Exception, is_local: bool
+) -> ModelConnectionError:
+    err = ModelConnectionError(
+        f"Could not reach {base_url}: {exc}",
+        retryable=not is_local,
+    )
+    setattr(err, "local", is_local)
+    return err
 
 
 def error_for_response(response: httpx.Response) -> ModelError:
@@ -306,7 +427,6 @@ def error_for_response(response: httpx.Response) -> ModelError:
 
 
 def _stream_error(error: object) -> ModelError:
-    """Classify an error the endpoint reported inside the stream."""
     if not isinstance(error, dict):
         return ModelServerError(f"The model endpoint reported: {str(error)[:200]}")
     message = str(error.get("message") or "an error with no message")[:200]
@@ -319,7 +439,6 @@ def _stream_error(error: object) -> ModelError:
 def _classify(
     status: int, message: str, body: str, retry_after: float | None
 ) -> ModelError:
-    """Pick the ModelError class for a status code and its error body."""
     message = f"HTTP {status} from the model endpoint: {message}"
     if status in (401, 403) or "API_KEY_INVALID" in body:
         return ModelAuthError(message, status=status)
@@ -333,7 +452,6 @@ def _classify(
 
 
 def _error_text(response: httpx.Response) -> str:
-    """The backend's own error message, or a short excerpt of the body."""
     try:
         payload = response.json()
     except ValueError:
@@ -348,8 +466,150 @@ def _error_text(response: httpx.Response) -> str:
 
 
 def _retry_after(response: httpx.Response) -> float | None:
-    """Read Retry-After in seconds, never below zero. HTTP dates are ignored."""
     try:
         return max(0.0, float(response.headers["retry-after"]))
     except (KeyError, ValueError):
+        return None
+
+
+class OpenAIChatBackend:
+    """Backend managing OpenAI-compatible endpoints."""
+
+    def __init__(
+        self,
+        entry: ProviderEntry,
+        api_key: str | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
+        timeout: float = 60.0,
+    ) -> None:
+        self.entry = entry
+        self.api_key = api_key
+        self.transport = transport
+        self.timeout = timeout
+        self.base_url = entry.base_url.rstrip("/")
+
+    def build_model(self, model_id: str) -> OpenAIChatModel:
+        return OpenAIChatModel(
+            model=model_id,
+            api_key=self.api_key,
+            base_url=self.base_url,
+            timeout=self.timeout,
+            transport=self.transport,
+            local=self.entry.local,
+        )
+
+    def _build_headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        if "openrouter.ai" in self.base_url.lower():
+            headers["HTTP-Referer"] = "https://askaldwin.com"
+            headers["X-Title"] = "Aldwin"
+        return headers
+
+    async def list_models(self) -> list[ModelInfo]:
+        """Fetch models from GET /models."""
+        headers = self._build_headers()
+        try:
+            async with httpx.AsyncClient(
+                transport=self.transport, timeout=self.timeout
+            ) as client:
+                resp = await client.get(f"{self.base_url}/models", headers=headers)
+                if resp.status_code != 200:
+                    raise error_for_response(resp)
+                data = resp.json()
+        except httpx.TimeoutException as exc:
+            raise ModelTimeoutError(f"Request timed out: {exc}") from exc
+        except httpx.TransportError as exc:
+            is_local = self.entry.local or is_loopback_host(
+                urlsplit(self.base_url).hostname or ""
+            )
+            raise _connection_error(self.base_url, exc, is_local) from exc
+
+        raw_models = data.get("data", []) if isinstance(data, dict) else []
+        results: list[ModelInfo] = []
+        is_openai_provider = self.entry.name.lower() == "openai"
+        is_lmstudio = self.entry.name.lower() == "lmstudio"
+
+        if is_openai_provider:
+            # Sort newest first by created timestamp (tie-broken alphabetically by ID)
+            by_id: dict[str, tuple[int, dict[str, Any]]] = {}
+            for item in raw_models:
+                if not isinstance(item, dict):
+                    continue
+                mid = str(item.get("id", "")).strip()
+                if not mid or not is_chat_model(mid):
+                    continue
+                created_raw = item.get("created", 0)
+                created = (
+                    int(created_raw) if isinstance(created_raw, (int, float)) else 0
+                )
+                if mid not in by_id or created > by_id[mid][0]:
+                    by_id[mid] = (created, item)
+            sorted_items = [
+                pair[1][1]
+                for pair in sorted(by_id.items(), key=lambda p: (-p[1][0], p[0]))
+            ]
+            raw_models = sorted_items
+
+        for item in raw_models:
+            if not isinstance(item, dict):
+                continue
+            model_id = item.get("id")
+            if not model_id or not isinstance(model_id, str):
+                continue
+
+            if is_openai_provider and not is_chat_model(model_id):
+                continue
+
+            supports_tools = True
+            if is_lmstudio:
+                capabilities = item.get("capabilities") or {}
+                if (
+                    isinstance(capabilities, dict)
+                    and "trained_for_tool_use" in capabilities
+                ):
+                    supports_tools = bool(capabilities["trained_for_tool_use"])
+
+            title = item.get("name") or model_id
+            results.append(
+                ModelInfo(
+                    id=model_id,
+                    title=str(title),
+                    context_window=128000,
+                    supports_tools=supports_tools,
+                    local=self.entry.local,
+                )
+            )
+        return results
+
+    async def check_access(self) -> AccessStatus:
+        """Verify reachability and credentials."""
+        try:
+            models = await self.list_models()
+            if not models and self.entry.name.lower() == "openai":
+                return AccessStatus.NO_ACCESS
+            return AccessStatus.OK
+        except ModelAuthError as exc:
+            if exc.status == 403 or "403" in str(exc):
+                return AccessStatus.NO_ACCESS
+            return AccessStatus.INVALID_KEY
+        except ModelConnectionError as exc:
+            if getattr(exc, "local", False) or self.entry.local:
+                return AccessStatus.NOT_RUNNING
+            return AccessStatus.UNREACHABLE
+        except (ModelTimeoutError, ModelServerError, ModelBadRequestError):
+            return AccessStatus.UNREACHABLE
+        except Exception:
+            return AccessStatus.UNREACHABLE
+
+    async def describe_model(self, model_id: str) -> ModelInfo | None:
+        """Return model metadata from model list, or None if unavailable."""
+        try:
+            models = await self.list_models()
+        except Exception:
+            return None
+        for m in models:
+            if m.id == model_id:
+                return m
         return None

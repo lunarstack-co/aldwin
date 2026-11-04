@@ -23,7 +23,11 @@ from agentling import (
 )
 
 from aldwin.core.logging import _redact_text
-from aldwin.core.providers.openai_chat import OpenAIChatModel, error_for_response
+from aldwin.core.providers.openai_chat import (
+    OpenAIChatModel,
+    error_for_response,
+    is_chat_model,
+)
 
 logger = logging.getLogger("aldwin.core.models")
 
@@ -43,32 +47,6 @@ _TOO_MANY_TOOLS_RE: Final[re.Pattern[str]] = re.compile(
     r"'tools'.*maximum length (\d+), but got an array with length (\d+)"
 )
 
-_CHAT_MODEL_PREFIXES: Final[tuple[str, ...]] = (
-    "gpt-4o",
-    "gpt-4.1",
-    "gpt-5",
-    "o1",
-    "o3",
-    "o4",
-    "chatgpt-",
-)
-
-_NON_CHAT_MARKERS: Final[tuple[str, ...]] = (
-    "embedding",
-    "whisper",
-    "tts",
-    "dall-e",
-    "moderation",
-    "realtime",
-    "audio",
-    "transcribe",
-    "search",
-    "image",
-    "instruct",
-    "babbage",
-    "davinci",
-)
-
 RetryCallback = Callable[[int, int, BaseException, float], Awaitable[None] | None]
 
 
@@ -79,14 +57,6 @@ class KeyStatus(StrEnum):
     INVALID = "invalid"
     NO_ACCESS = "no_access"
     NETWORK_ERROR = "network_error"
-
-
-def is_chat_model(model_id: str) -> bool:
-    """Return `True` if `model_id` is an OpenAI chat-completions model."""
-    lowered = model_id.strip().lower()
-    if not lowered or not lowered.startswith(_CHAT_MODEL_PREFIXES):
-        return False
-    return not any(marker in lowered for marker in _NON_CHAT_MARKERS)
 
 
 async def list_chat_models(
@@ -106,38 +76,51 @@ async def list_chat_models(
         raise ValueError("API key must not be empty.")
 
     root_url = (base_url or "https://api.openai.com/v1").rstrip("/")
+
+    if client is None:
+        from aldwin.core.providers.openai_chat import OpenAIChatBackend
+        from aldwin.core.providers.registry import ProviderEntry
+
+        entry = ProviderEntry(
+            name="openai",
+            title="OpenAI",
+            shape="openai_chat",
+            base_url=root_url,
+            secret="openai_api_key",
+            local=False,
+            docs_url="",
+        )
+        backend = OpenAIChatBackend(
+            entry,
+            api_key=cleaned_key,
+            transport=transport,
+            timeout=timeout,
+        )
+        infos = await backend.list_models()
+        return [m.id for m in infos]
+
     headers = {"Authorization": f"Bearer {cleaned_key}"}
-
-    owns_client = client is None
-    active_client = client or httpx.AsyncClient(transport=transport, timeout=timeout)
     try:
-        try:
-            async with asyncio.timeout(timeout):
-                response = await active_client.get(
-                    f"{root_url}/models", headers=headers
-                )
-        except TimeoutError as exc:
-            raise ModelTimeoutError(f"Request timed out: {exc}") from exc
-        except httpx.TimeoutException as exc:
-            raise ModelTimeoutError(f"Request timed out: {exc}") from exc
-        except httpx.TransportError as exc:
-            raise ModelConnectionError(f"Could not reach {root_url}: {exc}") from exc
-        except httpx.HTTPError as exc:
-            raise ModelServerError(f"Bad response from {root_url}: {exc}") from exc
+        async with asyncio.timeout(timeout):
+            response = await client.get(f"{root_url}/models", headers=headers)
+    except TimeoutError as exc:
+        raise ModelTimeoutError(f"Request timed out: {exc}") from exc
+    except httpx.TimeoutException as exc:
+        raise ModelTimeoutError(f"Request timed out: {exc}") from exc
+    except httpx.TransportError as exc:
+        raise ModelConnectionError(f"Could not reach {root_url}: {exc}") from exc
+    except httpx.HTTPError as exc:
+        raise ModelServerError(f"Bad response from {root_url}: {exc}") from exc
 
-        if response.status_code != 200:
-            raise error_for_response(response)
+    if response.status_code != 200:
+        raise error_for_response(response)
 
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            raise ModelServerError(
-                f"Invalid JSON from {root_url}/models: {response.text[:200]!r}"
-            ) from exc
-
-    finally:
-        if owns_client:
-            await active_client.aclose()
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise ModelServerError(
+            f"Invalid JSON from {root_url}/models: {response.text[:200]!r}"
+        ) from exc
 
     raw_items: Sequence[Any] = (
         payload.get("data", []) if isinstance(payload, dict) else []
@@ -175,6 +158,36 @@ async def check_key(
     cleaned_key = api_key.strip()
     if not cleaned_key:
         return KeyStatus.INVALID
+
+    if client is None:
+        from aldwin.core.providers.base import AccessStatus
+        from aldwin.core.providers.openai_chat import OpenAIChatBackend
+        from aldwin.core.providers.registry import ProviderEntry
+
+        root_url = (base_url or "https://api.openai.com/v1").rstrip("/")
+        entry = ProviderEntry(
+            name="openai",
+            title="OpenAI",
+            shape="openai_chat",
+            base_url=root_url,
+            secret="openai_api_key",
+            local=False,
+            docs_url="",
+        )
+        backend = OpenAIChatBackend(
+            entry,
+            api_key=cleaned_key,
+            transport=transport,
+            timeout=timeout,
+        )
+        access = await backend.check_access()
+        if access == AccessStatus.OK:
+            return KeyStatus.OK
+        if access == AccessStatus.NO_ACCESS:
+            return KeyStatus.NO_ACCESS
+        if access == AccessStatus.INVALID_KEY:
+            return KeyStatus.INVALID
+        return KeyStatus.NETWORK_ERROR
 
     try:
         models = await list_chat_models(

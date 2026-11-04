@@ -24,7 +24,7 @@ from fakes.model import FakeModel, FakeTurn
 from aldwin.client import AldwinClient, ProtocolError
 from aldwin.core.home import ensure_home
 from aldwin.core.logging import setup_logging
-from aldwin.core.settings import load_config
+from aldwin.core.settings import SecretsConfig, load_config, save_secrets
 from aldwin.core.workspace import DEFAULT_WORKSPACE_DIRNAME
 from aldwin.host import (
     AldwinHost,
@@ -902,6 +902,7 @@ async def test_approve_with_mismatched_digest_is_ignored_and_logged(
 ) -> None:
     """Right `approval_id` with wrong `digest` is ignored and logged."""
     ensure_home(aldwin_home)
+    save_secrets(SecretsConfig(openai_api_key="sk-test"), home=aldwin_home)
     ws_dir = tmp_path / "ws"
     ws_dir.mkdir()
 
@@ -955,6 +956,7 @@ async def test_three_denials_in_one_turn_triggers_circuit_breaker_and_resets(
 ) -> None:
     """Three denials in one turn stop the turn; count resets on next turn."""
     ensure_home(aldwin_home)
+    save_secrets(SecretsConfig(openai_api_key="sk-test"), home=aldwin_home)
     ws_dir = tmp_path / "ws"
     ws_dir.mkdir()
 
@@ -1013,6 +1015,7 @@ async def test_v1_door_diff_denied_ask_works_and_disconnect_denies(
 ) -> None:
     """v1 door denies Diff, allows Ask, and disconnect denies."""
     ensure_home(aldwin_home)
+    save_secrets(SecretsConfig(openai_api_key="sk-test"), home=aldwin_home)
     ws_dir = tmp_path / "ws"
     ws_dir.mkdir()
 
@@ -1092,6 +1095,7 @@ async def test_batch_step_decline_second_edit_runs_no_tools_in_step(
     from aldwin.core.tools import ToolOutput
 
     ensure_home(aldwin_home)
+    save_secrets(SecretsConfig(openai_api_key="sk-test"), home=aldwin_home)
     ws_dir = tmp_path / "ws"
     ws_dir.mkdir()
     (ws_dir / "a.txt").write_text("a0", encoding="utf-8")
@@ -1174,6 +1178,7 @@ def test_host_falls_back_to_aldwin_workspace_when_cwd_is_user_home(
     aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Building the host from `~` uses the fallback root instead of raising."""
+    save_secrets(SecretsConfig(openai_api_key="sk-test"), home=aldwin_home)
     monkeypatch.chdir(Path.home())
 
     host = AldwinHost(InProcessTransport())
@@ -1188,6 +1193,7 @@ def test_host_accepts_the_root_bootstrap_chose_from_user_home(
     """The root `bootstrap_host` picks from `~` must construct a host without error."""
     from aldwin.host.in_process import bootstrap_host
 
+    save_secrets(SecretsConfig(openai_api_key="sk-test"), home=aldwin_home)
     monkeypatch.chdir(Path.home())
     boot = bootstrap_host(plain=True)
 

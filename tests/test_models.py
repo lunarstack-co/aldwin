@@ -364,6 +364,11 @@ async def test_list_chat_models_and_check_key() -> None:
     assert is_chat_model("gpt-4o") is True
     assert is_chat_model("text-embedding-3-small") is False
 
+    async with httpx.AsyncClient(transport=t_ok) as client:
+        client_models = await list_chat_models("sk-test", client=client)
+        assert client_models == ["gpt-4.1", "o3-mini", "gpt-4o"]
+        assert await check_key("sk-test", client=client) == KeyStatus.OK
+
     assert await check_key("sk-test", transport=t_ok) == KeyStatus.OK
 
     assert await check_key("") == KeyStatus.INVALID

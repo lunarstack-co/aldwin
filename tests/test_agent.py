@@ -233,7 +233,7 @@ def test_build_and_rebuild_agent_default_openai_model_and_validation(
 
     rebuilt, updated = rebuild_agent(
         AldwinConfig(model="gpt-4o"),
-        None,
+        secrets,
         None,
         "gpt-4.1",
         home=aldwin_home,
