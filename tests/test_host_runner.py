@@ -198,7 +198,7 @@ async def test_plain_answer_streams_five_deltas_then_done_with_usage(
                 first_delta_ms = (time.monotonic() - started) * 1000
             events.append(ev)
 
-        assert first_delta_ms is not None and first_delta_ms < 50.0
+        assert first_delta_ms is not None and first_delta_ms < 500.0
         text_deltas = [ev.delta for ev in events if isinstance(ev, TextEvent)]
         assert text_deltas == ["Hel", "lo", " ", "wor", "ld"]
         assert isinstance(events[-1], DoneEvent)

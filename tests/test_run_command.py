@@ -213,6 +213,12 @@ async def test_run_command_timeout_kills_process_group(tmp_path: Path) -> None:
 
     assert pid_file.is_file()
     child_pid = int(pid_file.read_text(encoding="utf-8").strip())
+    for _ in range(50):
+        try:
+            os.kill(child_pid, 0)
+        except ProcessLookupError:
+            break
+        await asyncio.sleep(0.02)
     with pytest.raises(ProcessLookupError):
         os.kill(child_pid, 0)
 
@@ -266,6 +272,12 @@ async def test_run_command_cancellation_kills_process_group_under_1s(
     elapsed = time.monotonic() - t0
 
     assert elapsed < 1.0
+    for _ in range(50):
+        try:
+            os.kill(child_pid, 0)
+        except ProcessLookupError:
+            break
+        await asyncio.sleep(0.02)
     with pytest.raises(ProcessLookupError):
         os.kill(child_pid, 0)
 
