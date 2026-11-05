@@ -4,11 +4,23 @@ Aldwin collects no analytics or telemetry. Everything it stores lives in one fol
 
 ## What leaves your computer
 
-- **To OpenAI:** your prompts, the last 20 conversation exchanges, your profile and recent daily notes (within their character caps), and the contents of any file, document, or page Aldwin reads for the turn.
+- **To OpenAI or other cloud model providers:** when using a cloud model, your prompts, conversation exchanges, your profile and daily notes (within character caps), and the contents of any file, document, or page Aldwin reads for the turn.
 - **To Tavily and websites:** when `web_search` or `web_fetch` runs, search queries go to Tavily and HTTP GET requests go to the target URL.
 - **To PyPI:** on launch, Aldwin may fetch public project metadata from `https://pypi.org/pypi/aldwin/json` to tell you an update is available. No user id, keys, or home path are sent. Set `check_for_updates: false` in `config.yaml` to turn this off.
 
 Everything else under `~/.aldwin` stays on your computer, including your API keys, the approval log, the memory index, and saved conversations.
+
+## Fully local
+
+When you use a local model on a loopback address (`127.0.0.1`, `localhost`, `::1`), such as Ollama or LM Studio:
+
+- **Zero conversation data leaves your machine:** prompts, messages, memory, and file contents are sent strictly over loopback to the model server running on your computer.
+- **Outbound network features:**
+  - `web_search`: sends search queries to Tavily only when explicitly configured and called.
+  - `web_fetch` and `download_file`: make HTTP GET requests to target URLs only when invoked.
+  - Remote MCP connectors: talk to their configured remote server URLs.
+  - PyPI update check: set `check_for_updates: false` in `~/.aldwin/config.yaml` to disable the startup version check.
+- When `check_for_updates: false` is set and web tools or remote connectors are not used, Aldwin operates in a complete air-gapped, zero-outbound-network posture.
 
 ## The home folder
 

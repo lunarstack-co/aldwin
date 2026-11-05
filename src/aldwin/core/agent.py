@@ -11,7 +11,7 @@ from typing import Final
 from agentling import Agent, AgentSession, Memory, Model, RetryPolicy, Skill, Tool
 
 from aldwin.core.approval_log import ApprovalLogger
-from aldwin.core.context import build_context
+from aldwin.core.context import LOCAL_TRIMS, build_context
 from aldwin.core.home import home_dir, read_base_instructions
 from aldwin.core.models import RetryCallback
 from aldwin.core.policy import (
@@ -331,6 +331,7 @@ def build_agent(
     host_flags: dict[str, bool] | None = None,
     connectors_block: Callable[[], str] | None = None,
     session_context: SessionContext | None = None,
+    notice_emitter: Callable[[str], None] | None = None,
 ) -> Agent:
     """Assemble Aldwin's `Agent` from `config`, `secrets`, and `ask`."""
     import aldwin
@@ -349,6 +350,7 @@ def build_agent(
         except Exception:
             active_ws = None
 
+    provider_entry = None
     if model is not None:
         active_model: Model = model
     else:
@@ -456,11 +458,20 @@ def build_agent(
     ws_for_context: Callable[[], Path | str] | Path | None = (
         (lambda: active_ws.root) if active_ws is not None else None
     )
+    is_local_provider = getattr(active_model, "local", False)
+    if not is_local_provider and provider_entry is not None:
+        is_local_provider = provider_entry.local
+    ctx_window = getattr(active_model, "context_window", None)
+    effective_limits = LOCAL_TRIMS if is_local_provider else config.limits
     context_manager = build_context(
         root,
-        config.limits,
+        effective_limits,
         workspace=ws_for_context,
         connectors_block=connectors_block,
+        is_local=is_local_provider,
+        context_window=ctx_window,
+        notice_emitter=notice_emitter,
+        model_id=model_ref.model if "model_ref" in locals() else None,
     )
 
     agent = Agent(
@@ -468,7 +479,7 @@ def build_agent(
         tools=active_tools,
         skills=skill_list,
         instructions=load_base_instructions(),
-        max_steps=config.limits.max_steps,
+        max_steps=effective_limits.max_steps,
         tool_timeout=DEFAULT_TOOL_TIMEOUT,
         max_tool_output_chars=DEFAULT_MAX_TOOL_OUTPUT_CHARS,
         context_manager=context_manager,

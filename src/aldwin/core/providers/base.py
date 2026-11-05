@@ -27,7 +27,7 @@ class ModelInfo:
     id: str
     title: str
     context_window: int
-    supports_tools: bool
+    supports_tools: bool | None
     local: bool
 
 

@@ -34,7 +34,8 @@ from aldwin.core.memory import (
 )
 from aldwin.core.persona import PersonaSummary, persona_summary, persona_text
 from aldwin.core.policy import sanitize_display_text
-from aldwin.core.providers.base import AccessStatus
+from aldwin.core.providers.base import AccessStatus, ModelInfo
+from aldwin.core.providers.discovery import LocalProviderStatus
 from aldwin.core.settings import (
     ConfigError,
     KeySource,
@@ -87,6 +88,9 @@ class OnboardingStatus:
     tavily_source: KeySource
     masked_tavily_key: str
     model: str
+    provider: str = "openai"
+    has_provider_key: bool = True
+    is_local: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,11 +135,23 @@ class SkillsReport:
 
 
 def get_onboarding_status(home: Path | None = None) -> OnboardingStatus:
-    """Inspect whether usable OpenAI/Tavily keys exist and return masked metadata."""
+    """Inspect whether usable keys and models exist and return masked metadata."""
+    from aldwin.core.providers.registry import get_provider, parse_model_ref
+
     root = (home if home is not None else home_dir()).expanduser().resolve()
     config = load_config(root)
     openai_res = resolve_key("openai", root)
     tavily_res = resolve_key("tavily", root)
+
+    ref = parse_model_ref(config.model)
+    entry = get_provider(ref.provider, config)
+    is_local = entry.local if entry is not None else False
+    if entry is not None and entry.secret:
+        prov_res = resolve_key(entry.name, root)
+        has_provider_key = bool(prov_res.key)
+    else:
+        has_provider_key = True
+
     return OnboardingStatus(
         has_openai_key=bool(openai_res.key),
         openai_source=openai_res.source,
@@ -144,6 +160,9 @@ def get_onboarding_status(home: Path | None = None) -> OnboardingStatus:
         tavily_source=tavily_res.source,
         masked_tavily_key=mask_secret(tavily_res.key),
         model=config.model,
+        provider=ref.provider,
+        has_provider_key=has_provider_key,
+        is_local=is_local,
     )
 
 
@@ -199,6 +218,18 @@ async def verify_active_provider_key(
 
     backend = get_backend(provider, home=root)
     return await backend.check_access()
+
+
+async def detect_local_providers(
+    *,
+    timeout: float = 1.0,
+    force_refresh: bool = False,
+    home: Path | None = None,
+) -> list[LocalProviderStatus]:
+    """Inspect loopback ports for Ollama and LM Studio runtimes."""
+    from aldwin.core.providers.discovery import detect_local_providers as _core_detect
+
+    return await _core_detect(timeout=timeout, force_refresh=force_refresh)
 
 
 async def list_models_for(
@@ -272,10 +303,15 @@ def save_setup(
     openai_clean = (openai_api_key or "").strip()
     tavily_clean = (tavily_api_key or "").strip()
     if openai_clean or tavily_clean:
-        secrets = SecretsConfig(
-            openai_api_key=SecretStr(openai_clean) if openai_clean else None,
-            tavily_api_key=SecretStr(tavily_clean) if tavily_clean else None,
-        )
+        from aldwin.core.settings import load_secrets
+
+        existing = load_secrets(root)
+        updated = existing.model_dump()
+        if openai_clean:
+            updated["openai_api_key"] = SecretStr(openai_clean)
+        if tavily_clean:
+            updated["tavily_api_key"] = SecretStr(tavily_clean)
+        secrets = SecretsConfig(**updated)
         save_secrets(secrets, root)
 
     model_clean = (model or "").strip()
@@ -744,7 +780,9 @@ def _kill_local_servers() -> None:
 
 
 __all__ = [
+    "AccessStatus",
     "ConnectorCommandError",
+    "ModelInfo",
     "ShellApprovalHandler",
     "connector_needs_approval",
     "connectors_add_command",
@@ -761,6 +799,7 @@ __all__ = [
     "InProcessTransport",
     "InvalidSkillSummary",
     "KeyCheckResult",
+    "LocalProviderStatus",
     "MemorySummary",
     "NewConversationHandler",
     "NoteEntry",
@@ -776,6 +815,7 @@ __all__ = [
     "WorkspaceSummary",
     "bootstrap_host",
     "check_openai_key",
+    "detect_local_providers",
     "verify_active_openai_key",
     "get_builtin_tools",
     "get_memory_summary",

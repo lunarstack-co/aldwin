@@ -638,6 +638,7 @@ class AldwinHost:
         self._serve_task: asyncio.Task[None] | None = None
         self._todo: list[dict[str, str]] = list(self._stored_session.todo or [])
         self._host_flags: dict[str, bool] = {"skills_dirty": False}
+        self._pending_turn_notices: list[str] = []
         self._skills_fingerprint: tuple[tuple[str, int, int], ...] = ()
         self._skill_catalogue: list[LoadedSkill] = []
 
@@ -766,7 +767,21 @@ class AldwinHost:
             connectors_block=self._connectors.context_block,
             on_retry=self.on_retry,
             session_context=self._session_context,
+            notice_emitter=self._emit_sync_notice,
         )
+
+    def _emit_sync_notice(self, message: str) -> None:
+        """Route synchronous notices to the turn scope queue."""
+        self._pending_turn_notices.append(message)
+
+    async def _flush_pending_notices(self, req_id: str, scope: RequestScope) -> None:
+        """Emit any pending synchronous notices (e.g. from context window trims)."""
+        if not self._pending_turn_notices:
+            return
+        notices = list(self._pending_turn_notices)
+        self._pending_turn_notices.clear()
+        for message in notices:
+            await scope.emit(NoticeEvent(re=req_id, message=message))
 
     def _attach_session(self, session: AgentSession) -> None:
         """Make `session` the live agent session and give it the connector tools.
@@ -1407,6 +1422,7 @@ class AldwinHost:
                 logger.exception("connector reconcile failed; continuing the turn")
             for message in self._connectors.take_turn_notices():
                 await scope.emit(NoticeEvent(re=req.id, message=message))
+            await self._flush_pending_notices(req.id, scope)
             step_text_chunks: list[str] = []
             turn_streamed_chunks: list[str] = []
             tool_start_times: dict[str, float] = {}
@@ -1451,6 +1467,24 @@ class AldwinHost:
                 }
             )
 
+            cold_load_task: asyncio.Task[None] | None = None
+            if is_local_model(self._model):
+                _, model_id_short = parse_model_ref_parts(self._model)
+
+                async def _emit_cold_load_status() -> None:
+                    try:
+                        await asyncio.sleep(3.0)
+                        await scope.emit(
+                            StatusEvent(
+                                re=req.id,
+                                message=f"Loading {model_id_short} into memory…",
+                            )
+                        )
+                    except asyncio.CancelledError:
+                        pass
+
+                cold_load_task = asyncio.create_task(_emit_cold_load_status())
+
             try:
                 stream_iter = self._agent_session.run(
                     task_text,
@@ -1461,13 +1495,24 @@ class AldwinHost:
                 while True:
                     try:
                         async for ev in stream_iter:
+                            await self._flush_pending_notices(req.id, scope)
                             if isinstance(ev, TextDelta):
+                                if (
+                                    cold_load_task is not None
+                                    and not cold_load_task.done()
+                                ):
+                                    cold_load_task.cancel()
                                 if not step_text_chunks:
                                     self._persist_session(interrupted=True)
                                 step_text_chunks.append(ev.text)
                                 turn_streamed_chunks.append(ev.text)
                                 await scope.emit(TextEvent(re=req.id, delta=ev.text))
                             elif isinstance(ev, AgentlingToolCallEvent):
+                                if (
+                                    cold_load_task is not None
+                                    and not cold_load_task.done()
+                                ):
+                                    cold_load_task.cancel()
                                 if step_text_chunks:
                                     step_text_chunks.clear()
                                 call = ev.tool_call
@@ -1667,6 +1712,7 @@ class AldwinHost:
                             ),
                         )
                     )
+                await self._flush_pending_notices(req.id, scope)
                 await scope.done(
                     reason,
                     usage=_to_token_usage(final_usage),
@@ -1692,6 +1738,8 @@ class AldwinHost:
                 if not scope.terminated:
                     await scope.error(code, msg)
             finally:
+                if cold_load_task is not None and not cold_load_task.done():
+                    cold_load_task.cancel()
                 self._active_turn_id = None
                 self._active_turn_scope = None
 
