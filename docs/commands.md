@@ -14,7 +14,7 @@
 | `aldwin connectors remove\|disable <name>` | Delete or turn off a connector |
 | `aldwin connectors enable <name> [--yes]` | Turn on a connector; a local command not yet approved asks first |
 | `aldwin uninstall` | Remove Aldwin (see [Uninstall](#uninstall)) |
-| `aldwin --plain` | Disable ANSI colours, live animations, and the terminal bell (also enabled by `NO_COLOR=1`) |
+| `aldwin --plain` | Disable ANSI colours, live animations, notifications, and the terminal bell (also enabled by `NO_COLOR=1`) |
 | `aldwin --debug` | Enable `DEBUG`-level event logging in `~/.aldwin/logs/aldwin.log` |
 | `aldwin --version` | Print the installed version and protocol/Agentling versions, then exit |
 | `aldwin --help` | Show CLI flags and subcommands |
@@ -36,9 +36,20 @@ Type `/` at the prompt for autocomplete:
 | `/todo` | Show the current multi-step task checklist for this session |
 | `/workspace` | Show the workspace folder, or switch it with `/workspace <path>` |
 | `/verbose` | Show or hide up to 12 preview lines under file-tool rows for this session |
+| `/notify` | Toggle terminal notifications and the bell for this session; print `notify: on` or `notify: off` |
 | `/tools` | List built-in tools and which ones require approval, then each connector's tools |
 | `/connectors` | Add a connector by URL or local command, import the ones set up in other agent apps, or manage one: its tools, reconnect, turn off, remove |
 | `/exit` | Save the current session and exit |
+
+Notifications start enabled for each session. Aldwin notifies when a turn takes at least
+30 seconds or an approval needs input. Notification text contains only the elapsed
+time or tool name, never your messages, command arguments, or file contents.
+
+Supported terminals use OSC 9 (iTerm2, Ghostty, WezTerm, kitty) or OSC 777 (VS Code,
+Konsole). VS Code needs a notification-capable terminal extension. Terminal and
+desktop notification settings may also need to allow notifications. Unknown terminals
+use the bell. Notifications and the bell are silent in `--plain` mode, when `NO_COLOR`
+is set, and when output is redirected.
 
 ## Keyboard shortcuts
 

@@ -16,6 +16,7 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.text import Text
 
+from aldwin.cli.notifications import notify_terminal
 from aldwin.cli.theme import (
     ACCENT_BRIGHT_RGB,
     ACCENT_RGB,
@@ -324,6 +325,7 @@ class ChatRenderer:
         self.console = console
         self.plain = plain
         self.verbose = False
+        self.notifications_enabled = True
         self.todo_view = TodoView(plain=plain, unicode=not plain)
 
     def set_verbose(self, enabled: bool) -> None:
@@ -331,6 +333,29 @@ class ChatRenderer:
         self.verbose = enabled
         state = "on" if enabled else "off"
         self.console.print(f"verbose: {state}")
+
+    def set_notifications(self, enabled: bool) -> None:
+        """Toggle notifications and their bell fallback for this session."""
+        self.notifications_enabled = enabled
+        state = "on" if enabled else "off"
+        self.console.print(f"notify: {state}")
+
+    def notify(self, message: str | None = None) -> None:
+        """Send a short notification without exposing conversation content."""
+        if self.notifications_enabled:
+            notify_terminal(
+                self.console.file,
+                message,
+                plain=self.plain,
+                is_terminal=self.console.is_terminal,
+            )
+
+    def notify_approval(self, event: ApprovalEvent) -> None:
+        """Announce only the tool name, never approval details or arguments."""
+        message = "Aldwin needs your approval"
+        if event.tool:
+            message += f": {sanitize_display_text(event.tool)}"
+        self.notify(message)
 
     def on_todo_updated(self, event: TodoUpdatedEvent) -> None:
         """Redraw the session checklist from a `todo.updated` event."""
@@ -614,13 +639,8 @@ class ChatRenderer:
         return block
 
     def ring_bell(self) -> None:
-        """Emit the terminal bell character (`\\a`) when not in plain mode."""
-        if not self.plain:
-            try:
-                self.console.file.write("\a")
-                self.console.file.flush()
-            except OSError:
-                pass
+        """Ring the bell when session notifications and terminal output allow it."""
+        self.notify()
 
     def render_approval_panel(
         self,
@@ -628,8 +648,8 @@ class ChatRenderer:
         *,
         expanded: bool = False,
     ) -> None:
-        """Print the bordered approval panel and ring the terminal bell."""
-        self.ring_bell()
+        """Print the bordered approval panel and notify that input is needed."""
+        self.notify_approval(event)
         self.console.print(
             self.build_approval_panel(event, expanded=expanded, selected=0)
         )
@@ -1091,7 +1111,7 @@ class TurnRenderer:
         self._approval_selected = 0
         self._approval_expanded = False
         if not self.plain and self.console.is_interactive:
-            self._chat.ring_bell()
+            self._chat.notify_approval(event)
             panel = self._chat.build_approval_panel(
                 event, selected=self._approval_selected
             )
@@ -1246,7 +1266,7 @@ class TurnRenderer:
         end_line.append(summary, style="muted")
         self.console.print(end_line)
         if not self.plain and self.elapsed_seconds() >= 30.0:
-            self._chat.ring_bell()
+            self._chat.notify(f"Aldwin finished ({elapsed})")
         self._chat.render_turn_separator()
         return total_tokens
 
