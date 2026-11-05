@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Iterable
+import asyncio
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from pathlib import Path
-from typing import Final, Protocol, cast
+from typing import Any, Final, Protocol, cast
 
 from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.document import Document
@@ -23,7 +24,14 @@ from aldwin.client import (
     WorkspaceError,
     WorkspaceSummary,
 )
-from aldwin.protocol import DoneEvent, ErrorEvent, HistoryEvent, TodoUpdatedEvent
+from aldwin.protocol import (
+    DoneEvent,
+    ErrorEvent,
+    HistoryEvent,
+    ModelsEvent,
+    ProviderModels,
+    TodoUpdatedEvent,
+)
 
 HISTORY_FETCH_LIMIT: Final[int] = 500
 
@@ -31,7 +39,7 @@ SLASH_COMMANDS: Final[tuple[tuple[str, str], ...]] = (
     ("/help", "Show commands and keyboard shortcuts"),
     ("/new", "Start a new conversation"),
     ("/history", "Show this conversation’s saved messages"),
-    ("/model", "Switch the OpenAI chat model"),
+    ("/model", "Switch model or provider"),
     ("/persona", "Show current persona and file path"),
     ("/memory", "Show profile, recent notes, and index status"),
     ("/skills", "List skills · /skills show <name> for the body"),
@@ -70,9 +78,28 @@ class SlashCommandClient(Protocol):
 
     async def history(self, limit: int = 20) -> HistoryEvent: ...
 
-    async def list_models(self) -> list[str]: ...
+    async def list_models(
+        self,
+        *,
+        provider: str | None = None,
+        refresh: bool = False,
+    ) -> ModelsEvent: ...
 
     async def set_model(self, name: str) -> DoneEvent | ErrorEvent: ...
+
+    async def save_provider_key(
+        self, provider: str, key: str
+    ) -> DoneEvent | ErrorEvent: ...
+
+    async def add_provider_server(
+        self,
+        name: str,
+        base_url: str,
+        *,
+        key: str | None = None,
+        title: str | None = None,
+        local: bool = False,
+    ) -> DoneEvent | ErrorEvent: ...
 
     def persona_summary(self) -> PersonaSummary: ...
 
@@ -145,94 +172,376 @@ async def _handle_model_command(
     renderer: ChatRenderer,
     prompt_line: Callable[[str], Awaitable[str]],
     input_dev: Input | None = None,
+    refresh: bool = False,
 ) -> None:
-    from aldwin.cli.picker import pick_index
+    from aldwin.cli.picker import pick_index, row_text
+    from aldwin.cli.secret_prompt import prompt_secret
 
     console = renderer.console
     show_all = arg.lower() == "all"
+    titles = {
+        "openai": "OpenAI",
+        "anthropic": "Anthropic",
+        "gemini": "Google Gemini",
+        "openrouter": "OpenRouter",
+        "deepseek": "DeepSeek",
+        "ollama": "Ollama",
+        "lmstudio": "LM Studio",
+    }
+
     if arg and not show_all:
         res = await client.set_model(arg)
         if isinstance(res, ErrorEvent):
             renderer.render_error(res.code, res.message)
         else:
-            console.print(Text(f"✓ Switched model to {arg}.", style="ok"))
+            cleaned = arg.strip()
+            if "/" in cleaned:
+                prov_part, _, mid = cleaned.partition("/")
+            else:
+                prov_part, mid = "openai", cleaned
+            title = titles.get(prov_part.lower(), prov_part.title())
+            local_suffix = (
+                ", local" if prov_part.lower() in ("ollama", "lmstudio") else ""
+            )
+            console.print(
+                Text(f"✓ Switched to {mid} ({title}{local_suffix}).", style="ok")
+            )
         return
-
-    all_models = await client.list_models()
-    if not all_models:
-        all_models = [client.model]
-
-    if show_all:
-        models = list(all_models)
-        hidden_count = 0
-    else:
-        models, hidden_count = filter_canonical_models(all_models, client.model)
-
-    header = "Available OpenAI chat models:"
-    if hidden_count > 0:
-        header += (
-            f" (showing {len(models)} canonical · "
-            f"use /model all for all {len(all_models)})"
-        )
-    console.print(Text(header, style="muted"))
-
-    labels = [f"{name} (current)" if name == client.model else name for name in models]
-    default_idx = 0
-    if client.model in models:
-        default_idx = models.index(client.model)
 
     use_picker = (
         isinstance(input_dev, Input) and console.is_interactive and not renderer.plain
     )
-    if use_picker:
-        chosen_idx = await pick_index(
-            labels,
-            default=default_idx,
-            input_dev=input_dev,
-            plain=renderer.plain,
-        )
-        if chosen_idx is None:
-            console.print(Text(f"Model unchanged ({client.model}).", style="muted"))
-            return
-        chosen = models[chosen_idx]
-    else:
-        for idx, name in enumerate(models, start=1):
-            marker = " (current)" if name == client.model else ""
-            style = "ok" if name == client.model else ""
-            console.print(Text(f"  {idx}. {name}{marker}", style=style))
-        try:
-            raw_choice = await prompt_line(
-                f"Choose model [1-{len(models)}, or Enter to cancel]: "
+
+    async def _ask(prompt_text: str) -> str:
+        res = prompt_line(prompt_text)
+        if asyncio.iscoroutine(res) or hasattr(res, "__await__"):
+            return str(await res)
+        return str(res)
+
+    async def _ask_secret(prompt_text: str) -> str:
+        res = prompt_secret(prompt_text)
+        if asyncio.iscoroutine(res) or hasattr(res, "__await__"):
+            return str(await res)
+        return str(res)
+
+    models_ev = await client.list_models(refresh=refresh)
+    if not isinstance(models_ev, ModelsEvent):
+        models_ev = ModelsEvent(re="", current=client.model, providers=[])
+
+    while True:
+        curr = models_ev.current or client.model
+        curr_clean = curr.strip()
+        curr_provider = curr_clean.split("/")[0] if "/" in curr_clean else "openai"
+
+        # Screen 1: Available providers
+        # 1. Local providers (Ollama, LM Studio)
+        # 2. Configured cloud companies (OpenAI, Anthropic, ...)
+        # 3. Add a provider…
+        # 4. Other server
+        available_providers: list[ProviderModels] = [
+            p for p in models_ev.providers if p.local or p.configured
+        ]
+
+        rows: list[str | Sequence[tuple[str, str]]] = []
+        actions: list[tuple[str, Any]] = []
+        disabled: set[int] = set()
+
+        rows.append([("class:heading", "Available providers")])
+        disabled.add(0)
+        actions.append(("header", None))
+
+        default_provider_idx = 0
+        for p in available_providers:
+            is_current = p.name == curr_provider
+            current_tag = " (current)" if is_current else ""
+            if is_current:
+                default_provider_idx = len(rows)
+
+            if p.status != "ok" and not p.models:
+                row_label = f"{p.title}{current_tag}  (not running)"
+            elif p.models:
+                count_str = (
+                    f"{len(p.models)} {'model' if len(p.models) == 1 else 'models'}"
+                )
+                row_label = f"{p.title}{current_tag}  ({count_str})"
+            else:
+                row_label = f"{p.title}{current_tag}"
+
+            rows.append(row_label)
+            actions.append(("provider", p))
+
+        rows.append("Add a provider…")
+        actions.append(("action_add", None))
+
+        rows.append("Other server")
+        actions.append(("action_server", None))
+
+        chosen_idx: int | None = None
+        if use_picker:
+            chosen_idx = await pick_index(
+                rows,
+                default=default_provider_idx,
+                disabled=disabled,
+                input_dev=input_dev,
+                plain=renderer.plain,
             )
-        except (EOFError, KeyboardInterrupt):
-            raw_choice = ""
+        else:
+            selectable_map: dict[int, int] = {}
+            counter = 1
+            for idx, r in enumerate(rows):
+                if idx in disabled:
+                    console.print(
+                        Text(
+                            f"  {row_text(r)}",
+                            style="bold",
+                        )
+                    )
+                else:
+                    selectable_map[counter] = idx
+                    console.print(Text(f"    {counter}. {row_text(r)}"))
+                    counter += 1
 
-        choice = raw_choice.strip()
-        if not choice:
-            console.print(Text(f"Model unchanged ({client.model}).", style="muted"))
-            return
+            try:
+                raw_choice = await _ask(
+                    f"Choose provider [1-{counter - 1}, or Enter to cancel]: "
+                )
+            except (EOFError, KeyboardInterrupt):
+                raw_choice = ""
 
-        if choice.isdigit():
-            idx = int(choice)
-            if 1 <= idx <= len(models):
-                chosen = models[idx - 1]
+            choice = raw_choice.strip()
+            if not choice:
+                console.print(Text(f"Model unchanged ({client.model}).", style="muted"))
+                return
+            if choice.isdigit() and int(choice) in selectable_map:
+                chosen_idx = selectable_map[int(choice)]
             else:
                 console.print(
                     Text(
                         f"Invalid selection {choice!r}. "
-                        f"Enter a number from 1 to {len(models)}.",
+                        f"Enter a number from 1 to {len(selectable_map)}.",
                         style="err",
                     )
                 )
-                return
-        else:
-            chosen = choice
+                continue
 
-    res = await client.set_model(chosen)
-    if isinstance(res, ErrorEvent):
-        renderer.render_error(res.code, res.message)
-    else:
-        console.print(Text(f"✓ Switched model to {chosen}.", style="ok"))
+        if chosen_idx is None:
+            console.print(Text(f"Model unchanged ({client.model}).", style="muted"))
+            return
+
+        act_type, payload = actions[chosen_idx]
+        if act_type == "provider":
+            p = payload
+            if not p.models:
+                if p.status != "ok":
+                    port_hint = (
+                        ":11434"
+                        if p.name == "ollama"
+                        else (":1234" if p.name == "lmstudio" else "")
+                    )
+                    url_hint = f"http://localhost{port_hint}"
+                    console.print(
+                        Text(
+                            f"{p.title} is not running at {url_hint}.",
+                            style="warn",
+                        )
+                    )
+                else:
+                    console.print(
+                        Text(
+                            f"No models found for {p.title}.",
+                            style="warn",
+                        )
+                    )
+                continue
+
+            # Screen 2: Models for selected provider
+            models_to_display = p.models
+            hidden_count = 0
+            if p.name == "openai" and not show_all:
+                all_ids = [m.id for m in p.models]
+                curr_id = curr_clean.split("/")[-1]
+                canonical_ids, hidden_count = filter_canonical_models(all_ids, curr_id)
+                models_to_display = [m for m in p.models if m.id in canonical_ids]
+
+            model_rows: list[str | Sequence[tuple[str, str]]] = []
+            default_model_idx = 0
+            for m in models_to_display:
+                is_current = (
+                    m.ref == curr_clean
+                    or curr_clean == m.id
+                    or ("/" not in curr_clean and m.ref == f"openai/{curr_clean}")
+                )
+                marker = " (current)" if is_current else ""
+                tools_tick = (
+                    "✓ tools"
+                    if m.supports_tools is True
+                    else ("✗ chat only" if m.supports_tools is False else "")
+                )
+                ctx = f"{m.context_window // 1000}K" if m.context_window else ""
+                meta = " · ".join(x for x in [tools_tick, ctx] if x)
+                meta_str = f"  ({meta})" if meta else ""
+                if is_current:
+                    default_model_idx = len(model_rows)
+                model_rows.append(f"{m.id}{marker}{meta_str}")
+
+            header_str = f"{p.title} models"
+            if hidden_count > 0:
+                header_str += (
+                    f" (showing {len(models_to_display)} canonical · "
+                    f"use /model all for all {len(p.models)})"
+                )
+
+            model_choice_idx: int | None = None
+            if use_picker:
+                model_choice_idx = await pick_index(
+                    model_rows,
+                    default=default_model_idx,
+                    header=header_str,
+                    input_dev=input_dev,
+                    plain=renderer.plain,
+                )
+            else:
+                console.print(Text(f"  {header_str}", style="bold"))
+                for m_i, r in enumerate(model_rows, 1):
+                    console.print(Text(f"    {m_i}. {r}"))
+                try:
+                    raw_m_choice = await _ask(
+                        f"Choose model [1-{len(model_rows)}, or Enter to go back]: "
+                    )
+                except (EOFError, KeyboardInterrupt):
+                    raw_m_choice = ""
+
+                m_choice = raw_m_choice.strip()
+                if not m_choice:
+                    continue  # Go back to Screen 1
+                if m_choice.isdigit() and 1 <= int(m_choice) <= len(models_to_display):
+                    model_choice_idx = int(m_choice) - 1
+                else:
+                    console.print(
+                        Text(
+                            f"Invalid selection {m_choice!r}. "
+                            f"Enter a number from 1 to {len(model_rows)}.",
+                            style="err",
+                        )
+                    )
+                    continue
+
+            # Esc in model picker goes back to Screen 1
+            if model_choice_idx is None:
+                continue
+
+            chosen_model = models_to_display[model_choice_idx]
+            if chosen_model.supports_tools is False:
+                console.print(
+                    Text(
+                        f"Warning: {chosen_model.id} does not support tools. "
+                        "Aldwin will run in chat-only mode.",
+                        style="warn",
+                    )
+                )
+                try:
+                    confirm = await _ask("Switch to chat-only model? [y/N]: ")
+                except (EOFError, KeyboardInterrupt):
+                    confirm = ""
+                if confirm.strip().lower() not in ("y", "yes"):
+                    console.print(
+                        Text(f"Model unchanged ({client.model}).", style="muted")
+                    )
+                    return
+
+            res = await client.set_model(chosen_model.ref)
+            if isinstance(res, ErrorEvent):
+                renderer.render_error(res.code, res.message)
+            else:
+                local_suffix = ", local" if p.local else ""
+                console.print(
+                    Text(
+                        f"✓ Switched to {chosen_model.id} ({p.title}{local_suffix}).",
+                        style="ok",
+                    )
+                )
+            return
+
+        elif act_type == "action_add":
+            unconfigured = [
+                p for p in models_ev.providers if not p.local and not p.configured
+            ]
+            if not unconfigured:
+                console.print(
+                    Text(
+                        "All supported cloud providers are already configured.",
+                        style="muted",
+                    )
+                )
+                continue
+            prov_labels = [p.title for p in unconfigured]
+            p_choice = (
+                await pick_index(
+                    prov_labels,
+                    header="Add a provider",
+                    input_dev=input_dev,
+                    plain=renderer.plain,
+                )
+                if use_picker
+                else None
+            )
+            if p_choice is None and not use_picker:
+                for i, pl in enumerate(prov_labels, 1):
+                    console.print(Text(f"  {i}. {pl}"))
+                try:
+                    c_raw = (
+                        await _ask(
+                            f"Choose provider [1-{len(prov_labels)}, "
+                            "Enter to go back]: "
+                        )
+                    ).strip()
+                    if c_raw.isdigit() and 1 <= int(c_raw) <= len(prov_labels):
+                        p_choice = int(c_raw) - 1
+                except (EOFError, KeyboardInterrupt):
+                    pass
+
+            if p_choice is None:
+                continue  # Go back to Screen 1
+
+            chosen_p = unconfigured[p_choice]
+            try:
+                key_val = (await _ask_secret(f"{chosen_p.title} API key: ")).strip()
+            except (EOFError, KeyboardInterrupt):
+                key_val = ""
+            if not key_val:
+                console.print(Text("Cancelled.", style="muted"))
+                continue
+            res = await client.save_provider_key(chosen_p.name, key_val)
+            if isinstance(res, ErrorEvent):
+                renderer.render_error(res.code, res.message)
+            else:
+                console.print(Text(f"✓ Saved key for {chosen_p.title}.", style="ok"))
+                models_ev = await client.list_models(refresh=True)
+
+        elif act_type == "action_server":
+            try:
+                address = (
+                    await _ask("Server address (e.g. http://localhost:8000/v1): ")
+                ).strip()
+                if not address:
+                    continue
+                key_val = (await _ask_secret("API key (Enter to skip): ")).strip()
+                name = (await _ask("Provider name (e.g. office-gpu): ")).strip()
+                if not name:
+                    continue
+            except (EOFError, KeyboardInterrupt):
+                continue
+            res = await client.add_provider_server(
+                name=name,
+                base_url=address,
+                key=key_val or None,
+                title=name,
+            )
+            if isinstance(res, ErrorEvent):
+                renderer.render_error(res.code, res.message)
+            else:
+                console.print(Text(f"✓ Added provider {name}.", style="ok"))
+                models_ev = await client.list_models(refresh=True)
 
 
 def _render_persona(client: SlashCommandClient, renderer: ChatRenderer) -> None:
@@ -456,6 +765,7 @@ async def handle_slash_command(
             event,
             updated_at=client.updated_at,
             show_messages=True,
+            model=client.model,
         )
         return False
 

@@ -267,10 +267,12 @@ def clear_terminal_title(file: IO[str] | None, *, plain: bool = False) -> None:
 
 def model_context_window(model: str) -> int:
     """Return the nominal context window in tokens for `model`."""
-    lowered = model.strip().lower()
+    lowered = model.strip().lower().split("/")[-1]
     if lowered.startswith(("gpt-4.1", "gpt-5")):
         return 400_000
     if lowered.startswith(("o3", "o4")):
+        return 200_000
+    if lowered.startswith("claude"):
         return 200_000
     return 128_000
 

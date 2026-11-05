@@ -202,13 +202,13 @@ async def test_open_in_process_client_and_inspect_helpers(
         assert {t.name for t in tools} >= {"todo", "calculate"}
 
 
-async def test_in_process_key_check_and_model_list_wrappers(
+async def test_in_process_key_check_wrapper(
     aldwin_home: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`check_openai_key` and `list_available_models` map `core.models` results."""
+    """`check_openai_key` maps `core.models` results."""
     import aldwin.core.models as core_models
-    from aldwin.client import check_openai_key, list_available_models
+    from aldwin.client import check_openai_key
 
     statuses = iter(
         [
@@ -227,13 +227,6 @@ async def test_in_process_key_check_and_model_list_wrappers(
     assert await check_openai_key("k") == "no_access"
     assert await check_openai_key("k") == "network_error"
     assert await check_openai_key("k") == "invalid"
-
-    async def fake_list_models(_key: str) -> list[str]:
-        return ["gpt-4.1", "o3-mini"]
-
-    monkeypatch.setattr(core_models, "list_chat_models", fake_list_models)
-    models = await list_available_models(api_key="sk-test", home=aldwin_home)
-    assert models == ["gpt-4o", "gpt-4.1", "o3-mini"]
 
 
 async def test_verify_active_openai_key_uses_home_secret(

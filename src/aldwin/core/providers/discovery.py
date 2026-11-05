@@ -315,3 +315,34 @@ async def detect_local_providers(
 
     results = await asyncio.gather(ollama_task, lmstudio_task)
     return list(results)
+
+
+def get_discovery_cache() -> LocalInventoryCache:
+    """Return the global local inventory cache."""
+    return _GLOBAL_CACHE
+
+
+async def probe_ollama_runtime(
+    *,
+    timeout: float = 5.0,
+    transport: httpx.AsyncBaseTransport | None = None,
+    cache: LocalInventoryCache | None = None,
+) -> LocalProviderStatus:
+    """Probe Ollama loopback endpoint and extract metadata."""
+    active_cache = cache if cache is not None else _GLOBAL_CACHE
+    return await _probe_ollama_raw(
+        timeout=timeout, transport=transport, cache=active_cache
+    )
+
+
+async def probe_lmstudio_runtime(
+    *,
+    timeout: float = 5.0,
+    transport: httpx.AsyncBaseTransport | None = None,
+    cache: LocalInventoryCache | None = None,
+) -> LocalProviderStatus:
+    """Probe LM Studio loopback endpoint and extract metadata."""
+    active_cache = cache if cache is not None else _GLOBAL_CACHE
+    return await _probe_lmstudio_raw(
+        timeout=timeout, transport=transport, cache=active_cache
+    )

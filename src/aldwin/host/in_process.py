@@ -252,36 +252,6 @@ async def list_models_for(
         return []
 
 
-async def list_available_models(
-    api_key: str | None = None,
-    home: Path | None = None,
-) -> list[str]:
-    """Return available OpenAI chat models for the active or supplied API key."""
-    from aldwin.core.models import list_chat_models
-
-    root = (home if home is not None else home_dir()).expanduser().resolve()
-    config = load_config(root)
-    effective_key = (api_key or "").strip()
-    if not effective_key:
-        resolved = resolve_key("openai", root)
-        effective_key = (resolved.key or "").strip()
-
-    if not effective_key:
-        return [config.model]
-
-    try:
-        models = await list_chat_models(effective_key)
-    except Exception as exc:
-        logger.warning("Failed to list OpenAI chat models: %s", exc)
-        return [config.model]
-
-    if not models:
-        return [config.model]
-    if config.model not in models:
-        return [config.model, *models]
-    return models
-
-
 def save_setup(
     *,
     openai_api_key: str | None = None,
@@ -823,7 +793,6 @@ __all__ = [
     "get_persona_summary",
     "get_persona_text",
     "get_skills_report",
-    "list_available_models",
     "list_models_for",
     "mark_whats_new_seen",
     "mask_secret",

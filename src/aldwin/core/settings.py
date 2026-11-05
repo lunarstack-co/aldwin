@@ -663,6 +663,44 @@ def update_config_last_seen_version(version: str, home: Path | None = None) -> N
     atomic_write(config_path, updated, mode=FILE_MODE)
 
 
+def update_config_provider(
+    name: str,
+    provider: ProviderConfig,
+    home: Path | None = None,
+) -> None:
+    """Add or update a provider under ``providers:`` in ``config.yaml``."""
+    cleaned_name = name.strip().lower()
+    root = (home if home is not None else home_dir()).expanduser().resolve()
+    config_path = root / CONFIG_FILENAME
+    if not cleaned_name:
+        raise ConfigError(
+            file=config_path,
+            field="providers",
+            expected="a non-empty provider name",
+        )
+    source = _read_config_source(config_path)
+    parsed = yaml.safe_load(source)
+    if not isinstance(parsed, dict):
+        parsed = {}
+    providers = parsed.setdefault("providers", {})
+    if not isinstance(providers, dict):
+        providers = {}
+        parsed["providers"] = providers
+    prov_dict: dict[str, Any] = {}
+    if provider.shape is not None:
+        prov_dict["shape"] = provider.shape
+    if provider.base_url is not None:
+        prov_dict["base_url"] = provider.base_url
+    if provider.title is not None:
+        prov_dict["title"] = provider.title
+    if provider.local is not None:
+        prov_dict["local"] = provider.local
+    if provider.secret is not None:
+        prov_dict["secret"] = provider.secret
+    providers[cleaned_name] = prov_dict
+    atomic_write(config_path, yaml.safe_dump(parsed, sort_keys=False), mode=FILE_MODE)
+
+
 def load_secrets(home: Path | None = None) -> SecretsConfig:
     """Load ``secrets.yaml`` from ``home``, enforcing mode ``0600``."""
     root = (home if home is not None else home_dir()).expanduser().resolve()

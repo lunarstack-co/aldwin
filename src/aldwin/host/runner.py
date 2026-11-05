@@ -77,6 +77,7 @@ from aldwin.core.policy import (
     compute_digest,
     sanitize_display_text,
 )
+from aldwin.core.providers.registry import parse_model_ref
 from aldwin.core.settings import load_config, load_secrets, update_config_model
 from aldwin.core.skills import (
     LoadedSkill,
@@ -155,7 +156,14 @@ from aldwin.protocol import (
     HistoryRequest,
     ImportRowInfo,
     ImportSourceInfo,
+    ModelEntry,
+    ModelsEvent,
+    ModelsListRequest,
     NoticeEvent,
+    ProviderKeyRequest,
+    ProviderModels,
+    ProviderModelStatus,
+    ProviderServerRequest,
     Request,
     SetModelRequest,
     SkillBodyEvent,
@@ -592,8 +600,10 @@ class AldwinHost:
         persist_model: bool = True,
         home: Path | None = None,
         workspace: Workspace | Path | str | None = None,
+        backend_transport: Any = None,
     ) -> None:
         self._transport = transport
+        self._backend_transport = backend_transport
         self._home = (home if home is not None else home_dir()).expanduser().resolve()
         self._session_store = session_store or SessionStore(
             sessions_dir=self._home / "sessions"
@@ -603,6 +613,11 @@ class AldwinHost:
         self._persist_model = persist_model
 
         config = load_config(self._home)
+        self._config = config
+        self._secrets = load_secrets(self._home)
+        self._provider_models_cache: dict[
+            str, tuple[float, ProviderModelStatus, list[ModelEntry]]
+        ] = {}
         default_model = initial_model or config.model
         self._stored_session: StoredSession = self._session_store.load_latest(
             default_model=default_model
@@ -1027,6 +1042,12 @@ class AldwinHost:
                 await self._handle_history(scope, req)
             elif isinstance(req, SetModelRequest):
                 await self._handle_set_model(scope, req)
+            elif isinstance(req, ModelsListRequest):
+                await self._handle_models_list(scope, req)
+            elif isinstance(req, ProviderKeyRequest):
+                await self._handle_provider_key(scope, req)
+            elif isinstance(req, ProviderServerRequest):
+                await self._handle_provider_server(scope, req)
             elif isinstance(req, SkillsListRequest):
                 self._maybe_rebuild_skills_from_disk()
                 await scope.emit(self._skills_event(req.id))
@@ -1389,7 +1410,17 @@ class AldwinHost:
             return
 
         cleaned = req.name.strip()
-        if not self._is_model_allowed(cleaned):
+        try:
+            model_ref = parse_model_ref(cleaned)
+            canonical = str(model_ref)
+        except Exception:
+            await scope.error(
+                "unknown_model",
+                f"Model {cleaned!r} is not valid.",
+            )
+            return
+
+        if not (self._is_model_allowed(canonical) or self._is_model_allowed(cleaned)):
             await scope.error(
                 "unknown_model",
                 f"Model {cleaned!r} is not available. "
@@ -1397,15 +1428,365 @@ class AldwinHost:
             )
             return
 
-        self._model = cleaned
-        self._stored_session.meta.model = cleaned
+        target_model = canonical
+        if self._available_models is not None:
+            allowed = (
+                self._available_models()
+                if callable(self._available_models)
+                else self._available_models
+            )
+            if cleaned in allowed and canonical not in allowed:
+                target_model = cleaned
+
+        self._model = target_model
+        self._stored_session.meta.model = target_model
         if self._persist_model:
-            update_config_model(cleaned, self._home)
+            update_config_model(target_model, self._home)
 
         self._agent = self._build_and_attach_agent(self._model)
         self._attach_session(switch_session_model(self._agent_session, self._agent))
         self._refresh_skill_state_from_agent()
         self._persist_session(interrupted=self._stored_session.meta.interrupted)
+        await scope.done("ok")
+
+    async def _handle_models_list(
+        self,
+        scope: RequestScope,
+        req: ModelsListRequest,
+    ) -> None:
+        from agentling.errors import ModelAuthError, ModelConnectionError
+
+        from aldwin.core.providers.discovery import (
+            probe_lmstudio_runtime,
+            probe_ollama_runtime,
+        )
+        from aldwin.core.providers.factory import (
+            get_backend,
+            resolve_provider_key,
+        )
+        from aldwin.core.providers.registry import ProviderEntry, list_providers
+
+        now = time.monotonic()
+        config = load_config(self._home)
+        self._config = config
+        self._secrets = load_secrets(self._home)
+        all_providers = list_providers(config)
+
+        if req.provider:
+            target_name = req.provider.strip().lower()
+            providers = [p for p in all_providers if p.name == target_name]
+            if not providers:
+                await scope.error(
+                    "not_found",
+                    f"Unknown provider {req.provider!r}.",
+                )
+                return
+        else:
+            providers = all_providers
+
+        async def _probe_provider(
+            p: ProviderEntry,
+        ) -> tuple[ProviderModelStatus, list[ModelEntry]]:
+            prior_cached_models: list[ModelEntry] = []
+            if p.name in self._provider_models_cache:
+                _, _, prior_cached_models = self._provider_models_cache[p.name]
+
+            if not req.refresh and p.name in self._provider_models_cache:
+                ts, cached_status, cached_models = self._provider_models_cache[p.name]
+                if now - ts < 600.0:
+                    return cached_status, cached_models
+
+            if p.local:
+                if p.name == "ollama":
+                    try:
+                        status_res = await asyncio.wait_for(
+                            probe_ollama_runtime(
+                                timeout=5.0,
+                                transport=self._backend_transport,
+                            ),
+                            timeout=5.0,
+                        )
+                        if status_res.running:
+                            entries = [
+                                ModelEntry(
+                                    ref=f"ollama/{m.id}",
+                                    id=m.id,
+                                    title=m.title,
+                                    context_window=m.context_window,
+                                    supports_tools=m.supports_tools,
+                                )
+                                for m in status_res.models
+                            ]
+                            return "ok", entries
+                        fallback = prior_cached_models or [
+                            ModelEntry(
+                                ref=f"ollama/{m.id}",
+                                id=m.id,
+                                title=m.title,
+                                context_window=m.context_window,
+                                supports_tools=m.supports_tools,
+                            )
+                            for m in status_res.models
+                        ]
+                        return "not_running", fallback
+                    except Exception as exc:
+                        logger.debug("Ollama probe failed: %s", exc)
+                        return "not_running", prior_cached_models
+                elif p.name == "lmstudio":
+                    try:
+                        status_res = await asyncio.wait_for(
+                            probe_lmstudio_runtime(
+                                timeout=5.0,
+                                transport=self._backend_transport,
+                            ),
+                            timeout=5.0,
+                        )
+                        if status_res.running:
+                            entries = [
+                                ModelEntry(
+                                    ref=f"lmstudio/{m.id}",
+                                    id=m.id,
+                                    title=m.title,
+                                    context_window=m.context_window,
+                                    supports_tools=m.supports_tools,
+                                )
+                                for m in status_res.models
+                            ]
+                            return "ok", entries
+                        fallback = prior_cached_models or [
+                            ModelEntry(
+                                ref=f"lmstudio/{m.id}",
+                                id=m.id,
+                                title=m.title,
+                                context_window=m.context_window,
+                                supports_tools=m.supports_tools,
+                            )
+                            for m in status_res.models
+                        ]
+                        return "not_running", fallback
+                    except Exception as exc:
+                        logger.debug("LM Studio probe failed: %s", exc)
+                        return "not_running", prior_cached_models
+                else:
+                    try:
+                        backend = get_backend(
+                            p,
+                            config=config,
+                            secrets=self._secrets,
+                            home=self._home,
+                            transport=self._backend_transport,
+                        )
+                        model_infos = await asyncio.wait_for(
+                            backend.list_models(), timeout=5.0
+                        )
+                        entries = [
+                            ModelEntry(
+                                ref=f"{p.name}/{m.id}",
+                                id=m.id,
+                                title=m.title,
+                                context_window=m.context_window,
+                                supports_tools=m.supports_tools,
+                            )
+                            for m in model_infos
+                        ]
+                        return "ok", entries
+                    except Exception as exc:
+                        logger.debug("Local provider %s error: %s", p.name, exc)
+                        return "not_running", prior_cached_models
+
+            api_key = resolve_provider_key(p, secrets=self._secrets, home=self._home)
+            if not api_key:
+                return "not_configured", []
+
+            try:
+                backend = get_backend(
+                    p,
+                    config=config,
+                    secrets=self._secrets,
+                    home=self._home,
+                    transport=self._backend_transport,
+                )
+                model_infos = await asyncio.wait_for(backend.list_models(), timeout=5.0)
+                entries = [
+                    ModelEntry(
+                        ref=f"{p.name}/{m.id}",
+                        id=m.id,
+                        title=m.title,
+                        context_window=m.context_window,
+                        supports_tools=m.supports_tools,
+                    )
+                    for m in model_infos
+                ]
+                return "ok", entries
+            except ModelAuthError:
+                return "invalid_key", []
+            except (asyncio.TimeoutError, TimeoutError):
+                logger.debug("Provider %s timed out", p.name)
+                return "unreachable", prior_cached_models
+            except ModelConnectionError:
+                logger.debug("Provider %s unreachable", p.name)
+                return "unreachable", prior_cached_models
+            except Exception as exc:
+                logger.debug("Provider %s error: %s", p.name, exc)
+                return "unreachable", prior_cached_models
+
+        probe_results = await asyncio.gather(*[_probe_provider(p) for p in providers])
+
+        provider_models: list[ProviderModels] = []
+        for p, (status, models) in zip(providers, probe_results):
+            self._provider_models_cache[p.name] = (now, status, models)
+            is_configured = p.local or bool(
+                resolve_provider_key(p, secrets=self._secrets, home=self._home)
+            )
+            provider_models.append(
+                ProviderModels(
+                    name=p.name,
+                    title=p.title,
+                    local=p.local,
+                    configured=is_configured,
+                    status=status,
+                    models=models,
+                )
+            )
+
+        await scope.emit(
+            ModelsEvent(
+                re=req.id,
+                current=self._model,
+                providers=provider_models,
+            )
+        )
+        await scope.done("ok")
+
+    async def _handle_provider_key(
+        self,
+        scope: RequestScope,
+        req: ProviderKeyRequest,
+    ) -> None:
+        from aldwin.core.providers.base import AccessStatus
+        from aldwin.core.providers.keys import save_provider_key
+        from aldwin.core.providers.registry import get_provider
+
+        provider = req.provider.strip().lower()
+        key = req.key.strip()
+        status = await save_provider_key(
+            provider,
+            key,
+            home=self._home,
+            config=self._config,
+            transport=self._backend_transport,
+        )
+        if status == AccessStatus.OK:
+            self._provider_models_cache.pop(provider, None)
+            await scope.done("ok")
+        elif status == AccessStatus.INVALID_KEY:
+            entry = get_provider(provider, self._config)
+            title = entry.title if entry else provider.title()
+            await scope.error(
+                "auth_failed",
+                f"Your {title} key was rejected. Check the key and try again.",
+            )
+        else:
+            entry = get_provider(provider, self._config)
+            title = entry.title if entry else provider.title()
+            await scope.error(
+                "model_unavailable",
+                f"Could not reach {title} to verify the key.",
+            )
+
+    async def _handle_provider_server(
+        self,
+        scope: RequestScope,
+        req: ProviderServerRequest,
+    ) -> None:
+        from urllib.parse import urlsplit
+
+        from pydantic import SecretStr
+
+        from aldwin.core.providers.base import AccessStatus
+        from aldwin.core.providers.factory import get_backend
+        from aldwin.core.providers.registry import ProviderEntry, is_loopback_host
+        from aldwin.core.settings import (
+            ProviderConfig,
+            SecretsConfig,
+            save_secrets,
+            update_config_provider,
+        )
+
+        name = req.name.strip().lower()
+        base_url = req.base_url.strip().rstrip("/")
+        parsed = urlsplit(base_url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            await scope.error(
+                "invalid_request",
+                f"Invalid server address {base_url!r}. "
+                "Address must begin with http:// or https://.",
+            )
+            return
+
+        is_local = req.local or (
+            parsed.scheme == "http" and is_loopback_host(parsed.hostname or "")
+        )
+        if parsed.scheme == "http" and not is_local:
+            await scope.error(
+                "invalid_request",
+                f"Non-local server {base_url!r} must use https://.",
+            )
+            return
+
+        provider_cfg = ProviderConfig(
+            shape="openai_chat",
+            base_url=base_url,
+            title=req.title or name,
+            local=is_local,
+            secret=f"{name}_api_key" if req.key else None,
+        )
+        candidate_entry = ProviderEntry(
+            name=name,
+            title=provider_cfg.title or name,
+            shape="openai_chat",
+            base_url=base_url,
+            secret=provider_cfg.secret,
+            local=is_local,
+            docs_url="",
+        )
+        candidate_secrets = (
+            SecretsConfig(**{f"{name}_api_key": SecretStr(req.key.strip())})
+            if req.key
+            else SecretsConfig()
+        )
+        backend = get_backend(
+            candidate_entry,
+            config=self._config,
+            secrets=candidate_secrets,
+            home=self._home,
+            transport=self._backend_transport,
+        )
+        try:
+            status = await asyncio.wait_for(backend.check_access(), timeout=5.0)
+        except Exception as exc:
+            logger.warning("Failed to verify server %s at %s: %s", name, base_url, exc)
+            status = AccessStatus.UNREACHABLE
+
+        if status != AccessStatus.OK:
+            await scope.error(
+                "model_unavailable",
+                f"Could not connect to server at {base_url}.",
+            )
+            return
+
+        update_config_provider(name, provider_cfg, self._home)
+        self._config = load_config(self._home)
+        if req.key and req.key.strip():
+            existing = load_secrets(self._home)
+            existing_dict = existing.to_secret_dict()
+            existing_dict[f"{name}_api_key"] = req.key.strip()
+            save_secrets(
+                SecretsConfig(**{k: SecretStr(v) for k, v in existing_dict.items()}),
+                self._home,
+            )
+
+        self._provider_models_cache.pop(name, None)
         await scope.done("ok")
 
     async def _run_turn(self, scope: RequestScope, req: TurnRequest) -> None:

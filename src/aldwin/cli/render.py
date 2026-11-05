@@ -318,6 +318,25 @@ def _diff_line_style(line: str, *, plain: bool) -> str:
     return "diff.context"
 
 
+def _format_model_title(model: str) -> str:
+    cleaned = model.strip()
+    if "/" in cleaned:
+        prov, _, mid = cleaned.partition("/")
+    else:
+        prov, mid = "openai", cleaned
+    titles = {
+        "openai": "OpenAI",
+        "anthropic": "Anthropic",
+        "gemini": "Google Gemini",
+        "openrouter": "OpenRouter",
+        "deepseek": "DeepSeek",
+        "ollama": "Ollama",
+        "lmstudio": "LM Studio",
+    }
+    title = titles.get(prov.lower(), prov.title())
+    return f"{mid} · {title}"
+
+
 class ChatRenderer:
     """Renders session headers, history, approvals, and errors to a Rich `Console`."""
 
@@ -425,6 +444,7 @@ class ChatRenderer:
         now: datetime | None = None,
         show_messages: bool = False,
         max_messages: int | None = None,
+        model: str | None = None,
     ) -> None:
         """Render resume chrome and optionally the transcript.
 
@@ -455,8 +475,12 @@ class ChatRenderer:
         if event.messages:
             when = format_relative_time(last_at, now=now)
             if show_messages:
+                prefix = f"{_format_model_title(model)} · " if model else ""
                 self.console.print(
-                    Text(f"{len(event.messages)} messages · from {when}", style="muted")
+                    Text(
+                        f"{prefix}{len(event.messages)} messages · from {when}",
+                        style="muted",
+                    )
                 )
             else:
                 self.console.print(

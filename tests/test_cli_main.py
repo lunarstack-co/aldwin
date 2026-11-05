@@ -204,14 +204,31 @@ def test_setup_cli_command_end_to_end(
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
 
+    from aldwin.core.providers.base import ModelInfo
+
     async def fake_check(_key: str) -> onboarding_mod.KeyCheckResult:
         return "ok"
 
-    async def fake_models(_key: str | None, _home: Path | None) -> list[str]:
-        return ["gpt-4o", "gpt-4.1"]
+    async def fake_models(_prov: str, home: Path | None = None) -> list[ModelInfo]:
+        return [
+            ModelInfo(
+                id="gpt-4o",
+                title="gpt-4o",
+                context_window=128000,
+                supports_tools=True,
+                local=False,
+            ),
+            ModelInfo(
+                id="gpt-4.1",
+                title="gpt-4.1",
+                context_window=400000,
+                supports_tools=True,
+                local=False,
+            ),
+        ]
 
     monkeypatch.setattr(onboarding_mod, "check_openai_key", fake_check)
-    monkeypatch.setattr(onboarding_mod, "list_available_models", fake_models)
+    monkeypatch.setattr(onboarding_mod, "list_models_for", fake_models)
 
     res = runner.invoke(
         app,

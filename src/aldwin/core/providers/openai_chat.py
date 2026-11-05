@@ -145,6 +145,11 @@ class OpenAIChatModel:
         except Exception:
             return False
 
+    def _is_google_endpoint(self) -> bool:
+        lowered_url = self.base_url.lower()
+        lowered_model = self.model.lower()
+        return "googleapis.com" in lowered_url or "gemini" in lowered_model
+
     async def stream(
         self,
         messages: Sequence[ChatMessage],
@@ -154,6 +159,7 @@ class OpenAIChatModel:
         headers = self._build_headers()
         url_key = self.base_url.rstrip("/").lower()
         include_stream_options = url_key not in _BASE_URLS_WITHOUT_STREAM_OPTIONS
+        is_google = self._is_google_endpoint()
         decoder = _TurnDecoder()
 
         try:
@@ -166,6 +172,7 @@ class OpenAIChatModel:
                         messages,
                         tools,
                         include_stream_options=include_stream_options,
+                        is_google=is_google,
                     ),
                     **self.extra_body,
                 }
@@ -210,6 +217,7 @@ class OpenAIChatModel:
                             messages,
                             tools,
                             include_stream_options=False,
+                            is_google=is_google,
                         ),
                         **self.extra_body,
                     }
@@ -253,11 +261,14 @@ def request_body(
     tools: Sequence[ToolDefinition],
     *,
     include_stream_options: bool = True,
+    is_google: bool = False,
 ) -> dict[str, Any]:
     """Build the chat-completions request for one streamed turn."""
     body: dict[str, Any] = {
         "model": model,
-        "messages": [_wire_message(message) for message in messages],
+        "messages": [
+            _wire_message(message, is_google=is_google) for message in messages
+        ],
         "stream": True,
     }
     if include_stream_options:
@@ -277,7 +288,11 @@ def request_body(
     return body
 
 
-def _wire_message(message: ChatMessage) -> dict[str, Any]:
+def _wire_message(
+    message: ChatMessage,
+    *,
+    is_google: bool = False,
+) -> dict[str, Any]:
     """Convert one ChatMessage to the chat-completions message shape."""
     if message.role == "tool":
         return {
@@ -288,8 +303,13 @@ def _wire_message(message: ChatMessage) -> dict[str, Any]:
     if message.role == "assistant":
         wire: dict[str, Any] = {"role": "assistant", "content": message.content or None}
         if message.tool_calls:
-            wire["tool_calls"] = [
-                {
+            google_data = (message.provider_data or {}).get("google") or {}
+            sig_by_id = google_data.get("signatures_by_id") or {}
+            sig_by_index = google_data.get("signatures_by_index") or {}
+
+            calls: list[dict[str, Any]] = []
+            for idx, call in enumerate(message.tool_calls):
+                call_dict: dict[str, Any] = {
                     "id": call.id,
                     "type": "function",
                     "function": {
@@ -297,8 +317,17 @@ def _wire_message(message: ChatMessage) -> dict[str, Any]:
                         "arguments": json.dumps(call.arguments),
                     },
                 }
-                for call in message.tool_calls
-            ]
+                extra = sig_by_id.get(call.id) or sig_by_index.get(idx)
+                if extra:
+                    call_dict["extra_content"] = extra
+                elif is_google and idx == 0:
+                    call_dict["extra_content"] = {
+                        "google": {
+                            "thought_signature": "skip_thought_signature_validator"
+                        }
+                    }
+                calls.append(call_dict)
+            wire["tool_calls"] = calls
         return wire
     return {"role": message.role, "content": message.content}
 
@@ -310,6 +339,8 @@ class _TurnDecoder:
         self.saw_event = False
         self._latest_call = -1
         self._call_by_id: dict[str, int] = {}
+        self._extra_content_by_id: dict[str, Any] = {}
+        self._extra_content_by_index: dict[int, Any] = {}
 
     def decode(self, line: str) -> Delta | None:
         """Turn one line into a Delta, or None when it carries nothing."""
@@ -340,6 +371,25 @@ class _TurnDecoder:
         raw_reason = choice.get("finish_reason")
         raw_usage = chunk.get("usage")
 
+        for call in wire_delta.get("tool_calls") or []:
+            call_id = call.get("id")
+            index = call.get("index")
+            extra = call.get("extra_content")
+            if extra:
+                if call_id:
+                    self._extra_content_by_id[call_id] = extra
+                if isinstance(index, int):
+                    self._extra_content_by_index[index] = extra
+
+        provider_data: dict[str, Any] | None = None
+        if self._extra_content_by_id or self._extra_content_by_index:
+            provider_data = {
+                "google": {
+                    "signatures_by_id": dict(self._extra_content_by_id),
+                    "signatures_by_index": dict(self._extra_content_by_index),
+                }
+            }
+
         delta = Delta(
             content=wire_delta.get("content") or None,
             reasoning=wire_delta.get("reasoning_content") or None,
@@ -350,6 +400,7 @@ class _TurnDecoder:
             finish_reason=_FINISH_REASONS.get(raw_reason, "unknown")
             if raw_reason
             else None,
+            provider_data=provider_data,
         )
         if not (
             delta.content
@@ -357,6 +408,7 @@ class _TurnDecoder:
             or delta.tool_calls
             or delta.usage
             or delta.finish_reason
+            or delta.provider_data
         ):
             return None
         return delta

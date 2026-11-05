@@ -23,7 +23,6 @@ from aldwin.client import (
     check_openai_key,
     detect_local_providers,
     get_onboarding_status,
-    list_available_models,
     list_models_for,
     mask_secret,
     save_provider_key,
@@ -373,8 +372,11 @@ async def _handle_path_b_cloud_provider(
         if not ok:
             return False
 
-        active_lister = model_lister or list_available_models
-        all_models = await active_lister(verified_key, boot.home)
+        if model_lister is not None:
+            all_models = await model_lister(verified_key, boot.home)
+        else:
+            models_info = await list_models_for("openai", home=boot.home)
+            all_models = [m.id for m in models_info]
         if not all_models:
             all_models = [boot.model]
         canonical, _ = filter_canonical_models(all_models, boot.model)

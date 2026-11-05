@@ -147,15 +147,24 @@ def test_cli_subcommands_stub_output(
 ) -> None:
     """setup and uninstall commands exit 0 cleanly when given valid input."""
     import aldwin.cli.onboarding as onboarding_mod
+    from aldwin.core.providers.base import ModelInfo
 
     async def _always_ok(_key: str) -> onboarding_mod.KeyCheckResult:
         return "ok"
 
-    async def _models(_key: str | None, _home: Path | None) -> list[str]:
-        return ["gpt-4o"]
+    async def _models(_prov: str, home: Path | None = None) -> list[ModelInfo]:
+        return [
+            ModelInfo(
+                id="gpt-4o",
+                title="gpt-4o",
+                context_window=128000,
+                supports_tools=True,
+                local=False,
+            )
+        ]
 
     monkeypatch.setattr(onboarding_mod, "check_openai_key", _always_ok)
-    monkeypatch.setattr(onboarding_mod, "list_available_models", _models)
+    monkeypatch.setattr(onboarding_mod, "list_models_for", _models)
 
     setup_res = runner.invoke(
         app,
