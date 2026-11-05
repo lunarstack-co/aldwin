@@ -26,7 +26,13 @@ from aldwin.protocol import (
     HistoryEvent,
     HistoryItem,
     HistoryRequest,
+    ModelEntry,
+    ModelsEvent,
+    ModelsListRequest,
     NoticeEvent,
+    ProviderKeyRequest,
+    ProviderModels,
+    ProviderServerRequest,
     Request,
     SetModelRequest,
     SkillBodyEvent,
@@ -59,6 +65,16 @@ from aldwin.protocol import (
         ApproveRequest(id="req_4", approval_id="ap_123", answer="yes"),
         HistoryRequest(id="req_5", limit=20),
         SetModelRequest(id="req_6", name="gpt-4o"),
+        ModelsListRequest(id="req_7", provider="openai", refresh=True),
+        ProviderKeyRequest(id="req_8", provider="deepseek", key="sk-test-1234"),
+        ProviderServerRequest(
+            id="req_9",
+            name="office-gpu",
+            base_url="http://127.0.0.1:8000/v1",
+            key="sk-srv-123",
+            title="Office GPU",
+            local=True,
+        ),
     ],
 )
 def test_every_request_round_trips_json(request_msg: Request) -> None:
@@ -117,6 +133,28 @@ def test_every_request_round_trips_json(request_msg: Request) -> None:
             re="req_1",
             code="auth_failed",
             message="Your OpenAI key was rejected. Run `aldwin setup`.",
+        ),
+        ModelsEvent(
+            re="req_7",
+            current="openai/gpt-4o",
+            providers=[
+                ProviderModels(
+                    name="openai",
+                    title="OpenAI",
+                    local=False,
+                    configured=True,
+                    status="ok",
+                    models=[
+                        ModelEntry(
+                            ref="openai/gpt-4o",
+                            id="gpt-4o",
+                            title="GPT-4o",
+                            context_window=128000,
+                            supports_tools=True,
+                        )
+                    ],
+                )
+            ],
         ),
     ],
 )
@@ -653,3 +691,78 @@ def test_connectors_add_local_fields_compatible() -> None:
         ConnectorInfo(name="a", title="A", url="https://a.example/mcp").transport
         == "http"
     )
+
+
+# --- provider protocol messages -----------------------------------------------
+
+
+def test_provider_key_request_hides_key_from_repr() -> None:
+    """`ProviderKeyRequest` hides the secret key from repr and str."""
+    req = ProviderKeyRequest(provider="deepseek", key="sk-canary-secret-12345")
+    assert "sk-canary-secret-12345" not in repr(req)
+    assert "sk-canary-secret-12345" not in str(req)
+
+
+def test_provider_server_request_hides_key_and_round_trips() -> None:
+    """`ProviderServerRequest` hides the secret key and round-trips."""
+    req = ProviderServerRequest(
+        name="office-gpu",
+        base_url="http://192.168.1.50:8000/v1",
+        key="sk-canary-token",
+        title="Office GPU",
+        local=True,
+    )
+    assert "sk-canary-token" not in repr(req)
+    assert "sk-canary-token" not in str(req)
+    dumped = req.model_dump_json()
+    parsed = parse_request(dumped)
+    assert isinstance(parsed, ProviderServerRequest)
+    assert parsed.name == "office-gpu"
+    assert parsed.base_url == "http://192.168.1.50:8000/v1"
+    assert parsed.key == "sk-canary-token"
+    assert parsed.title == "Office GPU"
+    assert parsed.local is True
+
+
+def test_models_list_and_models_event_round_trip() -> None:
+    """`ModelsListRequest` and `ModelsEvent` round-trip through JSON."""
+    req = ModelsListRequest(provider="openai", refresh=True)
+    raw_req = req.model_dump_json()
+    parsed_req = parse_request(raw_req)
+    assert parsed_req == req
+
+    event = ModelsEvent(
+        re="req_test",
+        current="openai/gpt-4o",
+        providers=[
+            ProviderModels(
+                name="openai",
+                title="OpenAI",
+                local=False,
+                configured=True,
+                status="ok",
+                models=[
+                    ModelEntry(
+                        ref="openai/gpt-4o",
+                        id="gpt-4o",
+                        title="GPT-4o",
+                        context_window=128000,
+                        supports_tools=True,
+                    ),
+                    ModelEntry(
+                        ref="openai/o3-mini",
+                        id="o3-mini",
+                        title="o3-mini",
+                        context_window=200000,
+                        supports_tools=False,
+                    ),
+                ],
+            )
+        ],
+    )
+    raw_event = event.model_dump_json()
+    parsed_event = parse_event(raw_event)
+    assert parsed_event == event
+    assert isinstance(parsed_event, ModelsEvent)
+    assert parsed_event.providers[0].models[0].supports_tools is True
+    assert parsed_event.providers[0].models[1].supports_tools is False

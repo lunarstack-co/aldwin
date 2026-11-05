@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import SecretStr
+
+if TYPE_CHECKING:
+    import httpx
 
 from aldwin.core.home import home_dir
 from aldwin.core.providers.base import AccessStatus, ProviderBackend
@@ -47,6 +51,7 @@ async def save_provider_key(
     base_url: str | None = None,
     config: AldwinConfig | None = None,
     backend: ProviderBackend | None = None,
+    transport: httpx.AsyncBaseTransport | None = None,
 ) -> AccessStatus:
     """Validate a candidate API key and persist to secrets.yaml only on success.
 
@@ -82,6 +87,7 @@ async def save_provider_key(
             config=active_config,
             secrets=candidate_secrets,
             home=root,
+            transport=transport,
         )
 
     try:

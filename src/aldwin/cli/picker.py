@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 from prompt_toolkit.application import Application
 from prompt_toolkit.input import Input, PipeInput
@@ -23,6 +23,26 @@ def row_text(row: Row) -> str:
     return row if isinstance(row, str) else "".join(text for _style, text in row)
 
 
+def _normalize_style(style: str) -> str:
+    cleaned = style.strip()
+    if not cleaned or cleaned.startswith("class:"):
+        return cleaned
+    if cleaned in (
+        "muted",
+        "accent",
+        "heading",
+        "hint",
+        "selected",
+        "ok",
+        "warn",
+        "err",
+    ):
+        return f"class:{cleaned}"
+    if cleaned == "bold":
+        return "class:heading"
+    return cleaned
+
+
 async def pick_index(
     items: Sequence[Row],
     *,
@@ -31,6 +51,7 @@ async def pick_index(
     plain: bool = False,
     header: str | None = None,
     erase_when_done: bool = False,
+    disabled: Iterable[int] = (),
 ) -> int | None:
     """Show an inline ❯ list; return selected index, or ``None`` on Esc.
 
@@ -39,7 +60,11 @@ async def pick_index(
     """
     if not items:
         return None
-    selected = max(0, min(default, len(items) - 1))
+    disabled_set = set(disabled)
+    selectable = [i for i in range(len(items)) if i not in disabled_set]
+    if not selectable:
+        return None
+    selected = default if default in selectable else selectable[0]
     result: dict[str, int | None] = {"value": None}
 
     def _render() -> list[tuple[str, str]]:
@@ -48,6 +73,19 @@ async def pick_index(
             fragments.append(("class:heading", f"{header}"))
             fragments.append(("class:hint", "   ↑↓ move · Enter choose · Esc back\n\n"))
         for idx, label in enumerate(items):
+            if idx in disabled_set:
+                if plain:
+                    fragments.append(("", f"  {row_text(label)}\n"))
+                else:
+                    fragments.append(("", "  "))
+                    if isinstance(label, str):
+                        fragments.append(("class:heading", label))
+                    else:
+                        for style, text in label:
+                            fragments.append((_normalize_style(style), text))
+                    fragments.append(("", "\n"))
+                continue
+
             chosen = idx == selected
             if plain:
                 fragments.append(("", f"{'> ' if chosen else '  '}{row_text(label)}\n"))
@@ -58,8 +96,9 @@ async def pick_index(
                 fragments.append((style, label))
             else:
                 for style, text in label:
+                    norm = _normalize_style(style)
                     fragments.append(
-                        (f"{style} class:selected" if chosen else style, text)
+                        (f"{norm} class:selected" if chosen else norm, text)
                     )
             fragments.append(("", "\n"))
         return fragments
@@ -70,29 +109,41 @@ async def pick_index(
     @kb.add("c-p")
     def _up(_event: KeyPressEvent) -> None:
         nonlocal selected
-        selected = (selected - 1) % len(items)
+        orig = selected
+        for _ in range(len(items)):
+            selected = (selected - 1) % len(items)
+            if selected not in disabled_set:
+                return
+        selected = orig
 
     @kb.add("down")
     @kb.add("c-n")
     def _down(_event: KeyPressEvent) -> None:
         nonlocal selected
-        selected = (selected + 1) % len(items)
+        orig = selected
+        for _ in range(len(items)):
+            selected = (selected + 1) % len(items)
+            if selected not in disabled_set:
+                return
+        selected = orig
 
     @kb.add("enter")
     def _enter(event: KeyPressEvent) -> None:
-        result["value"] = selected
-        event.app.exit()
+        if selected not in disabled_set:
+            result["value"] = selected
+            event.app.exit()
 
     @kb.add("escape", eager=True)
     def _esc(event: KeyPressEvent) -> None:
         result["value"] = None
         event.app.exit()
 
-    # Digit shortcuts 1..n
-    for digit in range(1, min(9, len(items)) + 1):
+    # Digit shortcuts 1..n for selectable items
+    for digit in range(1, min(9, len(selectable)) + 1):
+        target = selectable[digit - 1]
 
         @kb.add(str(digit))
-        def _digit(event: KeyPressEvent, choice: int = digit - 1) -> None:
+        def _digit(event: KeyPressEvent, choice: int = target) -> None:
             result["value"] = choice
             event.app.exit()
 

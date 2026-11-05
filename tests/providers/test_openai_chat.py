@@ -424,3 +424,120 @@ async def test_openai_chat_check_access_and_describe() -> None:
     )
     assert await backend_remote.check_access() == AccessStatus.UNREACHABLE
     assert await backend_remote.describe_model("gpt-4o") is None
+
+
+async def test_gemini_thought_signature_captured_and_replayed() -> None:
+    """Gemini thought_signature is captured and replayed on assistant turn."""
+    requests: list[httpx.Request] = []
+    chunk1: dict[str, Any] = {
+        "choices": [
+            {
+                "index": 0,
+                "delta": {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": "call_gemini_1",
+                            "type": "function",
+                            "function": {
+                                "name": "echo",
+                                "arguments": '{"text": "hi"}',
+                            },
+                            "extra_content": {
+                                "google": {
+                                    "thought_signature": "TEST_SIG_ABC123",
+                                }
+                            },
+                        }
+                    ],
+                },
+            }
+        ]
+    }
+    chunk2: dict[str, Any] = {
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"role": "assistant", "content": "Done."},
+                "finish_reason": "stop",
+            }
+        ]
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(200, content=_sse([chunk1]))
+        return httpx.Response(200, content=_sse([chunk2]))
+
+    model = OpenAIChatModel(
+        "models/gemini-3.8-flash",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+        api_key="gemini-key",
+        transport=httpx.MockTransport(handler),
+    )
+
+    # Turn 1
+    deltas = [d async for d in model.stream(_USER, tools=[_ECHO_TOOL])]
+    assistant_msg = agglomerate_deltas(deltas)
+    assert assistant_msg.tool_calls[0].name == "echo"
+    assert assistant_msg.provider_data is not None
+    assert assistant_msg.provider_data["google"]["signatures_by_id"][
+        "call_gemini_1"
+    ] == {"google": {"thought_signature": "TEST_SIG_ABC123"}}
+
+    # Turn 2
+    tool_msg = ChatMessage(
+        role="tool",
+        tool_call_id="call_gemini_1",
+        content="hi",
+    )
+    turn2_messages = [*_USER, assistant_msg, tool_msg]
+    _ = [d async for d in model.stream(turn2_messages, tools=[_ECHO_TOOL])]
+
+    assert len(requests) == 2
+    body2 = json.loads(requests[1].content)
+    assistant_wire = body2["messages"][1]
+    assert assistant_wire["role"] == "assistant"
+    assert assistant_wire["tool_calls"][0]["extra_content"] == {
+        "google": {"thought_signature": "TEST_SIG_ABC123"}
+    }
+
+
+async def test_gemini_fallback_thought_signature_when_missing() -> None:
+    """When sending tool call to Gemini without signature, fallback is used."""
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, content=_sse([]))
+
+    model = OpenAIChatModel(
+        "models/gemini-3.8-flash",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+        api_key="gemini-key",
+        transport=httpx.MockTransport(handler),
+    )
+
+    from agentling import ToolCall
+
+    # Restored session message without captured provider_data
+    msg = ChatMessage(
+        role="assistant",
+        tool_calls=[
+            ToolCall(id="call_legacy_1", name="echo", arguments={"text": "hi"})
+        ],
+    )
+    messages = [
+        *_USER,
+        msg,
+        ChatMessage(role="tool", tool_call_id="call_legacy_1", content="ok"),
+    ]
+    _ = [d async for d in model.stream(messages, tools=[_ECHO_TOOL])]
+
+    assert len(requests) == 1
+    body = json.loads(requests[0].content)
+    assistant_wire = body["messages"][1]
+    assert assistant_wire["tool_calls"][0]["extra_content"] == {
+        "google": {"thought_signature": "skip_thought_signature_validator"}
+    }

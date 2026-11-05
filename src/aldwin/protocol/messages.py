@@ -42,6 +42,15 @@ ErrorCode = Literal[
     "connector",
     "auth_required",
     "request_rejected",
+    "invalid_request",
+]
+ProviderModelStatus = Literal[
+    "ok",
+    "invalid_key",
+    "no_access",
+    "unreachable",
+    "not_running",
+    "not_configured",
 ]
 ConnectorStatus = Literal["connecting", "connected", "failed", "disabled", "needs_auth"]
 ConnectorAuth = Literal["none", "bearer", "oauth"]
@@ -195,6 +204,33 @@ class TodoGetRequest(RequestBase):
     type: Literal["todo.get"] = "todo.get"
 
 
+class ModelsListRequest(RequestBase):
+    """Request available models across providers from the host."""
+
+    type: Literal["models.list"] = "models.list"
+    provider: str | None = None
+    refresh: bool = False
+
+
+class ProviderKeyRequest(RequestBase):
+    """Submit an API key for a cloud provider."""
+
+    type: Literal["provider.key"] = "provider.key"
+    provider: str = Field(min_length=1)
+    key: str = Field(min_length=1, repr=False)
+
+
+class ProviderServerRequest(RequestBase):
+    """Add a custom OpenAI-compatible server to `config.yaml`."""
+
+    type: Literal["provider.server"] = "provider.server"
+    name: str = Field(min_length=1)
+    base_url: str = Field(min_length=1)
+    key: str | None = Field(default=None, repr=False)
+    title: str | None = None
+    local: bool = False
+
+
 class ConnectorsListRequest(RequestBase):
     """List connectors; answered with a `connectors` event."""
 
@@ -312,6 +348,9 @@ Request = Annotated[
     | SkillsListRequest
     | SkillsShowRequest
     | TodoGetRequest
+    | ModelsListRequest
+    | ProviderKeyRequest
+    | ProviderServerRequest
     | ConnectorsListRequest
     | ConnectorsImportRequest
     | ConnectorsAddRequest
@@ -453,6 +492,39 @@ class DoneEvent(EventBase):
     reason: DoneReason
     usage: TokenUsage | None = None
     max_steps: int | None = None
+
+
+class ModelEntry(BaseModel):
+    """Metadata describing a single model offered by a provider."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    ref: str
+    id: str
+    title: str
+    context_window: int | None = None
+    supports_tools: bool | None = None
+
+
+class ProviderModels(BaseModel):
+    """A provider's connectivity status and available models."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    title: str
+    local: bool
+    configured: bool
+    status: ProviderModelStatus
+    models: list[ModelEntry] = Field(default_factory=list)
+
+
+class ModelsEvent(EventBase):
+    """Inventory of models emitted in response to `models.list`."""
+
+    kind: Literal["models"] = "models"
+    current: str
+    providers: list[ProviderModels] = Field(default_factory=list)
 
 
 class ConnectorToolInfo(BaseModel):
@@ -601,6 +673,7 @@ Event = Annotated[
     | NoticeEvent
     | HistoryEvent
     | StatusEvent
+    | ModelsEvent
     | ConnectorsEvent
     | ConnectorsImportEvent
     | ConnectorStatusEvent

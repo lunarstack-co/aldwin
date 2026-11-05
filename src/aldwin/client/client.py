@@ -49,7 +49,6 @@ from aldwin.host.in_process import (
     get_persona_summary,
     get_persona_text,
     get_skills_report,
-    list_available_models,
     mark_whats_new_seen,
     mask_secret,
     open_in_process_client,
@@ -93,6 +92,10 @@ from aldwin.protocol import (
     HelloRequest,
     HistoryEvent,
     HistoryRequest,
+    ModelsEvent,
+    ModelsListRequest,
+    ProviderKeyRequest,
+    ProviderServerRequest,
     Request,
     SetModelRequest,
     SkillBodyEvent,
@@ -338,16 +341,76 @@ class AldwinClient:
         """Switch the active model for subsequent turns."""
         result = await self._request_terminal(SetModelRequest(name=name))
         if isinstance(result, DoneEvent):
-            self._fallback_model = name.strip()
+            cleaned = name.strip()
+            self._fallback_model = cleaned if "/" in cleaned else f"openai/{cleaned}"
         return result
 
     async def new_conversation(self) -> None:
         """Close the current session file and start a new conversation."""
         await self._transport.new_conversation()
 
-    async def list_models(self) -> list[str]:
-        """Return available OpenAI chat models for `/model`."""
-        return await list_available_models(home=self._home)
+    async def list_models(
+        self,
+        *,
+        provider: str | None = None,
+        refresh: bool = False,
+    ) -> ModelsEvent:
+        """Fetch model inventory from host via `models.list` protocol request."""
+        self._ensure_reader()
+        request = ModelsListRequest(provider=provider, refresh=refresh)
+        queue: asyncio.Queue[Event | None] = asyncio.Queue()
+        self._queues[request.id] = queue
+        models_event: ModelsEvent | None = None
+        try:
+            await self._transport.send(request)
+            while True:
+                event = await queue.get()
+                if event is None:
+                    raise ProtocolError(
+                        "Transport closed before `models.list` completed."
+                    )
+                if isinstance(event, ModelsEvent):
+                    models_event = event
+                elif isinstance(event, ErrorEvent):
+                    raise ProtocolError(event.message, code=event.code)
+                elif isinstance(event, DoneEvent):
+                    if models_event is None:
+                        return ModelsEvent(
+                            re=request.id, current=self.model, providers=[]
+                        )
+                    return models_event
+        finally:
+            self._queues.pop(request.id, None)
+
+    async def save_provider_key(
+        self,
+        provider: str,
+        key: str,
+    ) -> DoneEvent | ErrorEvent:
+        """Save and verify a provider API key over the protocol."""
+        return await self._request_terminal(
+            ProviderKeyRequest(provider=provider, key=key)
+        )
+
+    async def add_provider_server(
+        self,
+        name: str,
+        base_url: str,
+        *,
+        key: str | None = None,
+        title: str | None = None,
+        local: bool = False,
+    ) -> DoneEvent | ErrorEvent:
+        """Register a custom provider server over the protocol."""
+        return await self._request_terminal(
+            ProviderServerRequest(
+                name=name,
+                base_url=base_url,
+                key=key,
+                title=title,
+                local=local,
+            )
+        )
 
     def persona_summary(self) -> PersonaSummary:
         """Return current persona text and path metadata for `/persona`."""
@@ -682,7 +745,6 @@ __all__ = [
     "get_persona_summary",
     "get_persona_text",
     "get_skills_report",
-    "list_available_models",
     "mark_whats_new_seen",
     "mask_secret",
     "open_in_process_client",

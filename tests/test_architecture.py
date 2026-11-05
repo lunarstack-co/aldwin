@@ -102,6 +102,8 @@ def test_client_never_imports_core_or_agentling() -> None:
         == []
     )
     assert mcp_import_violations(SRC_ALDWIN / "client") == []
+    client_text = (SRC_ALDWIN / "client" / "client.py").read_text(encoding="utf-8")
+    assert "list_available_models" not in client_text
 
 
 def test_only_core_connectors_imports_mcp() -> None:
@@ -154,10 +156,17 @@ def test_connector_dependencies_pinned() -> None:
 
 
 def test_doors_never_import_providers() -> None:
-    """A door (`aldwin.cli`) must never import `aldwin.core.providers`."""
+    """A door (`aldwin.cli`) and `client` must never import `aldwin.core.providers`."""
     assert (
         check_forbidden_imports(
             SRC_ALDWIN / "cli",
+            ("aldwin.core.providers",),
+        )
+        == []
+    )
+    assert (
+        check_forbidden_imports(
+            SRC_ALDWIN / "client",
             ("aldwin.core.providers",),
         )
         == []

@@ -29,8 +29,10 @@ async def test_slash_model_numbered_list_and_switch() -> None:
     console = create_console(plain=True, width=80, record=True, file=buf)
     renderer = ChatRenderer(console, plain=True)
 
+    answers = iter(["1", "2"])
+
     async def pick_second(_label: str) -> str:
-        return "2"
+        return next(answers)
 
     should_exit = await handle_slash_command(
         "/model",
@@ -39,14 +41,17 @@ async def test_slash_model_numbered_list_and_switch() -> None:
         prompt_line=pick_second,
     )
     assert should_exit is False
-    assert client.model == "gpt-4.1"
-    assert client.model_switches == ["gpt-4.1"]
+    assert client.model == "openai/gpt-4.1"
+    assert client.model_switches == ["openai/gpt-4.1"]
 
     text = console.export_text()
+    assert "Available providers" in text
+    assert "1. OpenAI (current)" in text
+    assert "OpenAI models" in text
     assert "1. gpt-4o (current)" in text
     assert "2. gpt-4.1" in text
     assert "3. o3-mini" in text
-    assert "✓ Switched model to gpt-4.1." in text
+    assert "✓ Switched to gpt-4.1 (OpenAI)." in text
 
     # Direct "/model o3-mini" shortcut
     await handle_slash_command(
@@ -55,8 +60,8 @@ async def test_slash_model_numbered_list_and_switch() -> None:
         renderer=renderer,
         prompt_line=_noop_prompt,
     )
-    assert client.model == "o3-mini"
-    assert client.model_switches == ["gpt-4.1", "o3-mini"]
+    assert client.model == "openai/o3-mini"
+    assert client.model_switches == ["openai/gpt-4.1", "openai/o3-mini"]
 
     # Unknown model shows error
     await handle_slash_command(
@@ -79,11 +84,16 @@ async def test_slash_model_numbered_list_and_switch() -> None:
     async def pick_out_of_range(_label: str) -> str:
         return "99"
 
+    answers_out = iter(["99", ""])
+
+    async def _ans_out(_label: str) -> str:
+        return next(answers_out)
+
     await handle_slash_command(
         "/model",
         client=client,
         renderer=renderer,
-        prompt_line=pick_out_of_range,
+        prompt_line=_ans_out,
     )
     assert "Invalid selection '99'" in console.export_text()
 
@@ -99,11 +109,17 @@ async def test_slash_model_numbered_list_and_switch() -> None:
         create_console(plain=True, width=80, record=True, file=buf_snap),
         plain=True,
     )
+    # Pick OpenAI (1) then go back (Enter) then cancel (Enter)
+    snap_answers = iter(["1", "", ""])
+
+    async def _ans_snap(_label: str) -> str:
+        return next(snap_answers)
+
     await handle_slash_command(
         "/model",
         client=client,
         renderer=renderer_snap,
-        prompt_line=_noop_prompt,
+        prompt_line=_ans_snap,
     )
     snap_text = renderer_snap.console.export_text()
     assert "gpt-5-2025-08-07" not in snap_text
@@ -114,11 +130,16 @@ async def test_slash_model_numbered_list_and_switch() -> None:
         create_console(plain=True, width=80, record=True, file=buf_all),
         plain=True,
     )
+    all_answers = iter(["1", "", ""])
+
+    async def _ans_all(_label: str) -> str:
+        return next(all_answers)
+
     await handle_slash_command(
         "/model all",
         client=client,
         renderer=renderer_all,
-        prompt_line=_noop_prompt,
+        prompt_line=_ans_all,
     )
     all_text = renderer_all.console.export_text()
     assert "gpt-5-2025-08-07" in all_text
@@ -278,7 +299,7 @@ async def test_history_command_prints_saved_messages() -> None:
     text = console.export_text()
     assert "> prior question" in text
     assert "* prior answer" in text
-    assert "2 messages" in text
+    assert "gpt-4o · OpenAI · 2 messages" in text
 
 
 async def test_skills_show_prints_body() -> None:

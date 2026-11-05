@@ -306,6 +306,32 @@ Needs a real model and an account with one catalogue app, for example Linear.
    - `grep -c redacted ~/.aldwin/sessions/*.json` prints at least `1` for the newest file (the marker is stored as `\u2039redacted\u203a`).
 3. Press up-arrow: the pasted line is still there for this session.
 
+### Step 20: Providers
+
+Needs an OpenAI API key and Ollama running locally with a tool-capable model (e.g. `qwen3:8b`).
+
+1. Start `aldwin` and verify status bar:
+   - Expect: bottom status bar shows `{model id} · OpenAI` (e.g. `gpt-4o · OpenAI`).
+2. Run `/model`:
+   - Expect: "Available providers" menu with Ollama, LM Studio, OpenAI, followed by `Add a provider…` and `Other server`.
+3. Pick `Ollama`:
+   - Expect: "Ollama models" sub-menu opens with Ollama models (`✓ tools · 32K`).
+   - Press `Esc`: returns back to "Available providers".
+   - Pick `Ollama` again, then select `qwen3:8b`:
+   - Expect: `✓ Switched to qwen3:8b (Ollama, local).` printed; status bar updates to `qwen3:8b · Ollama`.
+   - Ask a calculation: `Calculate 24 * 15`. Expect: `calculate` tool executes and returns `360`.
+4. Ollama outage & recovery (no-flicker test):
+   - Stop Ollama (`pkill ollama` or quit app).
+   - Run `/model`, select `Ollama`. Expect: retained models still listed with indicator `Ollama · not running at http://localhost:11434`.
+   - Start Ollama again. Run `/model`, select `Ollama`. Expect: Ollama status recovers to active without restart.
+5. Add a provider:
+   - Run `/model`, select `Add a provider…`, select `DeepSeek`.
+   - Expect: masked key prompt `DeepSeek API key:`. Key input does not echo.
+   - Enter invalid key: error shown, secrets file untouched.
+6. Typed `/model`:
+   - Type `/model gpt-4o`.
+   - Expect: switches directly without picker, prints `✓ Switched to gpt-4o (OpenAI).`, status bar updates.
+
 ## 3. Manual test run log template
 
 Copy the template below and fill it in for each platform tested (`macOS` and `Linux`):

@@ -28,7 +28,7 @@ Type `/` at the prompt for autocomplete:
 | `/help` | Show slash commands and keyboard shortcuts |
 | `/new` | Start a fresh conversation (previous session stays saved on disk) |
 | `/history` | Show this conversation's saved messages (up to 500) |
-| `/model [name\|all]` | List available OpenAI chat models and switch models mid-conversation |
+| `/model [name\|all]` | Switch model or provider (local, cloud, custom servers, or Add a provider) |
 | `/persona` | Show the active persona and `~/.aldwin/persona.md` character count |
 | `/memory` | Show profile, recent notes, and index status (`N notes · M conversations indexed · index <size>`) |
 | `/skills` | List catalogue skills (`name · source · description`); `/skills show <name>` prints the body |

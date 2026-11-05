@@ -235,6 +235,34 @@ async def _cancel_task(task: asyncio.Task[None] | None) -> None:
         await task
 
 
+def format_session_header(model: str, session_id: str = "") -> str:
+    """Format session header: `{model id} · {provider title}`."""
+    formatted = format_model_provider_title(model)
+    if session_id:
+        return f"{formatted} ({session_id})"
+    return formatted
+
+
+def format_model_provider_title(model: str) -> str:
+    """Format model string as `{model id} · {provider title}`."""
+    cleaned = model.strip()
+    if "/" in cleaned:
+        prov, _, mid = cleaned.partition("/")
+    else:
+        prov, mid = "openai", cleaned
+    titles = {
+        "openai": "OpenAI",
+        "anthropic": "Anthropic",
+        "gemini": "Google Gemini",
+        "openrouter": "OpenRouter",
+        "deepseek": "DeepSeek",
+        "ollama": "Ollama",
+        "lmstudio": "LM Studio",
+    }
+    title = titles.get(prov.lower(), prov.title())
+    return f"{mid} · {title}"
+
+
 def format_toolbar_model_segment(
     model: str,
     used_tokens: int = 0,
@@ -250,6 +278,7 @@ def format_toolbar_model_segment(
     """
     from aldwin.cli.theme import context_bar, context_meter_level
 
+    display_name = format_model_provider_title(model)
     pct = context_left_percent(model, used_tokens)
     level = context_meter_level(pct)
     bar = context_bar(pct, plain=plain)
@@ -258,7 +287,7 @@ def format_toolbar_model_segment(
     if level in ("warn", "err"):
         fresh_bit = " · /new to start fresh"
     key_bit = "Key rejected · run aldwin setup · " if key_rejected else ""
-    main = f"{key_bit}{model} · {bar}{pct}% context left{fresh_bit}"
+    main = f"{key_bit}{display_name} · {bar}{pct}% context left{fresh_bit}"
     fragments: list[tuple[str, str]] = [("", main)]
     if level == "warn":
         fragments.append(("class:bottom-toolbar.warn", " · warn"))
@@ -927,7 +956,7 @@ async def _chat_loop(
             tip = next_tip(boot.home, plain=boot.plain)
             renderer.render_welcome(
                 first_run=False,
-                model=client.model,
+                model=format_model_provider_title(client.model),
                 display_home=boot.display_home,
                 display_workspace=boot.display_workspace or None,
                 tip=tip,

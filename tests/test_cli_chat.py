@@ -198,17 +198,16 @@ async def test_prompt_input_bindings_empty_ignored_and_toolbar(
     _ = aldwin_home
     assert (
         format_bottom_toolbar("gpt-4o", "2026-10-18_3f2a9b1c", 6200)
-        == " ? for shortcuts   gpt-4o · ██████████95% context left "
+        == " ? for shortcuts   gpt-4o · OpenAI · ██████████95% context left "
     )
-    assert (
-        format_bottom_toolbar(
-            "gpt-4o",
-            "2026-10-18_3f2a9b1c",
-            6200,
-            todo_label="Tasks 2/5",
-            plain=True,
-        )
-        == " ? for shortcuts   gpt-4o · ##########95% context left · Tasks 2/5 "
+    assert format_bottom_toolbar(
+        "gpt-4o",
+        "2026-10-18_3f2a9b1c",
+        6200,
+        todo_label="Tasks 2/5",
+        plain=True,
+    ) == (
+        " ? for shortcuts   gpt-4o · OpenAI · ##########95% context left · Tasks 2/5 "
     )
     # gpt-4o window 128k → 15% left needs ~108_800 used; 8% needs ~117_760.
     warn = to_plain_text(format_toolbar_model_segment("gpt-4o", 108_800, plain=True))

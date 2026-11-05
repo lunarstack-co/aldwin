@@ -23,6 +23,9 @@ from aldwin.protocol import (
     ErrorEvent,
     Event,
     HistoryEvent,
+    ModelEntry,
+    ModelsEvent,
+    ProviderModels,
     SkillBodyEvent,
     SkillCatalogItem,
     SkillsEvent,
@@ -41,6 +44,7 @@ class FakeHost:
         updated_at: str | None = "2026-10-17T18:02:00+00:00",
         available_models: list[str] | None = None,
         history_event: HistoryEvent | None = None,
+        models_event: ModelsEvent | None = None,
     ) -> None:
         self.model = model
         self.session_id = session_id
@@ -51,6 +55,7 @@ class FakeHost:
             messages=[],
             interrupted=False,
         )
+        self.models_event = models_event
 
         self.connected = False
         self.closed = False
@@ -238,7 +243,17 @@ class FakeHost:
     async def set_model(self, name: str) -> DoneEvent | ErrorEvent:
         cleaned = name.strip()
         self.requests.append(("set_model", cleaned))
-        if cleaned not in self.available_models:
+        matched = False
+        for m in self.available_models:
+            if (
+                m == cleaned
+                or m == cleaned.split("/")[-1]
+                or ("/" not in m and f"openai/{m}" == cleaned)
+                or ("/" not in cleaned and f"openai/{cleaned}" == m)
+            ):
+                matched = True
+                break
+        if not matched:
             return ErrorEvent(
                 re="req_model",
                 code="unknown_model",
@@ -246,8 +261,9 @@ class FakeHost:
                     f"Model {cleaned!r} is not available. Pick another with /model."
                 ),
             )
-        self.model = cleaned
-        self.model_switches.append(cleaned)
+        canonical = cleaned if "/" in cleaned else f"openai/{cleaned}"
+        self.model = canonical
+        self.model_switches.append(canonical)
         return DoneEvent(re="req_model", reason="ok")
 
     async def new_conversation(self) -> None:
@@ -260,8 +276,57 @@ class FakeHost:
         self.requests.append(("todo.get",))
         return self.todo_event
 
-    async def list_models(self) -> list[str]:
-        return list(self.available_models)
+    async def list_models(
+        self,
+        *,
+        provider: str | None = None,
+        refresh: bool = False,
+    ) -> ModelsEvent:
+        self.requests.append(("models.list",))
+        if hasattr(self, "models_event") and isinstance(self.models_event, ModelsEvent):
+            return self.models_event
+        models = [
+            ModelEntry(
+                ref=f"openai/{m}" if "/" not in m else m,
+                id=m.split("/")[-1],
+                title=m.split("/")[-1],
+                context_window=128000,
+                supports_tools=True,
+            )
+            for m in self.available_models
+        ]
+        return ModelsEvent(
+            re="req_models",
+            current=self.model,
+            providers=[
+                ProviderModels(
+                    name="openai",
+                    title="OpenAI",
+                    local=False,
+                    configured=True,
+                    status="ok",
+                    models=models,
+                )
+            ],
+        )
+
+    async def save_provider_key(
+        self, provider: str, key: str
+    ) -> DoneEvent | ErrorEvent:
+        self.requests.append(("provider.key", provider, key))
+        return DoneEvent(re="req_key", reason="ok")
+
+    async def add_provider_server(
+        self,
+        name: str,
+        base_url: str,
+        *,
+        key: str | None = None,
+        title: str | None = None,
+        local: bool = False,
+    ) -> DoneEvent | ErrorEvent:
+        self.requests.append(("provider.server", name, base_url))
+        return DoneEvent(re="req_server", reason="ok")
 
     def persona_summary(self) -> PersonaSummary:
         return self.custom_persona

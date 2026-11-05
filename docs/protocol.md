@@ -35,6 +35,9 @@ Every message is a Pydantic v2 model with `model_config = ConfigDict(extra="igno
 | `approve` | `ApproveRequest` | `approval_id: str`, `answer: "yes" \| "no"` | Answer a pending `approval` event from the host. |
 | `history` | `HistoryRequest` | `limit: int = 20` (`1..500`) | Fetch the last `limit` user/assistant messages and `interrupted` flag. |
 | `set_model` | `SetModelRequest` | `name: str` | Switch the model for subsequent turns and persist in `config.yaml`. |
+| `models.list` | `ModelsListRequest` | `provider: str \| None = None`, `refresh: bool = False` | List available models across configured and local providers. |
+| `provider.key` | `ProviderKeyRequest` | `provider: str`, `key: str` | Validate and persist an API key for a cloud provider. |
+| `provider.server` | `ProviderServerRequest` | `name: str`, `base_url: str`, `key: str \| None = None`, `title: str \| None = None`, `local: bool = False` | Register a custom OpenAI-compatible server in `config.yaml`. |
 
 ### Events (host → door, `type = "event"`)
 
@@ -46,6 +49,7 @@ Every message is a Pydantic v2 model with `model_config = ConfigDict(extra="igno
 | `approval` | `ApprovalEvent` | `approval_id: str`, `summary: str`, `detail: str = ""` | No | Host is paused waiting for a `yes` or `no` `approve` request. |
 | `history` | `HistoryEvent` | `messages: list[HistoryItem]`, `interrupted: bool` | No | Past messages (`role: "user" \| "assistant" \| "tool"`, `text`, `at`). |
 | `status` | `StatusEvent` | `message: str` | No | Non-terminal status notice (e.g. `OpenAI is busy, retrying (2 of 3)…`). |
+| `models` | `ModelsEvent` | `current: str`, `providers: list[ProviderModels]` | No | List of providers and models returned in response to `models.list`. |
 | `done` | `DoneEvent` | `reason: "answered" \| "stopped" \| "max_steps" \| "ok"`, `usage: TokenUsage \| None`, `max_steps: int \| None` (set when `reason="max_steps"`) | **Yes** | Request completed normally. |
 | `error` | `ErrorEvent` | `code: ErrorCode`, `message: str` | **Yes** | Request failed with a single-sentence actionable message. |
 
