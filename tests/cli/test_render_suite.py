@@ -203,15 +203,15 @@ def test_each_error_code_copy() -> None:
     renderer = ChatRenderer(console)
 
     expected: list[tuple[ErrorCode, str]] = [
-        ("auth_failed", "Your OpenAI key was rejected. Run `aldwin setup`."),
-        ("rate_limited", "OpenAI is rate-limiting requests right now."),
-        ("model_unavailable", "Can't reach OpenAI. Check your connection"),
+        ("auth_failed", "Your API key was rejected. Run `aldwin setup` to replace it."),
+        ("rate_limited", "The provider rate limit was reached."),
+        ("model_unavailable", "Can't reach the model provider. Check your connection"),
         ("unknown_model", "Pick another with /model."),
         ("busy", "Press Esc to stop it first."),
         ("internal", "Something went wrong. Details are in ~/.aldwin/logs/aldwin.log"),
     ]
     for code, _phrase in expected:
-        renderer.render_error(code, "internal details")
+        renderer.render_error(code, "")
 
     text = console.export_text()
     for _code, phrase in expected:

@@ -405,7 +405,7 @@ def test_classify_model_error() -> None:
     assert code == "rate_limited"
     code, msg = classify_model_error(ModelServerError("server error"))
     assert code == "rate_limited"
-    assert "busy" in msg.lower()
+    assert "returned a server error" in msg.lower()
 
     code, _ = classify_model_error(ModelConnectionError("connection failed"))
     assert code == "model_unavailable"
@@ -446,14 +446,14 @@ def test_retry_status_message() -> None:
     msg_conn = retry_status_message(
         ModelConnectionError("connect failed"), attempt=1, max_retries=3, delay_s=1.0
     )
-    assert "No internet connection" in msg_conn
+    assert "Can't reach OpenAI" in msg_conn
     assert "Retrying in 1s (1/3)…" in msg_conn
 
     msg_rate = retry_status_message(
         ModelRateLimitError("busy"), attempt=2, max_retries=3, delay_s=2.0
     )
     assert "OpenAI is busy" in msg_rate
-    assert "Retrying in 2s (2/3)…" in msg_rate
+    assert "retrying in 2s (2/3)…" in msg_rate
 
 
 def test_build_openai_model_helper() -> None:

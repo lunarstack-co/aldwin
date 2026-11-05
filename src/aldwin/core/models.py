@@ -28,6 +28,7 @@ from aldwin.core.providers.openai_chat import (
     error_for_response,
     is_chat_model,
 )
+from aldwin.core.providers.registry import get_provider, parse_model_ref
 
 logger = logging.getLogger("aldwin.core.models")
 
@@ -46,6 +47,60 @@ DEFAULT_KEY_CHECK_TIMEOUT: Final[float] = 10.0
 _TOO_MANY_TOOLS_RE: Final[re.Pattern[str]] = re.compile(
     r"'tools'.*maximum length (\d+), but got an array with length (\d+)"
 )
+
+_FIRST_SHIP_TITLES: Final[dict[str, str]] = {
+    "openai": "OpenAI",
+    "anthropic": "Anthropic",
+    "gemini": "Gemini",
+    "deepseek": "DeepSeek",
+    "ollama": "Ollama",
+    "lmstudio": "LM Studio",
+    "openrouter": "OpenRouter",
+}
+
+
+def parse_model_ref_parts(model: str | None) -> tuple[str, str]:
+    """Return (provider_id, model_id), defaulting bare models to 'openai'."""
+    raw = (model or "").strip()
+    if not raw:
+        return ("openai", DEFAULT_MODEL)
+    try:
+        ref = parse_model_ref(raw)
+        return (ref.provider, ref.model)
+    except ValueError:
+        return ("openai", raw)
+
+
+def resolve_provider_title(provider_id: str, default: str = "OpenAI") -> str:
+    """Return human-friendly provider title for error messages and status lines."""
+    cleaned = provider_id.strip().lower()
+    if cleaned in _FIRST_SHIP_TITLES:
+        return _FIRST_SHIP_TITLES[cleaned]
+    entry = get_provider(cleaned)
+    if entry is not None and entry.title:
+        return entry.title
+    return cleaned.capitalize() if cleaned else default
+
+
+def is_local_model(
+    model: str | None = None,
+    exc: BaseException | None = None,
+    *,
+    local: bool = False,
+) -> bool:
+    """Return True if the model or exception represents a local runtime."""
+    if local:
+        return True
+    if exc is not None and bool(getattr(exc, "local", False)):
+        return True
+    provider_id, _ = parse_model_ref_parts(model)
+    if provider_id in ("ollama", "lmstudio"):
+        return True
+    entry = get_provider(provider_id)
+    if entry is not None and entry.local:
+        return True
+    return False
+
 
 RetryCallback = Callable[[int, int, BaseException, float], Awaitable[None] | None]
 
@@ -223,6 +278,8 @@ def classify_model_error(
     exc: BaseException,
     *,
     model: str | None = None,
+    provider_title: str | None = None,
+    local: bool = False,
 ) -> tuple[ModelErrorCode, str]:
     """Map an Agentling ModelError to `(ModelErrorCode, message)`.
 
@@ -230,25 +287,40 @@ def classify_model_error(
     CLI maps them to house copy. Optional `model` names the configured model on
     not-found errors.
     """
+    provider_id, model_id = parse_model_ref_parts(model)
+    has_explicit_model = bool(model and model.strip())
+    title = (
+        provider_title.strip()
+        if provider_title and provider_title.strip()
+        else resolve_provider_title(provider_id)
+    )
+    is_local = is_local_model(model, exc=exc, local=local)
+
     if isinstance(exc, ModelAuthError):
         return (
             "auth_failed",
-            "Your OpenAI key was rejected. Run `aldwin setup` to update it.",
+            f"Your {title} key was rejected. Run `aldwin setup` to replace it.",
         )
     if isinstance(exc, ModelRateLimitError):
         return (
             "rate_limited",
-            "OpenAI rate limit reached. Wait a moment and try again.",
+            f"{title} rate limit reached. Wait a moment and try again.",
         )
     if isinstance(exc, ModelServerError):
         return (
             "rate_limited",
-            "OpenAI is busy right now. Wait a moment and try again.",
+            f"{title} returned a server error. Wait a moment and try again.",
         )
     if isinstance(exc, (ModelConnectionError, ModelTimeoutError)):
+        if is_local:
+            return (
+                "model_unavailable",
+                f"{title} isn't running. Start it and try again.",
+            )
         return (
             "model_unavailable",
-            "Can't reach OpenAI. Check your connection, then press ↑ Enter to retry.",
+            f"Can't reach {title}. Check your connection, "
+            "or switch to a local model with `/model`.",
         )
     if isinstance(exc, ModelBadRequestError):
         if (
@@ -256,10 +328,17 @@ def classify_model_error(
             or "404" in str(exc).lower()
             or "not found" in str(exc).lower()
         ):
-            name = (model or "").strip() or "that model"
+            if is_local:
+                installed_part = f"model {model_id}" if has_explicit_model else "model"
+                return (
+                    "unknown_model",
+                    f"The {installed_part} isn't installed in {title}. "
+                    "Pick another with `/model`.",
+                )
+            prefix = f"Model {model_id}" if has_explicit_model else "That model"
             return (
                 "unknown_model",
-                f"Model {name} isn't available to your key. Pick another with /model.",
+                f"{prefix} isn't available to your key. Pick another with `/model`.",
             )
         too_many = _TOO_MANY_TOOLS_RE.search(str(exc))
         if too_many is not None:
@@ -272,36 +351,65 @@ def classify_model_error(
         status_label = f"HTTP {exc.status}" if exc.status else "error"
         return (
             "request_rejected",
-            f"OpenAI refused the request ({status_label}). "
+            f"{title} refused the request ({status_label}). "
             "Details are in ~/.aldwin/logs/aldwin.log.",
         )
-    if isinstance(exc, (ModelContextLengthError, ModelOutputTruncatedError)):
+    if isinstance(exc, ModelContextLengthError):
+        target = model_id if has_explicit_model else "this model"
         return (
             "request_rejected",
-            "The request was rejected because the model's context or length "
-            "limit was exceeded. Details are in ~/.aldwin/logs/aldwin.log.",
+            f"This conversation is too long for {target}. Start a fresh one with /new.",
+        )
+    if isinstance(exc, ModelOutputTruncatedError):
+        return (
+            "request_rejected",
+            "The answer was cut off because it reached the model's length limit.",
         )
     if isinstance(exc, ModelError):
         text = _redact_text(str(exc)).lower()
         if "401" in text or "authentication" in text or "api key" in text:
             return (
                 "auth_failed",
-                "Your OpenAI key was rejected. Run `aldwin setup` to update it.",
+                f"Your {title} key was rejected. Run `aldwin setup` to replace it.",
             )
         if "429" in text or "rate limit" in text:
             return (
                 "rate_limited",
-                "OpenAI rate limit reached. Wait a moment and try again.",
+                f"{title} rate limit reached. Wait a moment and try again.",
+            )
+        if (
+            "500" in text
+            or "502" in text
+            or "503" in text
+            or "504" in text
+            or "server" in text
+        ):
+            return (
+                "rate_limited",
+                f"{title} returned a server error. Wait a moment and try again.",
             )
         if "404" in text or "not found" in text:
-            name = (model or "").strip() or "that model"
+            if is_local:
+                installed_part = f"model {model_id}" if has_explicit_model else "model"
+                return (
+                    "unknown_model",
+                    f"The {installed_part} isn't installed in {title}. "
+                    "Pick another with `/model`.",
+                )
+            prefix = f"Model {model_id}" if has_explicit_model else "That model"
             return (
                 "unknown_model",
-                f"Model {name} isn't available to your key. Pick another with /model.",
+                f"{prefix} isn't available to your key. Pick another with `/model`.",
+            )
+        if is_local:
+            return (
+                "model_unavailable",
+                f"{title} isn't running. Start it and try again.",
             )
         return (
             "model_unavailable",
-            "Can't reach OpenAI. Check your connection, then press ↑ Enter to retry.",
+            f"Can't reach {title}. Check your connection, "
+            "or switch to a local model with `/model`.",
         )
     return (
         "internal",
@@ -315,13 +423,30 @@ def retry_status_message(
     attempt: int,
     max_retries: int,
     delay_s: float,
+    provider_title: str | None = None,
+    model: str | None = None,
 ) -> str:
     """User-facing retry line for a transient model error (host → StatusEvent)."""
     delay_label = f"{int(delay_s)}s" if delay_s >= 1 else f"{delay_s:.1f}s"
     progress = f"({attempt}/{max_retries})"
+    title = (
+        provider_title.strip()
+        if provider_title and provider_title.strip()
+        else (
+            resolve_provider_title(parse_model_ref_parts(model)[0])
+            if model
+            else "OpenAI"
+        )
+    )
     if isinstance(exc, (ModelConnectionError, ModelTimeoutError)):
-        return f"No internet connection. Retrying in {delay_label} {progress}…"
-    return f"OpenAI is busy. Retrying in {delay_label} {progress}…"
+        return f"Can't reach {title}. Retrying in {delay_label} {progress}…"
+    if (
+        isinstance(exc, ModelServerError)
+        or "server" in str(exc).lower()
+        or bool(re.search(r"\b50[0-4]\b", str(exc)))
+    ):
+        return f"{title} returned a server error, retrying in {delay_label} {progress}…"
+    return f"{title} is busy, retrying in {delay_label} {progress}…"
 
 
 def build_openai_model(

@@ -255,7 +255,7 @@ def test_turn_renderer_tool_call_and_result_cards() -> None:
 
 
 def test_render_error_codes_map_to_house_copy() -> None:
-    """Every protocol ErrorCode renders its exact one-line copy and next step."""
+    """Fallback copy maps when host error message is empty."""
     buf = io.StringIO()
     console = create_console(width=80, record=True, file=buf)
     renderer = ChatRenderer(console)
@@ -269,33 +269,46 @@ def test_render_error_codes_map_to_house_copy() -> None:
         "internal",
     ]
     for code in codes:
-        renderer.render_error(code, "raw message")
+        renderer.render_error(code, "")
 
     text = console.export_text()
-    assert "Your OpenAI key was rejected. Run `aldwin setup`." in text
-    assert "OpenAI is rate-limiting requests right now." in text
-    assert (
-        "Can't reach OpenAI. Check your connection, then press ↑ Enter to retry."
-        in text
-    )
-    assert "Pick another with /model." in text
+    assert "Your API key was rejected. Run `aldwin setup` to replace it." in text
+    assert "The provider rate limit was reached." in text
+    assert "Can't reach the model provider." in text
+    assert "switch to a local" in text
+    assert "`/model`." in text
+    assert "That model isn't available. Pick another with /model." in text
     assert "Press Esc to stop it first." in text
     assert "Something went wrong. Details are in ~/.aldwin/logs/aldwin.log" in text
     assert "Traceback" not in text
 
 
-def test_render_error_prefers_host_busy_copy_for_rate_limited() -> None:
-    """503-style host messages keep 'busy' wording instead of rate-limit house copy."""
+def test_render_error_prefers_host_message() -> None:
+    """Non-empty host error messages take precedence over fallback dictionary copy."""
     buf = io.StringIO()
     console = create_console(width=80, record=True, file=buf)
     renderer = ChatRenderer(console)
     renderer.render_error(
+        "auth_failed",
+        "Your Anthropic key was rejected. Run `aldwin setup` to replace it.",
+    )
+    renderer.render_error(
+        "model_unavailable",
+        "Ollama isn't running. Start it and try again.",
+    )
+    renderer.render_error(
+        "unknown_model",
+        "The model qwen3:14b isn't installed in Ollama. Pick another with `/model`.",
+    )
+    renderer.render_error(
         "rate_limited",
-        "OpenAI is busy right now. Wait a moment and try again.",
+        "Gemini returned a server error. Wait a moment and try again.",
     )
     text = console.export_text()
-    assert "OpenAI is busy right now." in text
-    assert "rate-limiting" not in text
+    assert "Your Anthropic key was rejected." in text
+    assert "Ollama isn't running. Start it and try again." in text
+    assert "The model qwen3:14b isn't installed in Ollama." in text
+    assert "Gemini returned a server error." in text
 
 
 def test_plain_mode_has_no_ansi_spinner_live_or_bell() -> None:

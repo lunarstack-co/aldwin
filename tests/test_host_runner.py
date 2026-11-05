@@ -797,7 +797,9 @@ async def test_turn_length_finish_reason_emits_notice(
         await client.connect()
         events = await _collect_turn(client, "write essay")
         notices = [ev.message for ev in events if isinstance(ev, NoticeEvent)]
-        assert notices == ["The answer was cut off by the model's length limit."]
+        assert notices == [
+            "The answer was cut off because it reached the model's length limit."
+        ]
         assert isinstance(events[-1], DoneEvent)
         assert events[-1].reason == "answered"
     finally:

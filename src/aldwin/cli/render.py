@@ -49,16 +49,15 @@ MAX_PANEL_WIDTH: Final[int] = 76
 MAX_DIFF_PREVIEW_LINES: Final[int] = 24
 
 ERROR_COPY: Final[dict[ErrorCode, str]] = {
-    "auth_failed": "Your OpenAI key was rejected. Run `aldwin setup`.",
+    "auth_failed": "Your API key was rejected. Run `aldwin setup` to replace it.",
     "rate_limited": (
-        "OpenAI is rate-limiting requests right now. Wait a moment and try again."
+        "The provider rate limit was reached. Wait a moment and try again."
     ),
     "model_unavailable": (
-        "Can't reach OpenAI. Check your connection, then press ↑ Enter to retry."
+        "Can't reach the model provider. Check your connection, "
+        "or switch to a local model with `/model`."
     ),
-    "unknown_model": (
-        "That model isn't available to your key. Pick another with /model."
-    ),
+    "unknown_model": ("That model isn't available. Pick another with /model."),
     "busy": (
         "Aldwin is still working on your last request. Press Esc to stop it first."
     ),
@@ -637,16 +636,8 @@ class ChatRenderer:
 
     def render_error(self, code: ErrorCode, message: str = "") -> None:
         """Render a protocol `ErrorEvent` as one actionable line."""
-        # Host sends the full unknown_model sentence (includes the model name).
-        # Prefer host "busy" copy for rate_limited so 503 is not shown as rate-limit.
         stripped = message.strip()
-        lowered = stripped.lower()
-        if code == "unknown_model" and stripped and "isn't available" in lowered:
-            copy = stripped
-        elif code == "rate_limited" and stripped and "busy" in lowered:
-            copy = stripped
-        else:
-            copy = ERROR_COPY.get(code) or message or ERROR_COPY["internal"]
+        copy = stripped or ERROR_COPY.get(code) or ERROR_COPY["internal"]
         line = Text()
         line.append("✗ ", style="err")
         line.append(copy, style="err")
