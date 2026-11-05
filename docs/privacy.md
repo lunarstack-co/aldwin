@@ -22,14 +22,16 @@ When you use a local model on a loopback address (`127.0.0.1`, `localhost`, `::1
   - PyPI update check: set `check_for_updates: false` in `~/.aldwin/config.yaml` to disable the startup version check.
 - When `check_for_updates: false` is set and web tools or remote connectors are not used, Aldwin operates in a complete air-gapped, zero-outbound-network posture.
 
+Custom and overridden servers live under `providers:` in `config.yaml` (`shape`, `local`, `base_url`, `secret`, `title`). See the README [Other server](https://github.com/lunarstack-co/aldwin/blob/main/README.md#run-it-fully-local) example.
+
 ## The home folder
 
 All local data lives in `~/.aldwin`. Set `ALDWIN_HOME=/path/to/dir` to use a different folder.
 
 ```text
 ~/.aldwin/                  (mode 0700)
-├── config.yaml             model, theme, limits, run_command.env_allow, connectors.import_paths
-├── secrets.yaml            OpenAI and Tavily API keys (mode 0600)
+├── config.yaml             model, theme, limits, providers:, run_command.env_allow, connectors.import_paths
+├── secrets.yaml            provider API keys (openai, anthropic, gemini, …) and Tavily (mode 0600)
 ├── persona.md              assistant persona (user-editable or y/n approved)
 ├── skills/
 │   └── using-aldwin/

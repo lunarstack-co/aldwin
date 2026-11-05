@@ -10,10 +10,12 @@ from aldwin.cli.tips import TIPS, next_tip
 def test_tips_count_and_themes() -> None:
     """Fifteen tips across core discoverability themes."""
     assert len(TIPS) == 15
+    assert "Switch between cloud and local models any time with /model." in TIPS
     joined = " ".join(TIPS).lower()
     for needle in (
         "@",
         "/model",
+        "cloud and local",
         "esc",
         "alt+enter",
         "/verbose",

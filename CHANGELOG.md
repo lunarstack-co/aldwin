@@ -6,6 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-11-05
+
+Aldwin can use any first-ship model provider, including local servers — no OpenAI lock-in.
+
+### Added
+
+- **Any model, including local:** switch between cloud and local providers with `/model`. Built-in catalogue (bundled `providers.yaml`, no online lookup): Ollama, LM Studio, OpenAI, Anthropic, Google Gemini, OpenRouter, and DeepSeek.
+- **Local-first first run:** on launch Aldwin probes Ollama and LM Studio. Path A uses a found local model with no account; Path B offers cloud or install steps; Path C keeps an existing OpenAI setup with no reconfigure.
+- **Three HTTP translators** (no vendor SDKs): OpenAI-compatible chat, Anthropic Messages, and Ollama native — plain `httpx` only.
+- **Key store:** environment variables win and are never written to disk; pasted cloud keys are checked against the provider before save; secrets stay in `~/.aldwin/secrets.yaml` (0600).
+- **Friendly provider errors:** Agentling error kinds map to copy that names the provider and what to do next, with branded retry status lines.
+- **Protocol doors:** `models.list`, `provider.key`, and `provider.server` for listing models, saving keys, and registering Other server entries under `providers:` in `config.yaml`.
+- **Other server:** add any OpenAI-compatible (or Anthropic/Ollama-shaped) endpoint via `/model` or `providers:` (`shape`, `local`, `base_url`, `secret`, `title`).
+
+### Changed
+
+- **Agentling 0.2:** depends on `agentling>=0.2,<0.3` from PyPI; the OpenAI Python SDK is not a dependency.
+- **What's-new and tip:** upgrade panel explains any model including local; tip says "Switch between cloud and local models any time with /model."
+- **README and docs:** "Run it fully local" quickstart, first-ship provider table, Fully local privacy, provider-neutral protocol error wording.
+
+### Removed
+
+- OpenAI-only product wording from the README and release messaging (OpenAI remains a first-ship cloud option).
+
+### Security
+
+- Provider keys follow env-wins and check-then-save; pasted keys are validated before persist.
+- Local model traffic on loopback does not leave the machine (except optional web tools, remote connectors, and the PyPI update check).
+- No `openai` / `anthropic` vendor SDK packages in the install (size and supply-chain).
+
+### Upgrade notes
+
+- Upgrading from `0.0.3` keeps sessions, notes, memory index, approvals, connectors, persona, and settings. No home migration runs; bare model ids still resolve as `openai/<id>`.
+- Run `uv tool upgrade aldwin`. OpenAI users keep working (Path C).
+
+### Known limitations
+
+- First-ship providers only in the built-in catalogue; other backends use Other server / `providers:`.
+- Windows is not supported. Local MCP servers remain unsupported on Windows.
+
+### Sizes
+
+- Wheel and installed size: record after TestPyPI / CI (budget ≤120 MB installed, no extras).
+
 ## [0.0.3] - 2026-11-01
 
 Aldwin can now connect to your other apps through MCP servers, and warns you when it detects a secret in your message.
@@ -153,6 +197,7 @@ First public release of Aldwin: an open-source personal assistant that runs on y
 - **Fixed built-in toolset:** includes the five built-in tools (`web_search`, `web_fetch`, `run_command`, `remember`, `recall`); custom code tools cannot be added in `0.0.1` (drop-in Markdown skills in `~/.aldwin/skills/` are supported).
 - **macOS and Linux only:** requires Python `3.11+` on macOS or Linux. Windows is not supported yet.
 
+[0.0.4]: https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.4
 [0.0.3]: https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.3
 [0.0.2.1]: https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.2.1
 [0.0.2]: https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.2

@@ -102,15 +102,15 @@ def built_distributions(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path,
 
 
 @pytest.mark.uninitialized_home
-def test_version_is_0_0_3(aldwin_home: Path) -> None:
-    """TC-01: pyproject.toml, aldwin.__version__, and `aldwin --version` are 0.0.3."""
+def test_version_is_0_0_4(aldwin_home: Path) -> None:
+    """TC-01: pyproject.toml, aldwin.__version__, and `aldwin --version` are 0.0.4."""
     pyproject_data = tomllib.loads(
         (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )
-    assert pyproject_data["project"]["version"] == "0.0.3"
-    assert aldwin.__version__ == "0.0.3"
+    assert pyproject_data["project"]["version"] == "0.0.4"
+    assert aldwin.__version__ == "0.0.4"
     expected = (
-        f"aldwin 0.0.3 (protocol v2, agentling {metadata.version('agentling')},"
+        f"aldwin 0.0.4 (protocol v2, agentling {metadata.version('agentling')},"
         f" mcp {metadata.version('mcp')})"
     )
 
@@ -172,8 +172,8 @@ def test_build_produces_sdist_and_wheel_under_1mb(
 ) -> None:
     """TC-01: `uv build` produces sdist and wheel in dist/ under the 1 MB budget."""
     wheel_path, sdist_path = built_distributions
-    assert wheel_path.name == "aldwin-0.0.3-py3-none-any.whl"
-    assert sdist_path.name == "aldwin-0.0.3.tar.gz"
+    assert wheel_path.name == "aldwin-0.0.4-py3-none-any.whl"
+    assert sdist_path.name == "aldwin-0.0.4.tar.gz"
 
     assert 0 < wheel_path.stat().st_size < MAX_DIST_BYTES
     assert 0 < sdist_path.stat().st_size < MAX_DIST_BYTES
@@ -202,7 +202,7 @@ def test_wheel_and_sdist_include_assets_and_exclude_dev_files(
         sdist_names = set(tf.getnames())
 
     for asset in EXPECTED_WHEEL_ASSETS:
-        expected_sdist_entry = f"aldwin-0.0.3/src/{asset}"
+        expected_sdist_entry = f"aldwin-0.0.4/src/{asset}"
         assert expected_sdist_entry in sdist_names, (
             f"Missing {expected_sdist_entry} in sdist"
         )
@@ -213,10 +213,10 @@ def test_wheel_and_sdist_include_assets_and_exclude_dev_files(
         "CHANGELOG.md",
         "pyproject.toml",
     ):
-        assert f"aldwin-0.0.3/{required_root_file}" in sdist_names
+        assert f"aldwin-0.0.4/{required_root_file}" in sdist_names
 
     for entry in sdist_names:
-        rel_entry = entry.removeprefix("aldwin-0.0.2.1/")
+        rel_entry = entry.removeprefix("aldwin-0.0.4/")
         for forbidden in FORBIDDEN_ARCHIVE_PREFIXES:
             assert not rel_entry.startswith(forbidden), (
                 f"Forbidden path {entry!r} leaked into sdist"
@@ -298,6 +298,7 @@ def test_readme_contains_all_sections_and_doc_links() -> None:
         "# Aldwin",
         "## Install",
         "### First run",
+        "## Run it fully local",
         "## What Aldwin can do",
         "## Safety",
         "## Data and privacy",
@@ -318,6 +319,24 @@ def test_readme_contains_all_sections_and_doc_links() -> None:
     assert "## How it's built" not in readme
     assert "0.0.3" in readme
 
+    first_ship = (
+        "Ollama",
+        "LM Studio",
+        "OpenAI",
+        "Anthropic",
+        "Google Gemini",
+        "OpenRouter",
+        "DeepSeek",
+    )
+    for name in first_ship:
+        assert name in readme, f"Missing first-ship provider {name!r} in README.md"
+    for banned in ("Models.dev", "xAI", "Mistral", "Groq", "llama.cpp", "vLLM", "Jan"):
+        assert banned not in readme, f"Unexpected {banned!r} in README.md"
+    assert "OpenAI API key only" not in readme
+    assert "other model providers and Windows are not yet supported" not in readme
+    assert "providers:" in readme
+    assert "shape: openai_chat" in readme
+
     # PyPI renders the README, so links to other repo files must be absolute.
     blob = "https://github.com/lunarstack-co/aldwin/blob/main/"
     for doc in (*USER_DOCS, "docs/README.md", "CONTRIBUTING.md"):
@@ -331,6 +350,7 @@ def test_readme_contains_all_sections_and_doc_links() -> None:
         "https://agentling.dev",
         "~/.aldwin",
         "Apache-2.0",
+        "Run it fully local",
     )
     for snippet in required_snippets:
         assert snippet in readme, f"Missing {snippet!r} in README.md"
@@ -390,6 +410,42 @@ def test_docs_index_links_every_doc() -> None:
         assert Path(doc).name in index, f"docs/README.md does not link to {doc}"
 
 
+def test_changelog_0_0_4_entry() -> None:
+    """CHANGELOG.md has a complete 0.0.4 entry for any model including local."""
+    changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "## [0.0.4] - 2026-11-05" in changelog
+    assert "https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.4" in changelog
+
+    start = changelog.index("## [0.0.4]")
+    end = changelog.index("## [0.0.3]")
+    assert start < end
+    section = changelog[start:end]
+    for heading in (
+        "### Added",
+        "### Changed",
+        "### Removed",
+        "### Security",
+        "### Upgrade notes",
+        "### Known limitations",
+        "### Sizes",
+    ):
+        assert heading in section, f"Missing {heading!r} in the 0.0.4 changelog entry"
+
+    for snippet in (
+        "Any model, including local",
+        "/model",
+        "Ollama",
+        "LM Studio",
+        "providers.yaml",
+        "agentling>=0.2",
+        "Path C",
+        "no reconfigure",
+    ):
+        assert snippet in section, f"Missing {snippet!r} in the 0.0.4 changelog entry"
+    assert "co-authored-by" not in section.lower()
+    assert "generated with" not in section.lower()
+
+
 def test_changelog_0_0_2_1_entry() -> None:
     """The 0.0.2.1 patch entry sits above 0.0.2 and records the workspace fix."""
     changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -446,12 +502,21 @@ def test_changelog_0_0_2_entry() -> None:
 def test_docs_protocol_manual_test_and_releasing_present() -> None:
     """TC-13: docs/protocol.md, docs/manual-test.md, and docs/releasing.md exist."""
     protocol_doc = (REPO_ROOT / "docs" / "protocol.md").read_text(encoding="utf-8")
+    privacy_doc = (REPO_ROOT / "docs" / "privacy.md").read_text(encoding="utf-8")
     manual_doc = (REPO_ROOT / "docs" / "manual-test.md").read_text(encoding="utf-8")
     releasing_doc = (REPO_ROOT / "docs" / "releasing.md").read_text(encoding="utf-8")
 
     assert "HelloRequest" in protocol_doc
+    assert "models.list" in protocol_doc
+    assert "provider.key" in protocol_doc
+    assert "active model provider" in protocol_doc
+    assert "OpenAI rejected the API key" not in protocol_doc
+    assert "## Fully local" in privacy_doc
+    assert "providers:" in privacy_doc
+    assert "loopback" in privacy_doc.lower()
     assert "Step 13" in manual_doc
     assert "Release checklist" in manual_doc
+    assert "Step 20" in manual_doc
     for cmd in (
         "uv build",
         "twine check",
