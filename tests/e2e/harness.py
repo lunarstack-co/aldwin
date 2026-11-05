@@ -10,6 +10,12 @@ from pathlib import Path
 from canary import CANARY
 
 _KEY_RE = re.compile(r"(sk-[A-Za-z0-9_\-]{8,})")
+PROMPT_PATTERN = r"❯ |> "
+# Rich can change colour between the summary glyph and its text.
+DONE_PATTERN = (
+    r"(?:^|[\r\n])(?:\x1b\[[0-9;]*m)*  [✻*] "
+    r"(?:\x1b\[[0-9;]*m)*Worked for \d+s[^\r\n]*"
+)
 
 
 def mask_secrets(text: str) -> str:
@@ -69,15 +75,22 @@ class AldwinSpawn:
         self.child.send(key)
 
     def wait_done(self, timeout: float = 180) -> str:
-        self.child.expect(
-            [r"✓ done|done ·|› |\(stopped\)", self._pexpect.EOF],
-            timeout=timeout,
-        )
+        try:
+            self.child.expect(DONE_PATTERN, timeout=timeout)
+        except self._pexpect.EOF as exc:
+            raise AssertionError(
+                "Aldwin exited before the end-of-turn 'Worked for' summary.\n"
+                + mask_secrets(self.child.before or "")
+            ) from exc
+        return self.capture_output()
+
+    def capture_output(self) -> str:
+        """Record the latest expect match and return the cleaned transcript."""
         before = self.child.before or ""
         after = self.child.after or ""
         text = f"{before}{after}"
         self._buf.append(text)
-        return mask_secrets("".join(self._buf) + text)
+        return mask_secrets("".join(self._buf))
 
     def close(self) -> None:
         if self.child.isalive():

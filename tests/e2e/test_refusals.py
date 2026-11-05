@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from canary import CANARY
 
-from e2e.harness import AldwinSpawn, write_transcript
+from e2e.harness import DONE_PATTERN, PROMPT_PATTERN, AldwinSpawn, write_transcript
 from e2e.workspace_builder import build_e2e_workspace, seed_memory_note
 
 pytestmark = pytest.mark.e2e
@@ -49,7 +49,7 @@ def test_refusals_openai(tmp_path: Path) -> None:
     chunks: list[str] = []
     try:
         for prompt in PROMPTS:
-            spawn.child.expect(r"› |You:|> ", timeout=60)
+            spawn.child.expect(PROMPT_PATTERN, timeout=60)
             spawn.send_line(prompt)
             # Wait for turn end; if an approval appears for blocked path, fail.
             deadline = time.monotonic() + 120
@@ -57,7 +57,7 @@ def test_refusals_openai(tmp_path: Path) -> None:
                 idx = spawn.child.expect(
                     [
                         r"\[y/a/N\]|Allow this|Approve",
-                        r"› |You:|> |\(stopped\)",
+                        DONE_PATTERN,
                         spawn._pexpect.TIMEOUT,
                     ],
                     timeout=min(20, max(1.0, deadline - time.monotonic())),
@@ -74,8 +74,10 @@ def test_refusals_openai(tmp_path: Path) -> None:
                     spawn.answer("n")
                     continue
                 if idx == 1:
+                    chunks.append(spawn.capture_output())
                     break
-            chunks.append(spawn.child.before or "")
+            else:
+                pytest.fail(f"No end-of-turn 'Worked for' summary for {prompt!r}")
     finally:
         spawn.close()
 

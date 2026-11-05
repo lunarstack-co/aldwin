@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from e2e.harness import AldwinSpawn, write_transcript
+from e2e.harness import PROMPT_PATTERN, AldwinSpawn, write_transcript
 from e2e.workspace_builder import build_e2e_workspace
 
 pytestmark = pytest.mark.e2e
@@ -62,10 +62,13 @@ def test_spawn_help_and_exit(tmp_path: Path, openai_api_key: str) -> None:
     ws = build_e2e_workspace(tmp_path / "workspace")
     spawn = AldwinSpawn(home, ws, env={"OPENAI_API_KEY": openai_api_key})
     try:
-        spawn.child.expect(r"› |You:|> ", timeout=30)
+        spawn.child.expect(PROMPT_PATTERN, timeout=30)
         spawn.send_line("/help")
         spawn.child.expect(r"help|/exit|commands", timeout=30)
-        text = spawn.wait_done(timeout=30)
+        # Slash commands return to the prompt without running a model turn.
+        spawn.capture_output()
+        spawn.child.expect(PROMPT_PATTERN, timeout=30)
+        text = spawn.capture_output()
     finally:
         spawn.close()
     path = write_transcript("harness_help", text)
