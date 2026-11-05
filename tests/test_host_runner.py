@@ -839,6 +839,158 @@ async def test_idle_interrupt_and_stop_do_not_abort_next_turn(
         await host.stop_host()
 
 
+async def test_cold_load_status_local_model(aldwin_home: Path) -> None:
+    """Delay > 3.0s on local model emits cold-load StatusEvent."""
+    from agentling import Delta
+
+    from aldwin.protocol import StatusEvent
+
+    ensure_home(aldwin_home)
+
+    class DelayedModel:
+        def __init__(self) -> None:
+            self.model = "qwen3:8b"
+            self.local = True
+
+        async def stream(self, _messages: Any, _tools: Any = ()) -> Any:
+            await asyncio.sleep(3.2)
+            yield Delta(content="Ready!")
+            yield Delta(
+                finish_reason="stop",
+                usage=Usage(input_tokens=5, output_tokens=2),
+            )
+
+    transport = InProcessTransport()
+    delayed_model = DelayedModel()
+    host = AldwinHost(
+        transport,
+        agent_builder=lambda _m, _ask: Agent(model=delayed_model),
+        initial_model="ollama/qwen3:8b",
+    )
+    await host.start()
+    client = AldwinClient(transport.connect())
+
+    try:
+        await client.connect()
+        events = await _collect_turn(client, "hello")
+        statuses = [ev.message for ev in events if isinstance(ev, StatusEvent)]
+        assert "Loading qwen3:8b into memory…" in statuses
+        texts = [ev.delta for ev in events if isinstance(ev, TextEvent)]
+        assert texts == ["Ready!"]
+        assert isinstance(events[-1], DoneEvent)
+    finally:
+        await client.close()
+        await host.stop_host()
+
+
+async def test_fast_local_token_no_cold_load_status(aldwin_home: Path) -> None:
+    """Fast first token (< 3.0s) on local model cancels cold-load timer."""
+    from agentling import Delta
+
+    from aldwin.protocol import StatusEvent
+
+    ensure_home(aldwin_home)
+
+    class FastLocalModel:
+        def __init__(self) -> None:
+            self.model = "qwen3:8b"
+            self.local = True
+
+        async def stream(self, _messages: Any, _tools: Any = ()) -> Any:
+            await asyncio.sleep(0.2)
+            yield Delta(content="Fast!")
+            yield Delta(
+                finish_reason="stop",
+                usage=Usage(input_tokens=5, output_tokens=2),
+            )
+
+    transport = InProcessTransport()
+    fast_model = FastLocalModel()
+    host = AldwinHost(
+        transport,
+        agent_builder=lambda _m, _ask: Agent(model=fast_model),
+        initial_model="ollama/qwen3:8b",
+    )
+    await host.start()
+    client = AldwinClient(transport.connect())
+
+    try:
+        await client.connect()
+        events = await _collect_turn(client, "hello")
+        loading_statuses = [
+            ev.message
+            for ev in events
+            if isinstance(ev, StatusEvent) and "Loading" in ev.message
+        ]
+        assert loading_statuses == []
+        texts = [ev.delta for ev in events if isinstance(ev, TextEvent)]
+        assert texts == ["Fast!"]
+        assert isinstance(events[-1], DoneEvent)
+    finally:
+        await client.close()
+        await host.stop_host()
+
+
+async def test_context_window_trim_notice_in_turn(
+    aldwin_home: Path,
+) -> None:
+    """Proactive context window trimming emits a NoticeEvent to the client."""
+    from agentling import Delta
+
+    from aldwin.core.agent import build_agent
+    from aldwin.core.settings import AldwinConfig
+
+    ensure_home(aldwin_home)
+
+    class SmallWindowModel:
+        def __init__(self) -> None:
+            self.model = "qwen3:8b"
+            self.local = True
+            self.context_window = 1000
+
+        async def stream(self, _messages: Any, _tools: Any = ()) -> Any:
+            yield Delta(content="Answer.")
+            yield Delta(
+                finish_reason="stop",
+                usage=Usage(input_tokens=10, output_tokens=2),
+            )
+
+    small_model = SmallWindowModel()
+    transport = InProcessTransport()
+    holder: list[AldwinHost] = []
+
+    def builder(_m: str, ask: Any) -> Agent:
+        emitter = holder[0]._emit_sync_notice if holder else None
+        return build_agent(
+            AldwinConfig(model="ollama/qwen3:8b"),
+            None,
+            ask,
+            home=aldwin_home,
+            model=small_model,
+            notice_emitter=emitter,
+        )
+
+    host = AldwinHost(
+        transport,
+        agent_builder=builder,
+        initial_model="ollama/qwen3:8b",
+    )
+    holder.append(host)
+    host._rebuild_agent_for_skills()
+    await host.start()
+    client = AldwinClient(transport.connect())
+
+    try:
+        await client.connect()
+        _ = await _collect_turn(client, "Message 1 " + "Y" * 2000)
+        events = await _collect_turn(client, "Message 2 " + "Z" * 2000)
+        notices = [ev.message for ev in events if isinstance(ev, NoticeEvent)]
+        assert any("Aldwin trimmed older messages" in n for n in notices)
+    finally:
+        await client.close()
+        await host.stop_host()
+
+
 async def test_turn_malformed_final_answer_error_recovers(
     aldwin_home: Path,
     fake_model: FakeModel,

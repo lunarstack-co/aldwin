@@ -43,7 +43,7 @@ _FINISH_REASONS: Final[dict[str, FinishReason]] = {
 }
 
 
-def parse_ollama_show_response(data: dict[str, Any]) -> tuple[bool, int]:
+def parse_ollama_show_response(data: dict[str, Any]) -> tuple[bool | None, int]:
     """Parse /api/show response to determine tool support and context length.
 
     Shared between OllamaBackend and the local runtime finder.
@@ -51,10 +51,13 @@ def parse_ollama_show_response(data: dict[str, Any]) -> tuple[bool, int]:
     Returns:
         (supports_tools, context_window)
     """
-    capabilities = data.get("capabilities") or []
-    supports_tools = (
-        "tools" in capabilities if isinstance(capabilities, list) else False
-    )
+    capabilities = data.get("capabilities")
+    if capabilities is None:
+        supports_tools = None
+    elif isinstance(capabilities, list):
+        supports_tools = "tools" in capabilities
+    else:
+        supports_tools = False
 
     context_length = 2048
     model_info = data.get("model_info") or {}
@@ -77,7 +80,7 @@ class OllamaModel:
         base_url: str = "http://localhost:11434",
         api_key: str | None = None,
         context_window: int = 32768,
-        timeout: float = 120.0,
+        timeout: float = 300.0,
         transport: httpx.AsyncBaseTransport | None = None,
         extra_body: dict[str, Any] | None = None,
     ) -> None:
@@ -88,6 +91,7 @@ class OllamaModel:
         self.timeout = timeout
         self.transport = transport
         self.extra_body = dict(extra_body or {})
+        self.local: bool = True
 
     def _is_local_connection(self) -> bool:
         try:

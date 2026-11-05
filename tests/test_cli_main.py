@@ -216,13 +216,13 @@ def test_setup_cli_command_end_to_end(
     res = runner.invoke(
         app,
         ["setup", "--plain"],
-        input="sk-proj-setup9999\ntvly-dev-setup8888\n2\n",
+        input="2\n1\nsk-proj-setup9999\n2\ntvly-dev-setup8888\n",
     )
     assert res.exit_code == 0, res.output
     status = get_onboarding_status(aldwin_home)
     assert status.masked_openai_key == "sk-…9999"
     assert status.masked_tavily_key == "tvly-…8888"
-    assert status.model == "gpt-4.1"
+    assert status.model == "openai/gpt-4.1"
 
 
 def test_non_tty_graceful_exit(aldwin_home: Path) -> None:

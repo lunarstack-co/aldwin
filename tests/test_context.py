@@ -259,3 +259,59 @@ def test_build_context_performance_under_5ms_for_200_messages(
         assert len([m for m in out if m.role == "user"]) == 20
 
     assert sorted(durations_ms)[len(durations_ms) // 2] < 5.0
+
+
+def test_local_profile_trims(aldwin_home: Path) -> None:
+    """When is_local=True, context limits trim to 8 exchanges."""
+    ensure_home(aldwin_home)
+    standard_limits = LimitsConfig(context_exchanges=20)
+    ctx = build_context(aldwin_home, standard_limits, is_local=True)
+
+    messages: list[ChatMessage] = [
+        ChatMessage(role="system", content="Base instructions"),
+    ]
+    for i in range(1, 16):
+        messages.append(ChatMessage(role="user", content=f"user-{i}"))
+        messages.append(ChatMessage(role="assistant", content=f"assistant-{i}"))
+
+    result = ctx(messages)
+    user_messages = [m for m in result if m.role == "user"]
+    assert len(user_messages) == 8
+    assert user_messages[0].content == "user-8"
+    assert user_messages[-1].content == "user-15"
+
+
+def test_context_window_trimming_notice(aldwin_home: Path) -> None:
+    """Context-window aware trimming emits a notice once per session."""
+    ensure_home(aldwin_home)
+    notices: list[str] = []
+
+    ctx = build_context(
+        aldwin_home,
+        LimitsConfig(),
+        is_local=True,
+        context_window=2000,
+        model_id="qwen3:8b",
+        notice_emitter=notices.append,
+    )
+
+    # 10 exchanges with 1500 characters each (~15,000 chars total >> 75% of 2000 tokens)
+    messages: list[ChatMessage] = [
+        ChatMessage(role="system", content="Base instructions"),
+    ]
+    for i in range(1, 11):
+        messages.append(ChatMessage(role="user", content=f"user-{i}: " + "X" * 1500))
+        messages.append(ChatMessage(role="assistant", content=f"assistant-{i}"))
+
+    result1 = ctx(messages)
+    kept_users1 = [m for m in result1 if m.role == "user"]
+    assert len(kept_users1) < 8
+    assert len(notices) == 1
+    expected_notice = (
+        "This conversation is too long for qwen3:8b. Aldwin trimmed older messages."
+    )
+    assert expected_notice in notices[0]
+
+    # Subsequent call does not emit duplicate notice
+    _ = ctx(messages)
+    assert len(notices) == 1
