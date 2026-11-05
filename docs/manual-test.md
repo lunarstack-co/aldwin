@@ -45,21 +45,25 @@ unset OPENAI_API_KEY TAVILY_API_KEY ALDWIN_HOME NO_COLOR
   - `~/.aldwin` does **not** exist yet (`uv tool install` and `--version` have no side effects).
 - [ ] Pass / Fail
 
-### Step 2: First-run onboarding (no key, bad key, good key, skip Tavily)
+### Step 2: First-run onboarding (cloud path; no key, bad key, good key, skip Tavily)
+
+For the local-first path (Ollama/LM Studio found on first run), see **Step 20**. This step covers the cloud path when no local model is running.
+
 - **Action:**
-  1. Ensure `OPENAI_API_KEY` and `TAVILY_API_KEY` are unset.
+  1. Ensure `OPENAI_API_KEY` and `TAVILY_API_KEY` are unset, and that Ollama/LM Studio are not serving models (or quit them).
   2. Run `aldwin`.
-  3. At `OpenAI API key:`, paste an invalid key `sk-bad-key-12345678` and press Enter.
-  4. Paste a valid OpenAI API key and press Enter.
-  5. At `Tavily API key for web search (Enter to skip):`, press Enter.
-  6. At the model prompt, press Enter to accept `gpt-4o`.
-  7. In a second terminal, inspect `stat ~/.aldwin` and `stat ~/.aldwin/secrets.yaml`.
+  3. Choose a cloud provider (for example OpenAI) when offered.
+  4. At the API key prompt, paste an invalid key `sk-bad-key-12345678` and press Enter.
+  5. Paste a valid API key and press Enter.
+  6. At `Tavily API key for web search (Enter to skip):`, press Enter.
+  7. At the model prompt, press Enter to accept the default.
+  8. In a second terminal, inspect `stat ~/.aldwin` and `stat ~/.aldwin/secrets.yaml`.
 - **Expected:**
   - Welcome panel renders once (`Welcome to Aldwin`).
   - Typing/pasting the key is hidden (`••••`).
-  - Bad key prints: `That key was rejected by OpenAI. Check it and paste it again.`
-  - Valid key prints: `Checking key… sk-…<last4> ✓`.
-  - Prints `Default model: gpt-4o (change any time with /model)` and `Created ~/.aldwin`.
+  - Bad key prints a clear rejection naming the provider (for example `That key was rejected by OpenAI. Check it and paste it again.`).
+  - Valid key prints `Checking key…` with a masked key and `✓`.
+  - Prints a default model line mentioning `/model` and `Created ~/.aldwin`.
   - `~/.aldwin` has mode `0700`; `~/.aldwin/secrets.yaml` has mode `0600`.
   - Drops directly into the `❯ ` chat prompt (`> ` with `--plain`) without printing a second welcome box.
 - [ ] Pass / Fail

@@ -9,7 +9,7 @@ TIPS: Final[tuple[str, ...]] = (
     "Try @ to pick a skill · /skills lists them",
     "Try: find every TODO in this folder",
     "Try: summarise report.pdf",
-    "Switch models anytime with /model",
+    "Switch between cloud and local models any time with /model.",
     "Press Esc to stop an answer in progress",
     "Alt+Enter (or Shift+Enter) inserts a newline",
     "Use /verbose to see tool output previews",

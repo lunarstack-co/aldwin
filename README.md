@@ -32,7 +32,7 @@ Then start Aldwin:
 aldwin
 ```
 
-Already on `0.0.2`? Upgrade in place and keep your conversation, memory, persona, and settings:
+Already on `0.0.3`? Upgrade in place and keep your conversation, memory, persona, and settings:
 
 ```bash
 uv tool upgrade aldwin
@@ -40,9 +40,52 @@ uv tool upgrade aldwin
 
 ### First run
 
-The first time you run `aldwin`, it creates a private home folder at `~/.aldwin` and asks for your OpenAI API key (or uses `OPENAI_API_KEY` if it's set). A Tavily key for web search is optional; press `Enter` to skip it and add it later with `aldwin setup`.
+The first time you run `aldwin`, it creates a private home folder at `~/.aldwin` and looks for a local model (Ollama or LM Studio). If one is running, you can chat with no account. Otherwise it offers a cloud provider (OpenAI, Anthropic, Gemini, OpenRouter, or DeepSeek) or shows how to install a local server. A Tavily key for web search is optional; press `Enter` to skip it and add it later with `aldwin setup`.
 
-After that, `aldwin` picks up your latest conversation where you left off. Type `/help` at the prompt to see what you can do.
+If you already have an OpenAI key from an earlier install, Aldwin keeps it and does not force you to reconfigure.
+
+After that, `aldwin` picks up your latest conversation where you left off. Type `/help` at the prompt to see what you can do. Switch models any time with `/model`.
+
+---
+
+## Run it fully local
+
+No cloud account required when Ollama or LM Studio is already serving a model on your machine.
+
+1. Install [Ollama](https://ollama.com) (or [LM Studio](https://lmstudio.ai)) and pull a tool-capable model, for example:
+
+   ```bash
+   ollama pull qwen3:8b
+   ```
+
+2. Install Aldwin (`uv tool install aldwin`) and run `aldwin`.
+
+3. When Aldwin finds the local model, pick it and start chatting. Your prompts stay on loopback (`127.0.0.1` / `localhost`).
+
+Built-in providers (bundled catalogue — no online lookup):
+
+| Provider | Kind | Notes |
+|---|---|---|
+| Ollama | Local | Default `http://localhost:11434` |
+| LM Studio | Local | Default `http://localhost:1234/v1` |
+| OpenAI | Cloud | Needs an API key |
+| Anthropic | Cloud | Needs an API key |
+| Google Gemini | Cloud | Needs an API key |
+| OpenRouter | Cloud | Needs an API key |
+| DeepSeek | Cloud | Needs an API key |
+
+**Other server:** use `/model` → Other server, or add an OpenAI-compatible endpoint under `providers:` in `~/.aldwin/config.yaml`:
+
+```yaml
+providers:
+  my-local:
+    title: My local server
+    shape: openai_chat
+    base_url: http://127.0.0.1:8080/v1
+    local: true
+```
+
+Supported shapes are `openai_chat`, `anthropic`, and `ollama`. Non-loopback `http://` URLs require `local: true` (or use `https://`).
 
 ---
 
@@ -56,6 +99,7 @@ After that, `aldwin` picks up your latest conversation where you left off. Type 
 - **Terminal:** run shell commands, always with your approval.
 - **Planning:** keep a live checklist for longer jobs and do exact arithmetic and date maths.
 - **Skills:** ten built-in skills, your own skills in `~/.aldwin/skills/`, and an `@` picker to choose one for a message.
+- **Models:** switch between local and cloud providers with `/model`; see [Run it fully local](#run-it-fully-local).
 - **Connectors:** connect Notion, Linear, GitHub, and more with `/connectors`; see the [Connectors](#connectors) section below.
 
 See the [full tool list](https://github.com/lunarstack-co/aldwin/blob/main/docs/tools.md) and the [skills guide](https://github.com/lunarstack-co/aldwin/blob/main/docs/skills.md).
@@ -108,7 +152,8 @@ Read the [safety model](https://github.com/lunarstack-co/aldwin/blob/main/docs/s
 ## Data and privacy
 
 - **No telemetry.** Aldwin collects no analytics.
-- **Sent to OpenAI:** your prompts, recent conversation, your profile and recent notes, and anything Aldwin reads for the turn — including connector tool results.
+- **Sent to a cloud model provider:** when you use a cloud model, your prompts, recent conversation, your profile and recent notes, and anything Aldwin reads for the turn — including connector tool results — go to that provider.
+- **Fully local:** when you use Ollama, LM Studio, or another loopback model, conversation data stays on your machine (except optional web tools, remote connectors, and the PyPI update check).
 - **Stays local:** everything else in `~/.aldwin`, including your API keys, saved conversations, sign-in tokens, and logs. Connector tokens never go to the model.
 - **Platforms:** macOS 13+ and Linux. Local MCP servers are not supported on Windows.
 
@@ -131,9 +176,9 @@ See all [commands, slash commands, and shortcuts](https://github.com/lunarstack-
 
 ## What's next
 
-Aldwin runs inside your terminal process; it isn't always-on yet. Closing the terminal stops any active task, and your conversation resumes next time you run `aldwin`. It works with your own OpenAI API key only; other model providers and Windows are not yet supported.
+Aldwin runs inside your terminal process; it isn't always-on yet. Closing the terminal stops any active task, and your conversation resumes next time you run `aldwin`. Windows is not yet supported.
 
-Next: local models and more web search providers.
+Next: more web search providers.
 
 ---
 

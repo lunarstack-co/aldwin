@@ -60,10 +60,10 @@ Every message is a Pydantic v2 model with `model_config = ConfigDict(extra="igno
 - `busy`: a `turn` or `set_model` was sent while another turn is already running.
 - `unknown_approval`: `approve` referenced an `approval_id` that does not exist or already finished.
 - `unknown_model`: `set_model` requested an unsupported or blank model name.
-- `auth_failed`: OpenAI rejected the API key (`401` or `403`).
-- `rate_limited`: OpenAI rate limit reached (`429`).
-- `model_unavailable`: OpenAI connection, timeout, or `5xx` error.
-- `request_rejected`: OpenAI refused the request itself (`4xx` other than `401`, `404` and `429`), for example more than 128 tools switched on. The message says what to change.
+- `auth_failed`: the active model provider rejected the API key (`401` or `403`).
+- `rate_limited`: the active model provider rate-limited the request (`429`).
+- `model_unavailable`: connection, timeout, or `5xx` from the active model provider (cloud or local).
+- `request_rejected`: the provider refused the request itself (`4xx` other than `401`, `404` and `429`), for example more than 128 tools switched on. The message says what to change.
 - `internal`: unexpected error (stack trace logged to `~/.aldwin/logs/aldwin.log`, never sent in the event).
 
 ---

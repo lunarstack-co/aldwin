@@ -599,6 +599,14 @@ def test_whats_new_due_matrix(aldwin_home: Path) -> None:
     assert whats_new_due(aldwin_home, "0.0.2.1") is False
     assert whats_new_due(aldwin_home, "0.0.3") is True
 
+    mark_whats_new_seen(aldwin_home, "0.0.3")
+    assert whats_new_due(aldwin_home, "0.0.3") is False
+    assert whats_new_due(aldwin_home, "0.0.4") is True
+
+    mark_whats_new_seen(aldwin_home, "0.0.4")
+    assert whats_new_due(aldwin_home, "0.0.4") is False
+    assert whats_new_due(aldwin_home, "0.0.4.1") is False
+
 
 def test_mark_whats_new_seen_persists_and_preserves_comments(aldwin_home: Path) -> None:
     """TC-14: mark_whats_new_seen writes last_seen_version and keeps comments."""
@@ -677,9 +685,10 @@ def test_render_whats_new_copy_and_plain_mode() -> None:
     buf = io.StringIO()
     console = create_console(plain=True, width=80, record=True, file=buf)
     renderer = ChatRenderer(console, plain=True)
-    renderer.render_whats_new(WHATS_NEW_TEXT, version="0.0.2")
+    renderer.render_whats_new(WHATS_NEW_TEXT, version="0.0.4")
     text = console.export_text()
-    assert "What's new in 0.0.2" in text
-    assert "/connectors" in text
-    assert "MCP server" in text
-    assert "conversation, memory and settings" in text
+    assert "What's new in 0.0.4" in text
+    assert "Any model, including local" in text
+    assert "/model" in text
+    assert "no reconfigure" in text
+    assert "Conversation, memory and settings" in text

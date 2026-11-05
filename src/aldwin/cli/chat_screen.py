@@ -79,10 +79,9 @@ logger = logging.getLogger("aldwin.cli")
 ESCAPE_FLUSH_DELAY: Final[float] = 0.05
 
 WHATS_NEW_TEXT: Final[str] = (
-    "Connect Aldwin to your other apps. Type /connectors to add Notion, Linear, "
-    "GitHub, Context7 and more, or any MCP server by URL. Tools that only read "
-    "run straight away; anything that changes something asks you first. Your "
-    "conversation, memory and settings are kept."
+    "Any model, including local. Switch cloud and local with /model — Ollama, "
+    "LM Studio, OpenAI, Anthropic, and more. OpenAI users keep working with no "
+    "reconfigure. Conversation, memory and settings are kept."
 )
 
 
