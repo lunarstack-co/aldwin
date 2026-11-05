@@ -22,6 +22,7 @@ LOG_FORMAT: Final[str] = "%(asctime)s %(levelname)s %(name)s %(message)s"
 
 _SECRET_TOKEN_PATTERN: Final[re.Pattern[str]] = re.compile(
     r"\b(?:sk-(?:proj-|ant-)?|tvly-(?:dev-|prod-)?)[A-Za-z0-9_-]{8,}\b"
+    r"|\bAIza[0-9A-Za-z_-]{35}\b"
 )
 
 _OAUTH_FIELDS: Final[str] = (

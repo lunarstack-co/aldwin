@@ -34,6 +34,7 @@ LogSource = Literal["rule", "grant", "user", "no_approver", "error", "hint"]
 # - gh[pousr]_[A-Za-z0-9]{36,} and github_pat_… (GitHub tokens)
 # - xox[abprs]-[A-Za-z0-9-]{10,} (Slack tokens)
 # - eyJ….….… (JSON Web Tokens)
+# - AIza[0-9A-Za-z_-]{35} (Google Gemini keys)
 # - -----BEGIN ... PRIVATE KEY----- blocks or headers
 # Keep in step with the chat token shapes in protocol/secret_shapes.py.
 SECRET_PATTERNS: Final[tuple[re.Pattern[str], ...]] = (
@@ -50,6 +51,7 @@ SECRET_PATTERNS: Final[tuple[re.Pattern[str], ...]] = (
     re.compile(r"\bgithub_pat_[A-Za-z0-9_]{22,}\b"),
     re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}\b"),
     re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
+    re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"),
     re.compile(r"\bALDWIN_CANARY_[A-Za-z0-9_-]+\b"),
 )
 # Back-compat alias used by older call sites.

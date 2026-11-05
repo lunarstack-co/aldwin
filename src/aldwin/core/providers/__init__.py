@@ -5,6 +5,7 @@ from __future__ import annotations
 from .anthropic import AnthropicBackend, AnthropicMessagesModel
 from .base import AccessStatus, ModelInfo, ProviderBackend
 from .factory import get_backend, resolve_provider_key
+from .keys import resolve_provider_secret_field, save_provider_key
 from .ollama import OllamaBackend, OllamaModel, parse_ollama_show_response
 from .openai_chat import (
     OpenAIChatBackend,
@@ -47,5 +48,7 @@ __all__ = [
     "parse_ollama_show_response",
     "request_body",
     "resolve_provider_key",
+    "resolve_provider_secret_field",
+    "save_provider_key",
     "validate_model_ref",
 ]

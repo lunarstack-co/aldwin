@@ -58,16 +58,19 @@ def test_logging_redacts_accidental_secret_tokens(aldwin_home: Path) -> None:
     logger = logging.getLogger("aldwin.core.test")
 
     logger.error(
-        "Auth failed for %s and %s",
+        "Auth failed for %s, %s, and %s",
         "sk-proj-1234567890abcdef",
         "tvly-dev-9876543210fedcba",
+        "AIzaSy1234567890abcdefghijklmnopqrstuvw",
     )
 
     contents = log_path.read_text(encoding="utf-8")
     assert "sk-…cdef" in contents
     assert "tvly-…dcba" in contents
+    assert "AIz…tuvw" in contents
     assert "1234567890" not in contents
     assert "9876543210" not in contents
+    assert "abcdefghijkl" not in contents
 
 
 def test_logging_redacts_oauth_codes_and_tokens(aldwin_home: Path) -> None:

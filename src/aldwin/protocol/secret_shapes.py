@@ -17,6 +17,7 @@ SECRET_SHAPES: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     ("github", re.compile(r"\bgithub_pat_[A-Za-z0-9_]{22,}\b")),
     ("slack", re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}\b")),
     ("api_key", re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")),
+    ("google", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
     (
         "jwt",
         re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),

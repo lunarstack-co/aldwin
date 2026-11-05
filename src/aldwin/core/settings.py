@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 import os
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
@@ -24,7 +26,13 @@ from pydantic import (
     model_validator,
 )
 
-from aldwin.core.home import FILE_MODE, atomic_write, ensure_permissions, home_dir
+from aldwin.core.home import (
+    DIR_MODE,
+    FILE_MODE,
+    atomic_write,
+    ensure_permissions,
+    home_dir,
+)
 
 logger = logging.getLogger("aldwin.core.settings")
 
@@ -285,12 +293,15 @@ def mask_secret(value: str | SecretStr | None) -> str:
     return f"{cleaned[:3]}…{cleaned[-4:]}"
 
 
-def _normalize_key_field(provider_or_field: str) -> str:
+def normalize_key_field(provider_or_field: str) -> str:
     """Convert a provider name or field name into ``'<name>_api_key'``."""
     lowered = provider_or_field.strip().lower().replace("-", "_")
     if lowered.endswith(("_api_key", "_token", "_secret", "_key")):
         return lowered
     return f"{lowered}_api_key"
+
+
+_normalize_key_field = normalize_key_field
 
 
 class SecretsConfig(BaseModel):
@@ -306,6 +317,10 @@ class SecretsConfig(BaseModel):
 
     openai_api_key: SecretStr | None = None
     tavily_api_key: SecretStr | None = None
+    anthropic_api_key: SecretStr | None = None
+    gemini_api_key: SecretStr | None = None
+    openrouter_api_key: SecretStr | None = None
+    deepseek_api_key: SecretStr | None = None
 
     @model_validator(mode="after")
     def _wrap_extra_secrets(self) -> SecretsConfig:
@@ -348,18 +363,23 @@ class SecretsConfig(BaseModel):
     def to_secret_dict(self) -> dict[str, str]:
         """Return all non-empty secrets as a plain ``dict[str, str]`` for saving."""
         result: dict[str, str] = {}
-        if self.openai_api_key is not None:
-            v = self.openai_api_key.get_secret_value().strip()
-            if v:
-                result["openai_api_key"] = v
-        if self.tavily_api_key is not None:
-            v = self.tavily_api_key.get_secret_value().strip()
-            if v:
-                result["tavily_api_key"] = v
+        for field in (
+            "openai_api_key",
+            "tavily_api_key",
+            "anthropic_api_key",
+            "gemini_api_key",
+            "openrouter_api_key",
+            "deepseek_api_key",
+        ):
+            val: SecretStr | None = getattr(self, field, None)
+            if val is not None:
+                v = val.get_secret_value().strip()
+                if v:
+                    result[field] = v
         if self.__pydantic_extra__:
-            for key, val in self.__pydantic_extra__.items():
-                if isinstance(val, SecretStr):
-                    v = val.get_secret_value().strip()
+            for key, extra_val in self.__pydantic_extra__.items():
+                if isinstance(extra_val, SecretStr):
+                    v = extra_val.get_secret_value().strip()
                     if v:
                         result[key] = v
         return result
@@ -368,6 +388,10 @@ class SecretsConfig(BaseModel):
         parts: list[str] = [
             f"openai_api_key={(mask_secret(self.openai_api_key) or 'None')!r}",
             f"tavily_api_key={(mask_secret(self.tavily_api_key) or 'None')!r}",
+            f"anthropic_api_key={(mask_secret(self.anthropic_api_key) or 'None')!r}",
+            f"gemini_api_key={(mask_secret(self.gemini_api_key) or 'None')!r}",
+            f"openrouter_api_key={(mask_secret(self.openrouter_api_key) or 'None')!r}",
+            f"deepseek_api_key={(mask_secret(self.deepseek_api_key) or 'None')!r}",
         ]
         if self.__pydantic_extra__:
             for key in sorted(self.__pydantic_extra__.keys()):
@@ -694,6 +718,25 @@ def load_secrets(home: Path | None = None) -> SecretsConfig:
         ) from None
 
 
+@contextmanager
+def secrets_locked(home: Path) -> Iterator[None]:
+    """Hold an exclusive lock for a read-modify-write of ``secrets.yaml``."""
+    import fcntl
+
+    home.mkdir(parents=True, exist_ok=True, mode=DIR_MODE)
+    fd = os.open(
+        home / f"{SECRETS_FILENAME}.lock",
+        os.O_RDWR | os.O_CREAT,
+        FILE_MODE,
+    )
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
 def save_secrets(secrets: SecretsConfig, home: Path | None = None) -> Path:
     """Atomically write ``secrets`` to ``secrets.yaml`` with mode ``0600``.
 
@@ -702,30 +745,58 @@ def save_secrets(secrets: SecretsConfig, home: Path | None = None) -> Path:
     root = (home if home is not None else home_dir()).expanduser().resolve()
     secrets_path = root / SECRETS_FILENAME
 
-    payload: dict[str, str] = {}
-    if secrets_path.exists():
-        existing = load_secrets(root)
-        payload.update(existing.to_secret_dict())
+    with secrets_locked(root):
+        payload: dict[str, str] = {}
+        if secrets_path.exists():
+            existing = load_secrets(root)
+            payload.update(existing.to_secret_dict())
 
-    payload.update(secrets.to_secret_dict())
+        payload.update(secrets.to_secret_dict())
 
-    serialized = yaml.safe_dump(payload, sort_keys=True) if payload else "{}\n"
-    atomic_write(secrets_path, serialized, mode=FILE_MODE)
+        serialized = yaml.safe_dump(payload, sort_keys=True) if payload else "{}\n"
+        atomic_write(secrets_path, serialized, mode=FILE_MODE)
     return secrets_path
 
 
-def resolve_key(provider: str, home: Path | None = None) -> ResolvedKey:
+def resolve_key(
+    provider: str,
+    home: Path | None = None,
+    *,
+    secret_field: str | None = None,
+) -> ResolvedKey:
     """Resolve an API key, checking environment variables before ``secrets.yaml``.
 
     Accepts any provider name (e.g. ``'openai'``, ``'tavily'``, ``'anthropic'``)
     or key field name (e.g. ``'openai_api_key'``), checking ``<PROVIDER>_API_KEY``
     in ``os.environ`` before ``secrets.yaml``.
     """
-    field_name = _normalize_key_field(provider)
-    env_var = field_name.upper()
+    if secret_field is not None and secret_field.strip():
+        field_name = secret_field.strip().lower()
+        env_var = field_name.upper()
+    else:
+        prov_entry = None
+        try:
+            from aldwin.core.providers.registry import get_provider
+
+            prov_entry = get_provider(provider)
+        except Exception:
+            pass
+
+        if prov_entry is not None:
+            field_name = prov_entry.secret or _normalize_key_field(provider)
+            env_var = prov_entry.env_var or field_name.upper()
+        else:
+            field_name = _normalize_key_field(provider)
+            env_var = field_name.upper()
+
     env_val = os.environ.get(env_var, "").strip()
     if env_val:
         return ResolvedKey(key=env_val, source="env")
+
+    if env_var != field_name.upper():
+        fallback_env_val = os.environ.get(field_name.upper(), "").strip()
+        if fallback_env_val:
+            return ResolvedKey(key=fallback_env_val, source="env")
 
     secrets = load_secrets(home)
     file_val = secrets.get_secret(field_name)
