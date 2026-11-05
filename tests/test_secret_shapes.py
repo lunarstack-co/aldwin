@@ -10,12 +10,27 @@ GITHUB = "ghp_" + "a1B2" * 9
 GITHUB_FINE = "github_pat_" + "11ABCDEFG0_" + "x" * 30
 SLACK = "xoxb-1234567890-abcdefghij"
 API_KEY = "sk-proj-" + "Abc123_x" * 3
+ANTHROPIC = "sk-ant-api03-" + "a1B2" * 20
+OPENROUTER = "sk-or-v1-" + "a1b2" * 16
+DEEPSEEK = "sk-" + "c3d4" * 8
+GEMINI = "AIza" + "a1B2" * 8 + "xyz"
 JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTYifQ.c2lnbmF0dXJlLXZhbHVl"
 # A JWT whose payload holds a run that also matches the `sk-` shape.
 JWT_WITH_INNER_KEY = (
     "eyJhbGciOiJIUzI1NiJ9.eyJzdWIi-sk-" + "a" * 24 + ".c2lnbmF0dXJlLXZhbHVl"
 )
-SAMPLES = (GITHUB, GITHUB_FINE, SLACK, API_KEY, JWT, JWT_WITH_INNER_KEY)
+SAMPLES = (
+    GITHUB,
+    GITHUB_FINE,
+    SLACK,
+    API_KEY,
+    ANTHROPIC,
+    OPENROUTER,
+    DEEPSEEK,
+    GEMINI,
+    JWT,
+    JWT_WITH_INNER_KEY,
+)
 
 
 @pytest.mark.parametrize(
@@ -25,6 +40,10 @@ SAMPLES = (GITHUB, GITHUB_FINE, SLACK, API_KEY, JWT, JWT_WITH_INNER_KEY)
         (GITHUB_FINE, "github"),
         (SLACK, "slack"),
         (API_KEY, "api_key"),
+        (ANTHROPIC, "api_key"),
+        (OPENROUTER, "api_key"),
+        (DEEPSEEK, "api_key"),
+        (GEMINI, "google"),
         (JWT, "jwt"),
     ],
 )
@@ -51,6 +70,9 @@ def test_token_at_either_end_is_found(sample: str) -> None:
         "eyJabc.def",
         "task-1234567890abcdefghij",
         "a plain message about GitHub tokens",
+        "AIza" + "a" * 34,
+        "AIza" + "a" * 36,
+        "aiza" + "a" * 35,
     ],
 )
 def test_near_misses_do_not_match(text: str) -> None:

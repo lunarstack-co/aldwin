@@ -455,3 +455,77 @@ def test_load_config_providers_validation_and_unknown_warnings(
         cfg = load_config(aldwin_home)
     assert "office-gpu" in cfg.providers
     assert "Ignoring unknown key 'providers.office-gpu.extra_typo'" in caplog.text
+
+
+def test_first_ship_cloud_secrets_typed_and_masked() -> None:
+    """First-ship provider keys are typed SecretStr and masked in str and repr."""
+    secrets = SecretsConfig(
+        anthropic_api_key=SecretStr("sk-ant-api03-12345678abcd"),
+        gemini_api_key=SecretStr("AIzaSy1234567890abcdefghijklmnopqrstuvw"),
+        openrouter_api_key=SecretStr("sk-or-v1-1234567890abcdef"),
+        deepseek_api_key=SecretStr("sk-1234567890abcdef1234567890abcdef"),
+    )
+    assert secrets.get_secret("anthropic") == "sk-ant-api03-12345678abcd"
+    assert secrets.get_secret("gemini") == "AIzaSy1234567890abcdefghijklmnopqrstuvw"
+    assert secrets.get_secret("openrouter") == "sk-or-v1-1234567890abcdef"
+    assert secrets.get_secret("deepseek") == "sk-1234567890abcdef1234567890abcdef"
+
+    as_dict = secrets.to_secret_dict()
+    assert as_dict["anthropic_api_key"] == "sk-ant-api03-12345678abcd"
+    assert as_dict["gemini_api_key"] == "AIzaSy1234567890abcdefghijklmnopqrstuvw"
+    assert as_dict["openrouter_api_key"] == "sk-or-v1-1234567890abcdef"
+    assert as_dict["deepseek_api_key"] == "sk-1234567890abcdef1234567890abcdef"
+
+    text_str = str(secrets)
+    text_repr = repr(secrets)
+    for form in (text_str, text_repr):
+        assert "sk-…abcd" in form
+        assert "12345678" not in form
+        assert "AIzaSy12" not in form
+
+
+def test_resolve_key_custom_secret_field(
+    aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """resolve_key checks uppercase env of custom secret_field before file."""
+    monkeypatch.setenv("MY_OFFICE_TOKEN", "env-office-secret-123")
+    save_secrets(
+        SecretsConfig(my_office_token=SecretStr("file-office-secret-456")),
+        aldwin_home,
+    )
+
+    resolved_env = resolve_key(
+        "office-gpu", aldwin_home, secret_field="my_office_token"
+    )
+    assert resolved_env.key == "env-office-secret-123"
+    assert resolved_env.source == "env"
+
+    monkeypatch.delenv("MY_OFFICE_TOKEN", raising=False)
+    resolved_file = resolve_key(
+        "office-gpu", aldwin_home, secret_field="my_office_token"
+    )
+    assert resolved_file.key == "file-office-secret-456"
+    assert resolved_file.source == "file"
+
+
+async def test_concurrent_save_secrets_maintains_yaml_integrity(
+    aldwin_home: Path,
+) -> None:
+    """Concurrent save_secrets calls hold lock and persist all keys in valid YAML."""
+    import asyncio
+
+    async def _worker(idx: int) -> None:
+        cfg = SecretsConfig(**{f"key_{idx}": SecretStr(f"secret_{idx}")})
+        await asyncio.to_thread(save_secrets, cfg, aldwin_home)
+
+    await asyncio.gather(*[_worker(i) for i in range(10)])
+
+    secrets_path = aldwin_home / "secrets.yaml"
+    assert secrets_path.exists()
+    assert (secrets_path.stat().st_mode & 0o777) == 0o600
+
+    raw = yaml.safe_load(secrets_path.read_text(encoding="utf-8"))
+    assert isinstance(raw, dict)
+    assert len(raw) == 10
+    for idx in range(10):
+        assert raw.get(f"key_{idx}") == f"secret_{idx}"

@@ -39,13 +39,15 @@ All local data lives in `~/.aldwin`. Set `ALDWIN_HOME=/path/to/dir` to use a dif
 
 ## Secrets pasted into chat
 
-If a message holds something shaped like a token (a GitHub or Slack token, an `sk-` API key, or a JSON Web Token), Aldwin replaces it with `‹redacted›` before anything leaves your computer. The rest of the message is sent as typed, so "connect me to GitHub, here's my token …" still gets an answer. The model, the saved conversation and its title only ever hold `‹redacted›`, and the line is not written to `history`.
+If a message holds something shaped like a token (a GitHub or Slack token, an `sk-` API key for OpenAI, Anthropic, OpenRouter, or DeepSeek, a Google Gemini `AIza…` API key, or a JSON Web Token), Aldwin replaces it with `‹redacted›` before anything leaves your computer. The rest of the message is sent as typed, so "connect me to GitHub, here's my token …" still gets an answer. The model, the saved conversation and its title only ever hold `‹redacted›`, and the line is not written to `history`.
 
-Lines already in an older `history` file are not rewritten. To give Aldwin a token, use `/connectors` or the private prompt (`Token (hidden):`) it shows when a connector needs one.
+Tokens for custom servers or services without identifiable prefixes cannot be safely detected with regex without false-positive redaction of normal text. For such tokens, enter them through Aldwin's masked prompt (`aldwin setup` or `/model`) rather than pasting into chat.
+
+Lines already in an older `history` file are not rewritten. To give Aldwin a token, use `/connectors`, `/model`, or the private prompt (`Token (hidden):`) it shows when a connector or provider needs one.
 
 ## Logs
 
-- `logs/aldwin.log` records lifecycle events and errors only, never message content. Every record passes through a filter that redacts secret-shaped values (`sk-…`, `tvly-…`). Run `aldwin --debug` for more detail.
+- `logs/aldwin.log` records lifecycle events and errors only, never message content. Every record passes through a filter that redacts secret-shaped values (`sk-…`, `AIza…`, `tvly-…`). Run `aldwin --debug` for more detail.
 - `logs/approvals.jsonl` records every policy decision but never file contents, diffs, or tool outputs. See [Safety](safety.md#approval-log).
 
 ## Removing your data

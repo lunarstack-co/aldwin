@@ -34,6 +34,7 @@ from aldwin.core.memory import (
 )
 from aldwin.core.persona import PersonaSummary, persona_summary, persona_text
 from aldwin.core.policy import sanitize_display_text
+from aldwin.core.providers.base import AccessStatus
 from aldwin.core.settings import (
     ConfigError,
     KeySource,
@@ -168,6 +169,36 @@ async def verify_active_openai_key(home: Path | None = None) -> KeyCheckResult:
     if not key:
         return "invalid"
     return await check_openai_key(key)
+
+
+async def save_provider_key(
+    provider: str,
+    key: str,
+    *,
+    home: Path | None = None,
+    base_url: str | None = None,
+) -> AccessStatus:
+    """Validate a candidate provider key and persist to secrets.yaml only on success."""
+    from aldwin.core.providers.keys import save_provider_key as _core_save_key
+
+    return await _core_save_key(provider, key, home=home, base_url=base_url)
+
+
+async def verify_active_provider_key(
+    provider: str,
+    home: Path | None = None,
+) -> AccessStatus:
+    """Validate the resolved key for `provider` without exposing it to doors."""
+    from aldwin.core.providers.factory import get_backend
+
+    root = (home if home is not None else home_dir()).expanduser().resolve()
+    resolved = resolve_key(provider, root)
+    key = (resolved.key or "").strip()
+    if not key:
+        return AccessStatus.INVALID_KEY
+
+    backend = get_backend(provider, home=root)
+    return await backend.check_access()
 
 
 async def list_models_for(
