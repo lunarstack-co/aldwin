@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from pexpect.exceptions import TIMEOUT
 
-from e2e.harness import AldwinSpawn, write_transcript
+from e2e.harness import DONE_PATTERN, PROMPT_PATTERN, AldwinSpawn, write_transcript
 from e2e.http_stub import start_pdf_stub
 from e2e.workspace_builder import (
     DECK_MARKER,
@@ -65,24 +65,25 @@ def _drive(
     timeout: float = 180,
 ) -> str:
     """Send a prompt and auto-answer approvals with `y` until the turn settles."""
-    spawn.child.expect(r"› |You:|> ", timeout=60)
+    spawn.child.expect(PROMPT_PATTERN, timeout=60)
     spawn.send_line(prompt)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline and approvals > 0:
         idx = spawn.child.expect(
             [
                 r"\[y/a/N\]|Allow|Approve|Run this|Yes,",
-                r"› |You:|> |\(stopped\)|✓ done|done ·",
+                DONE_PATTERN,
                 spawn._pexpect.TIMEOUT,
             ],
             timeout=min(30, deadline - time.monotonic()),
         )
         if idx == 0:
+            spawn.capture_output()
             spawn.answer("y")
             approvals -= 1
             continue
         if idx == 1:
-            break
+            return spawn.capture_output()
     return spawn.wait_done(timeout=30)
 
 
