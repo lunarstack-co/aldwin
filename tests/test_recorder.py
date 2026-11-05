@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-import sys
+import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "scripts"))
+SCRIPT_PATH = REPO_ROOT / "scripts" / "record_provider_fixture.py"
 
-from record_provider_fixture import sanitize_exchange  # noqa: E402
+_spec = importlib.util.spec_from_file_location("record_provider_fixture", SCRIPT_PATH)
+assert _spec and _spec.loader
+_module = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_module)
+sanitize_exchange = _module.sanitize_exchange
 
 
 def test_sanitize_exchange_redacts_auth_headers_and_body() -> None:
