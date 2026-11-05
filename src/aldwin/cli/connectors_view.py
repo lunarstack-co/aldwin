@@ -364,7 +364,7 @@ class _View:
             return await read_approval_key(input_dev, grantable=False)
         from rich.live import Live
 
-        self.renderer.ring_bell()
+        self.renderer.notify_approval(event)
         panel = self.renderer.build_approval_panel
         with Live(
             panel(event, selected=0), console=self.console, auto_refresh=False

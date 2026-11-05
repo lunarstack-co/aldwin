@@ -38,6 +38,7 @@ SLASH_COMMANDS: Final[tuple[tuple[str, str], ...]] = (
     ("/todo", "Show the current task checklist"),
     ("/workspace", "Show or switch the workspace folder"),
     ("/verbose", "Show or hide file previews for this session"),
+    ("/notify", "Turn terminal notifications on or off for this session"),
     ("/tools", "List built-in tools (includes recall, remember, forget)"),
     ("/connectors", "Add and manage connected apps (MCP servers)"),
     ("/exit", "Save and exit Aldwin"),
@@ -542,6 +543,10 @@ async def handle_slash_command(
 
     if cmd == "/verbose":
         renderer.set_verbose(not renderer.verbose)
+        return False
+
+    if cmd == "/notify":
+        renderer.set_notifications(not renderer.notifications_enabled)
         return False
 
     if cmd == "/tools":
