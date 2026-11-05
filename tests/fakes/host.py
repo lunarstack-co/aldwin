@@ -242,7 +242,9 @@ class FakeHost:
             return ErrorEvent(
                 re="req_model",
                 code="unknown_model",
-                message=f"Model {cleaned!r} is not available.",
+                message=(
+                    f"Model {cleaned!r} is not available. Pick another with /model."
+                ),
             )
         self.model = cleaned
         self.model_switches.append(cleaned)

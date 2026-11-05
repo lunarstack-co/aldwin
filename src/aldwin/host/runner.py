@@ -18,6 +18,7 @@ from agentling import (
     Agent,
     AgentSession,
     FinalEvent,
+    ModelContextLengthError,
     StepEvent,
     TextDelta,
     Usage,
@@ -28,7 +29,7 @@ from agentling import (
 from agentling import (
     ToolResultEvent as AgentlingToolResultEvent,
 )
-from agentling.memory import FinalStep
+from agentling.memory import FinalStep, TaskStep
 from agentling.tools import ToolCallError
 
 import aldwin
@@ -63,6 +64,8 @@ from aldwin.core.connectors.state import ConnectorSnapshot
 from aldwin.core.home import home_dir
 from aldwin.core.models import (
     classify_model_error,
+    is_local_model,
+    parse_model_ref_parts,
     retry_status_message,
 )
 from aldwin.core.policy import (
@@ -253,9 +256,13 @@ def classify_turn_error(
     exc: BaseException,
     *,
     model: str | None = None,
+    provider_title: str | None = None,
+    local: bool = False,
 ) -> tuple[ErrorCode, str]:
-    """Map an Agentling or OpenAI exception to a protocol `(ErrorCode, message)`."""
-    return classify_model_error(exc, model=model)
+    """Map an Agentling exception to a protocol `(ErrorCode, message)`."""
+    return classify_model_error(
+        exc, model=model, provider_title=provider_title, local=local
+    )
 
 
 class RequestScope:
@@ -844,6 +851,7 @@ class AldwinHost:
                         attempt=attempt,
                         max_retries=max_retries,
                         delay_s=delay_s,
+                        model=self._model,
                     ),
                 )
             )
@@ -1444,140 +1452,187 @@ class AldwinHost:
             )
 
             try:
-                async for ev in self._agent_session.run(
+                stream_iter = self._agent_session.run(
                     task_text,
                     stream=True,
                     reset=False,
-                ):
-                    if isinstance(ev, TextDelta):
-                        if not step_text_chunks:
-                            self._persist_session(interrupted=True)
-                        step_text_chunks.append(ev.text)
-                        turn_streamed_chunks.append(ev.text)
-                        await scope.emit(TextEvent(re=req.id, delta=ev.text))
-                    elif isinstance(ev, AgentlingToolCallEvent):
-                        if step_text_chunks:
-                            step_text_chunks.clear()
-                        call = ev.tool_call
-                        self._persist_session(interrupted=True)
-                        self._connectors.note_tool_used(call.name)
-                        self._policy_session.enqueue_step_call(
-                            call.id,
-                            call.name,
-                            call.arguments,
-                        )
-                        tool_start_times[call.id] = time.monotonic()
-                        if call.name == "todo":
-                            todo_call_items[call.id] = call.arguments.get("items")
-                        running = (
-                            edit_tools.running_summary(
-                                call.name,
-                                call.arguments,
-                                self._workspace,
-                            )
-                            or file_running_summary(
-                                call.name,
-                                call.arguments,
-                                self._workspace,
-                            )
-                            or document_tools.running_summary(
-                                call.name,
-                                call.arguments,
-                                self._workspace,
-                            )
-                            or download_tools.running_summary(
-                                call.name,
-                                call.arguments,
-                                self._workspace,
-                            )
-                            or memory_running_summary(
-                                call.name,
-                                call.arguments,
-                                self._workspace,
-                            )
-                        )
-                        tool_running[call.id] = running
-                        connector, tool_reason = tool_call_labels(call.name)
-                        title, remote = self._connectors.labels(call.name)
-                        await scope.emit(
-                            ToolCallEvent(
-                                re=req.id,
-                                call_id=call.id,
-                                name=call.name,
-                                args_preview=format_args_preview(call.arguments),
-                                summary=running,
-                                connector=connector,
-                                connector_title=title,
-                                remote_tool=remote,
-                                reason=tool_reason,
-                            )
-                        )
-                    elif isinstance(ev, AgentlingToolResultEvent):
-                        res = ev.result
-                        started = tool_start_times.pop(res.tool_call_id, None)
-                        explicit_ms = getattr(res.content, "duration_ms", None)
-                        if isinstance(explicit_ms, int):
-                            duration_ms = max(0, explicit_ms)
-                        elif started is not None:
-                            effective_start = max(started, self._last_approval_end_time)
-                            duration_ms = max(
-                                0, int((time.monotonic() - effective_start) * 1000)
-                            )
-                        else:
-                            duration_ms = 0
-                        ok, summary = summarize_tool_result(
-                            res.name,
-                            res.content,
-                            is_error=res.is_error,
-                        )
-                        running = tool_running.pop(res.tool_call_id, "")
-                        if res.name in edit_tools.EDIT_TOOL_NAMES:
-                            summary = edit_tools.row_summary(running, summary, ok=ok)
-                        elif res.name in document_tools.DOCUMENT_TOOL_NAMES:
-                            summary = document_tools.row_summary(
-                                running, summary, ok=ok
-                            )
-                        elif res.name in download_tools.DOWNLOAD_TOOL_NAMES:
-                            summary = download_tools.row_summary(
-                                running, summary, ok=ok
-                            )
-                        else:
-                            summary = file_row_summary(running, summary, ok=ok)
-                        preview = ""
-                        if ok:
-                            preview = preview_lines(str(res.content))
-                        if res.name == "todo" and ok:
-                            raw_items = todo_call_items.pop(res.tool_call_id, None)
-                            try:
-                                self._todo = validate_todo_items(raw_items)
-                            except ToolCallError:
-                                pass
-                            else:
+                )
+                can_trim_context = True
+                while True:
+                    try:
+                        async for ev in stream_iter:
+                            if isinstance(ev, TextDelta):
+                                if not step_text_chunks:
+                                    self._persist_session(interrupted=True)
+                                step_text_chunks.append(ev.text)
+                                turn_streamed_chunks.append(ev.text)
+                                await scope.emit(TextEvent(re=req.id, delta=ev.text))
+                            elif isinstance(ev, AgentlingToolCallEvent):
+                                if step_text_chunks:
+                                    step_text_chunks.clear()
+                                call = ev.tool_call
                                 self._persist_session(interrupted=True)
-                                await scope.emit(self._todo_event(req.id))
-                        else:
-                            todo_call_items.pop(res.tool_call_id, None)
-                        await scope.emit(
-                            ToolResultEvent(
-                                re=req.id,
-                                call_id=res.tool_call_id,
-                                ok=ok,
-                                summary=summary,
-                                preview=preview,
-                                duration_ms=duration_ms,
+                                self._connectors.note_tool_used(call.name)
+                                self._policy_session.enqueue_step_call(
+                                    call.id,
+                                    call.name,
+                                    call.arguments,
+                                )
+                                tool_start_times[call.id] = time.monotonic()
+                                if call.name == "todo":
+                                    todo_call_items[call.id] = call.arguments.get(
+                                        "items"
+                                    )
+                                running = (
+                                    edit_tools.running_summary(
+                                        call.name,
+                                        call.arguments,
+                                        self._workspace,
+                                    )
+                                    or file_running_summary(
+                                        call.name,
+                                        call.arguments,
+                                        self._workspace,
+                                    )
+                                    or document_tools.running_summary(
+                                        call.name,
+                                        call.arguments,
+                                        self._workspace,
+                                    )
+                                    or download_tools.running_summary(
+                                        call.name,
+                                        call.arguments,
+                                        self._workspace,
+                                    )
+                                    or memory_running_summary(
+                                        call.name,
+                                        call.arguments,
+                                        self._workspace,
+                                    )
+                                )
+                                tool_running[call.id] = running
+                                connector, tool_reason = tool_call_labels(call.name)
+                                title, remote = self._connectors.labels(call.name)
+                                await scope.emit(
+                                    ToolCallEvent(
+                                        re=req.id,
+                                        call_id=call.id,
+                                        name=call.name,
+                                        args_preview=format_args_preview(
+                                            call.arguments
+                                        ),
+                                        summary=running,
+                                        connector=connector,
+                                        connector_title=title,
+                                        remote_tool=remote,
+                                        reason=tool_reason,
+                                    )
+                                )
+                            elif isinstance(ev, AgentlingToolResultEvent):
+                                res = ev.result
+                                started = tool_start_times.pop(res.tool_call_id, None)
+                                explicit_ms = getattr(res.content, "duration_ms", None)
+                                if isinstance(explicit_ms, int):
+                                    duration_ms = max(0, explicit_ms)
+                                elif started is not None:
+                                    effective_start = max(
+                                        started, self._last_approval_end_time
+                                    )
+                                    duration_ms = max(
+                                        0,
+                                        int(
+                                            (time.monotonic() - effective_start) * 1000
+                                        ),
+                                    )
+                                else:
+                                    duration_ms = 0
+                                ok, summary = summarize_tool_result(
+                                    res.name,
+                                    res.content,
+                                    is_error=res.is_error,
+                                )
+                                running = tool_running.pop(res.tool_call_id, "")
+                                if res.name in edit_tools.EDIT_TOOL_NAMES:
+                                    summary = edit_tools.row_summary(
+                                        running, summary, ok=ok
+                                    )
+                                elif res.name in document_tools.DOCUMENT_TOOL_NAMES:
+                                    summary = document_tools.row_summary(
+                                        running, summary, ok=ok
+                                    )
+                                elif res.name in download_tools.DOWNLOAD_TOOL_NAMES:
+                                    summary = download_tools.row_summary(
+                                        running, summary, ok=ok
+                                    )
+                                else:
+                                    summary = file_row_summary(running, summary, ok=ok)
+                                preview = ""
+                                if ok:
+                                    preview = preview_lines(str(res.content))
+                                if res.name == "todo" and ok:
+                                    raw_items = todo_call_items.pop(
+                                        res.tool_call_id, None
+                                    )
+                                    try:
+                                        self._todo = validate_todo_items(raw_items)
+                                    except ToolCallError:
+                                        pass
+                                    else:
+                                        self._persist_session(interrupted=True)
+                                        await scope.emit(self._todo_event(req.id))
+                                else:
+                                    todo_call_items.pop(res.tool_call_id, None)
+                                await scope.emit(
+                                    ToolResultEvent(
+                                        re=req.id,
+                                        call_id=res.tool_call_id,
+                                        ok=ok,
+                                        summary=summary,
+                                        preview=preview,
+                                        duration_ms=duration_ms,
+                                    )
+                                )
+                            elif isinstance(ev, StepEvent):
+                                step_text_chunks.clear()
+                                self._policy_session.clear_step_calls()
+                                self._persist_session(interrupted=True)
+                            elif isinstance(ev, FinalEvent):
+                                final_status = ev.status
+                                final_usage = ev.usage
+                                final_finish_reason = getattr(ev, "finish_reason", None)
+                                if ev.answer and not turn_streamed_chunks:
+                                    step_text_chunks.append(ev.answer)
+                                    await scope.emit(
+                                        TextEvent(re=req.id, delta=ev.answer)
+                                    )
+                        break
+                    except ModelContextLengthError:
+                        task_indices = [
+                            i
+                            for i, s in enumerate(self._agent_session.memory.steps)
+                            if isinstance(s, TaskStep)
+                        ]
+                        if len(task_indices) > 1 and can_trim_context:
+                            can_trim_context = False
+                            self._policy_session.clear_step_calls()
+                            self._agent_session.memory.steps = list(
+                                self._agent_session.memory.steps[task_indices[1] :]
                             )
-                        )
-                    elif isinstance(ev, StepEvent):
-                        step_text_chunks.clear()
-                        self._policy_session.clear_step_calls()
-                        self._persist_session(interrupted=True)
-                    elif isinstance(ev, FinalEvent):
-                        final_status = ev.status
-                        final_usage = ev.usage
-                        final_finish_reason = getattr(ev, "finish_reason", None)
-                        if ev.answer and not turn_streamed_chunks:
-                            step_text_chunks.append(ev.answer)
-                            await scope.emit(TextEvent(re=req.id, delta=ev.answer))
+                            step_text_chunks.clear()
+                            turn_streamed_chunks.clear()
+                            _, model_id = parse_model_ref_parts(self._model)
+                            await scope.emit(
+                                NoticeEvent(
+                                    re=req.id,
+                                    message=(
+                                        f"This conversation is too long for "
+                                        f"{model_id}. Aldwin trimmed older messages."
+                                    ),
+                                )
+                            )
+                            stream_iter = self._agent_session.resume(stream=True)
+                            continue
+                        raise
 
                 if final_status == "interrupted":
                     self._flush_partial_text(step_text_chunks)
@@ -1607,7 +1662,8 @@ class AldwinHost:
                         NoticeEvent(
                             re=req.id,
                             message=(
-                                "The answer was cut off by the model's length limit."
+                                "The answer was cut off because it reached "
+                                "the model's length limit."
                             ),
                         )
                     )
@@ -1630,7 +1686,9 @@ class AldwinHost:
                 self._policy_session.clear_step_calls()
                 logger.exception("Turn %s failed", req.id)
                 self._persist_session(interrupted=True)
-                code, msg = classify_turn_error(exc, model=self._model)
+                code, msg = classify_turn_error(
+                    exc, model=self._model, local=is_local_model(self._model, exc=exc)
+                )
                 if not scope.terminated:
                     await scope.error(code, msg)
             finally:

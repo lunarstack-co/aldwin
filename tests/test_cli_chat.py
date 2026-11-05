@@ -338,7 +338,11 @@ async def test_chat_slash_command_status_and_error_events(aldwin_home: Path) -> 
     client.queue_turn(
         [
             StatusEvent(re="r1", message="OpenAI is busy. Retrying in 1s (1/3)…"),
-            ErrorEvent(re="r1", code="rate_limited", message="rate limit"),
+            ErrorEvent(
+                re="r1",
+                code="rate_limited",
+                message="OpenAI is rate-limiting requests right now.",
+            ),
         ]
     )
 

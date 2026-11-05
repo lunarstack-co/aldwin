@@ -77,8 +77,8 @@ async def test_host_emits_retry_status_events_then_answers(
 
         statuses = [ev.message for ev in events if isinstance(ev, StatusEvent)]
         assert statuses == [
-            "OpenAI is busy. Retrying in 1s (1/3)…",
-            "OpenAI is busy. Retrying in 2s (2/3)…",
+            "OpenAI is busy, retrying in 1s (1/3)…",
+            "OpenAI is busy, retrying in 2s (2/3)…",
         ]
         texts = [ev.delta for ev in events if isinstance(ev, TextEvent)]
         assert texts == ["Recovered answer."]
@@ -93,7 +93,7 @@ async def test_host_emits_retry_statuses_on_connection_errors(
     aldwin_home: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Connection failures emit 'No internet' status lines then model_unavailable."""
+    """Connection failures emit 'Can't reach' status lines then model_unavailable."""
     ensure_home(aldwin_home)
     err_conn = ModelConnectionError("connection dropped")
     fake_model = FakeModel(
@@ -138,9 +138,9 @@ async def test_host_emits_retry_statuses_on_connection_errors(
 
         statuses = [ev.message for ev in events if isinstance(ev, StatusEvent)]
         assert statuses == [
-            "No internet connection. Retrying in 1s (1/3)…",
-            "No internet connection. Retrying in 2s (2/3)…",
-            "No internet connection. Retrying in 4s (3/3)…",
+            "Can't reach OpenAI. Retrying in 1s (1/3)…",
+            "Can't reach OpenAI. Retrying in 2s (2/3)…",
+            "Can't reach OpenAI. Retrying in 4s (3/3)…",
         ]
         assert isinstance(events[-1], ErrorEvent)
         assert events[-1].code == "model_unavailable"
@@ -198,13 +198,13 @@ async def test_host_emits_3_retry_statuses_then_rate_limited_on_503(
 
         statuses = [ev.message for ev in events if isinstance(ev, StatusEvent)]
         assert statuses == [
-            "OpenAI is busy. Retrying in 1s (1/3)…",
-            "OpenAI is busy. Retrying in 2s (2/3)…",
-            "OpenAI is busy. Retrying in 4s (3/3)…",
+            "OpenAI returned a server error, retrying in 1s (1/3)…",
+            "OpenAI returned a server error, retrying in 2s (2/3)…",
+            "OpenAI returned a server error, retrying in 4s (3/3)…",
         ]
         assert isinstance(events[-1], ErrorEvent)
         assert events[-1].code == "rate_limited"
-        assert "busy" in (events[-1].message or "").lower()
+        assert "returned a server error" in (events[-1].message or "").lower()
     finally:
         await client.close()
         await host.stop_host()
