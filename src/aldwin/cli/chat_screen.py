@@ -79,9 +79,9 @@ logger = logging.getLogger("aldwin.cli")
 ESCAPE_FLUSH_DELAY: Final[float] = 0.05
 
 WHATS_NEW_TEXT: Final[str] = (
-    "Any model, including local. Switch cloud and local with /model - Ollama, "
-    "LM Studio, OpenAI, Anthropic, and more. OpenAI users keep working with no "
-    "reconfigure. Conversation, memory and settings are kept."
+    "Web search your way. Connect SearXNG or a hosted key (Tavily, Brave, Exa, "
+    "Perplexity, Parallel, Firecrawl) with /search. Existing Tavily setups keep "
+    "working. Conversation, memory and settings are kept."
 )
 
 

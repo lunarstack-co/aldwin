@@ -202,4 +202,4 @@ def test_upgrade_002_to_003(tmp_path: Path) -> None:
         check=False,
     )
     assert version_out.returncode == 0
-    assert version_out.stdout.strip().startswith("aldwin 0.0.4 ")
+    assert version_out.stdout.strip().startswith("aldwin 0.0.5 ")

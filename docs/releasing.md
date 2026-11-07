@@ -18,11 +18,13 @@ uv run mypy src tests
 uv run pytest --cov=aldwin --cov-fail-under=90
 ```
 
-If you have valid `OPENAI_API_KEY` and `TAVILY_API_KEY` credentials in your environment, run the opt-in live verification suite:
+If you have valid model and search credentials in your environment, run the opt-in live verification suite (at least one hosted search key such as `TAVILY_API_KEY`, or a reachable SearXNG with JSON enabled):
 
 ```bash
 uv run pytest -m live
 ```
+
+After publish, smoke `web_search` once with SearXNG (or another open path) and once with a hosted key; record both on the release ticket.
 
 ---
 

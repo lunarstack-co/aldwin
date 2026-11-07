@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-11-07
+
+Aldwin can search the web your way — self-hosted SearXNG or a hosted key — all behind the same `web_search` tool.
+
+### Added
+
+- **Multi-provider web search:** connect SearXNG or a hosted provider (Tavily, Brave, Exa, Perplexity, Parallel, Firecrawl) with `/search`. Pick a provider, paste a key (checked before save), switch, update, or disconnect. Status with `/search status`.
+- **Shared search registry:** `search.provider: auto` (default) picks the first connected backend in catalogue order; set a specific name to pin one. Env vars win over secrets (`TAVILY_API_KEY`, `BRAVE_API_KEY` / `BRAVE_SEARCH_API_KEY`, `EXA_API_KEY`, `PERPLEXITY_API_KEY`, `PARALLEL_API_KEY`, `FIRECRAWL_API_KEY`, `SEARXNG_URL`).
+- **SearXNG:** local auto-detect on `:8080`, or enter a URL; JSON output must be enabled on the instance. See [Set up SearXNG](docs/searxng.md).
+- **Hosted key checks:** Aldwin validates each key with the provider before writing `~/.aldwin/secrets.yaml` (0600). Brave key check uses one query; Tavily check can take up to 20 seconds.
+- **`/copy`:** copy Aldwin's last answer to the clipboard as markdown (`/copy`), or only its last fenced code block (`/copy code`). Uses OSC 52 when available (including over SSH), then `pbcopy` / `wl-copy` / `xclip` (#72).
+- **Tip:** welcome card rotates "Connect web search with /search — SearXNG or a hosted key."
+
+### Changed
+
+- **What's-new:** upgrade panel explains multi-provider web search; existing Tavily-only setups keep working via auto.
+- **README and docs:** web search backends, privacy (what leaves the machine), Brave quota note, SearXNG JSON requirement, `/search` and `/copy` commands, manual-test Step 21.
+
+### Security
+
+- Search keys follow env-wins and check-then-save; pasted keys are never logged.
+- Hosted search sends the query to the chosen provider under that provider's terms; prefer self-hosted SearXNG when you want queries to stay local.
+- No keys in docs examples.
+
+### Upgrade notes
+
+- Upgrading from `0.0.4` keeps sessions, notes, memory index, approvals, connectors, persona, model keys, and settings. No home migration; an existing Tavily key continues to work with `search.provider: auto`.
+- Run `uv tool upgrade aldwin`. Connect more backends any time with `/search`.
+
+### Known limitations
+
+- DuckDuckGo is not in the catalogue for this release.
+- Firecrawl scrape (beyond search) and browser connectors are out of scope.
+- Windows is not supported. Local MCP servers remain unsupported on Windows.
+
+### Sizes
+
+- Wheel and installed size: record after TestPyPI / CI (budget ≤120 MB installed, no extras).
+
 ## [0.0.4] - 2026-11-05
 
 Aldwin can use any first-ship model provider, including local servers — no OpenAI lock-in.
@@ -197,6 +236,7 @@ First public release of Aldwin: an open-source personal assistant that runs on y
 - **Fixed built-in toolset:** includes the five built-in tools (`web_search`, `web_fetch`, `run_command`, `remember`, `recall`); custom code tools cannot be added in `0.0.1` (drop-in Markdown skills in `~/.aldwin/skills/` are supported).
 - **macOS and Linux only:** requires Python `3.11+` on macOS or Linux. Windows is not supported yet.
 
+[0.0.5]: https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.5
 [0.0.4]: https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.4
 [0.0.3]: https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.3
 [0.0.2.1]: https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.2.1

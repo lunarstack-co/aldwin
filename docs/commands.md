@@ -28,16 +28,11 @@ Type `/` at the prompt for autocomplete:
 | `/help` | Show slash commands and keyboard shortcuts |
 | `/new` | Start a fresh conversation (previous session stays saved on disk) |
 | `/history` | Show this conversation's saved messages (up to 500) |
-<<<<<<< HEAD
+| `/copy [code]` | Copy Aldwin's last answer as markdown, or with `code` just its last code block. See [Copying answers](#copying-answers) |
 | `/model [name\|all]` | Switch model or provider (local, cloud, custom servers, Add a provider, or Manage keys to update or remove a saved key) |
 | `/search` | Pick a web search provider with the arrow keys: connect it (key checked before saving), use it, update its key, or disconnect it |
 | `/search <name>` | Use a connected provider, or go straight to connecting it (`auto`, `searxng`, `tavily`, `brave`, `exa`, `perplexity`, `parallel`, `firecrawl`) |
 | `/search status` | Print the text summary of every provider |
-=======
-| `/copy [code]` | Copy Aldwin's last answer as markdown, or with `code` just its last code block. See [Copying answers](#copying-answers) |
-| `/model [name\|all]` | Switch model or provider (local, cloud, custom servers, or Add a provider) |
-| `/search [auto\|tavily\|searxng]` | Show or switch the web search provider (saved in `config.yaml`) |
->>>>>>> origin/main
 | `/persona` | Show the active persona and `~/.aldwin/persona.md` character count |
 | `/memory` | Show profile, recent notes, and index status (`N notes · M conversations indexed · index <size>`) |
 | `/skills` | List catalogue skills (`name · source · description`); `/skills show <name>` prints the body |

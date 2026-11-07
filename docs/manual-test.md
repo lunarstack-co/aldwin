@@ -378,7 +378,7 @@ Copy the template below and fill it in for each platform tested (`macOS` and `Li
 | 1 | Install & `aldwin --version` | PASS | |
 | 2 | First-run onboarding (bad key, good key, skip Tavily, 0700/0600 perms) | PASS | |
 | 3 | Plain question & streamed Markdown | PASS | |
-| 4 | Web search without Tavily key | PASS | |
+| 4 | Web search with nothing connected | PASS | |
 | 5 | Command approval (`n` declined, `y` approved) | PASS | |
 | 6 | `Esc` mid-answer stops < 1 s with `(stopped)` | PASS | |
 | 7 | Crash/close mid-task -> reopen shows interrupted -> `continue` | PASS | |
@@ -401,6 +401,7 @@ Tick every item below on clean **macOS** and clean **Linux** (Python 3.11+) afte
 - [ ] A second `aldwin` shows and continues the previous conversation
 - [ ] `"Be more direct"` updates `persona.md` after `y/n` and persists
 - [ ] `/model` switches model mid-conversation
+- [ ] `/search` connects a provider; `web_search` works for SearXNG and one hosted key
 - [ ] Streaming markdown, tool cards, `Esc` stops within 1 second
 - [ ] Every terminal command asks `y/n`
 - [ ] A 50-turn conversation stays fast and survives tool errors
