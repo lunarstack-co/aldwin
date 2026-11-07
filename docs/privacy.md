@@ -5,7 +5,7 @@ Aldwin collects no analytics or telemetry. Everything it stores lives in one fol
 ## What leaves your computer
 
 - **To OpenAI or other cloud model providers:** when using a cloud model, your prompts, conversation exchanges, your profile and daily notes (within character caps), and the contents of any file, document, or page Aldwin reads for the turn.
-- **To Tavily and websites:** when `web_search` or `web_fetch` runs, search queries go to Tavily and HTTP GET requests go to the target URL.
+- **To search providers and websites:** when `web_search` runs, the query goes to the configured backend (Tavily, a self-hosted SearXNG instance, or another configured provider). Prefer a SearXNG instance you run yourself. SearXNG may be a localhost or private URL; that is intentional and is not blocked as SSRF. JSON output must be enabled on the instance (`format=json` / `search.formats`). When `web_fetch` runs, HTTP GET requests go to the target URL.
 - **To PyPI:** on launch, Aldwin may fetch public project metadata from `https://pypi.org/pypi/aldwin/json` to tell you an update is available. No user id, keys, or home path are sent. Set `check_for_updates: false` in `config.yaml` to turn this off.
 
 Everything else under `~/.aldwin` stays on your computer, including your API keys, the approval log, the memory index, and saved conversations.
@@ -16,7 +16,7 @@ When you use a local model on a loopback address (`127.0.0.1`, `localhost`, `::1
 
 - **Zero conversation data leaves your machine:** prompts, messages, memory, and file contents are sent strictly over loopback to the model server running on your computer.
 - **Outbound network features:**
-  - `web_search`: sends search queries to Tavily only when explicitly configured and called.
+  - `web_search`: sends search queries to the configured provider (SearXNG URL and/or a hosted API key) only when set up and called. See [Set up SearXNG](searxng.md).
   - `web_fetch` and `download_file`: make HTTP GET requests to target URLs only when invoked.
   - Remote MCP connectors: talk to their configured remote server URLs.
   - PyPI update check: set `check_for_updates: false` in `~/.aldwin/config.yaml` to disable the startup version check.

@@ -19,10 +19,12 @@ from aldwin.client import (
     MemorySummary,
     PersonaSummary,
     ProtocolError,
+    SearchSwitchResult,
     SkillsReport,
     ToolInfo,
     WorkspaceError,
     WorkspaceSummary,
+    switchable_search_providers,
 )
 from aldwin.protocol import (
     DoneEvent,
@@ -40,6 +42,7 @@ SLASH_COMMANDS: Final[tuple[tuple[str, str], ...]] = (
     ("/new", "Start a new conversation"),
     ("/history", "Show this conversation’s saved messages"),
     ("/model", "Switch model or provider"),
+    ("/search", "Show or switch the web search provider"),
     ("/persona", "Show current persona and file path"),
     ("/memory", "Show profile, recent notes, and index status"),
     ("/skills", "List skills · /skills show <name> for the body"),
@@ -115,6 +118,14 @@ class SlashCommandClient(Protocol):
 
     async def todo_get(self) -> TodoUpdatedEvent: ...
 
+    def describe_active_search(self) -> str: ...
+
+    def switch_search_provider(self, raw_name: str) -> SearchSwitchResult: ...
+
+    def switchable_search_providers(self) -> tuple[str, ...]: ...
+
+    def active_search_provider_name(self) -> str | None: ...
+
 
 class SlashCompleter(Completer):
     """Prompt-toolkit completer for `/help`, `/new`, `/model`, etc.."""
@@ -126,10 +137,29 @@ class SlashCompleter(Completer):
     ) -> Iterable[Completion]:
         _ = complete_event
         before = document.text_before_cursor.lstrip()
-        if not before.startswith("/") or " " in before or "\n" in before:
+        if not before.startswith("/") or "\n" in before:
             return
 
-        prefix = before.lower()
+        lowered = before.lower()
+        # Once the user has typed `/search`, only complete provider names,
+        # not `/search` again from the command list.
+        if lowered == "/search" or lowered.startswith("/search "):
+            parts = before.split(maxsplit=1)
+            arg_prefix = parts[1].lower() if len(parts) == 2 else ""
+            for name in switchable_search_providers():
+                if name.startswith(arg_prefix):
+                    yield Completion(
+                        text=f"/search {name}",
+                        start_position=-len(before),
+                        display=name,
+                        display_meta="search provider",
+                    )
+            return
+
+        if " " in before:
+            return
+
+        prefix = lowered
         for cmd, description in SLASH_COMMANDS:
             if cmd.startswith(prefix):
                 yield Completion(
@@ -719,6 +749,30 @@ async def _render_connector_tools(client: object, renderer: ChatRenderer) -> Non
     console.print(grid)
 
 
+async def _handle_search_command(
+    arg: str,
+    *,
+    client: SlashCommandClient,
+    renderer: ChatRenderer,
+) -> None:
+    """Show or switch the persisted web search provider (`/search`)."""
+    console = renderer.console
+    if not arg:
+        status = await asyncio.to_thread(client.describe_active_search)
+        console.print(Text(status, style="muted"))
+        return
+
+    result = await asyncio.to_thread(client.switch_search_provider, arg)
+    if result.ok:
+        status = await asyncio.to_thread(client.describe_active_search)
+        console.print(Text(status, style="muted"))
+        return
+    console.print(Text(result.message, style="warn"))
+    if "Unknown search provider" in result.message:
+        names = ", ".join(client.switchable_search_providers())
+        console.print(Text(f"Usage: /search [{names}]", style="muted"))
+
+
 async def handle_slash_command(
     line: str,
     *,
@@ -728,6 +782,7 @@ async def handle_slash_command(
     on_reset_tokens: Callable[[], None] | None = None,
     input_dev: Input | None = None,
     prompt_secret: Callable[[str], Awaitable[str]] | None = None,
+    home: Path | None = None,
 ) -> bool:
     """Execute a `/command` line.
 
@@ -789,6 +844,10 @@ async def handle_slash_command(
             prompt_line=prompt_line,
             input_dev=input_dev,
         )
+        return False
+
+    if cmd == "/search":
+        await _handle_search_command(arg, client=client, renderer=renderer)
         return False
 
     if cmd == "/persona":

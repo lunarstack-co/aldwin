@@ -126,4 +126,8 @@ def test_policy_registry_matches_pinned_table(aldwin_home: Path) -> None:
     verify_registered_tools(built)
     for t in built:
         assert t.name in REGISTRY
-        assert t.parallel_safe == REGISTRY[t.name].parallel_safe
+        if t.name == "web_search":
+            # Local SearXNG may set parallel_safe=False while REGISTRY allows it.
+            assert not t.parallel_safe or REGISTRY[t.name].parallel_safe
+        else:
+            assert t.parallel_safe == REGISTRY[t.name].parallel_safe

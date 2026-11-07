@@ -29,6 +29,7 @@ Type `/` at the prompt for autocomplete:
 | `/new` | Start a fresh conversation (previous session stays saved on disk) |
 | `/history` | Show this conversation's saved messages (up to 500) |
 | `/model [name\|all]` | Switch model or provider (local, cloud, custom servers, or Add a provider) |
+| `/search [auto\|tavily\|searxng]` | Show or switch the web search provider (saved in `config.yaml`) |
 | `/persona` | Show the active persona and `~/.aldwin/persona.md` character count |
 | `/memory` | Show profile, recent notes, and index status (`N notes · M conversations indexed · index <size>`) |
 | `/skills` | List catalogue skills (`name · source · description`); `/skills show <name>` prints the body |

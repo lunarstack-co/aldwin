@@ -1796,6 +1796,9 @@ class AldwinHost:
             self._active_turn_scope = scope
             self._circuit_breaker_tripped = False
             self._policy_session.reset_turn()
+            from aldwin.core.tools.web_search import reset_web_search_turn_budget
+
+            reset_web_search_turn_budget()
             self._maybe_rebuild_skills_from_disk()
             try:
                 await self._connectors.reconcile()
@@ -1806,6 +1809,8 @@ class AldwinHost:
             await self._flush_pending_notices(req.id, scope)
             step_text_chunks: list[str] = []
             turn_streamed_chunks: list[str] = []
+            # Text streamed in the latest model step before tools cleared it.
+            last_step_streamed = ""
             tool_start_times: dict[str, float] = {}
             tool_running: dict[str, str] = {}
             todo_call_items: dict[str, Any] = {}
@@ -1895,6 +1900,7 @@ class AldwinHost:
                                 ):
                                     cold_load_task.cancel()
                                 if step_text_chunks:
+                                    last_step_streamed = "".join(step_text_chunks)
                                     step_text_chunks.clear()
                                 call = ev.tool_call
                                 self._persist_session(interrupted=True)
@@ -2019,6 +2025,8 @@ class AldwinHost:
                                     )
                                 )
                             elif isinstance(ev, StepEvent):
+                                if step_text_chunks:
+                                    last_step_streamed = "".join(step_text_chunks)
                                 step_text_chunks.clear()
                                 self._policy_session.clear_step_calls()
                                 self._persist_session(interrupted=True)
@@ -2026,11 +2034,18 @@ class AldwinHost:
                                 final_status = ev.status
                                 final_usage = ev.usage
                                 final_finish_reason = getattr(ev, "finish_reason", None)
-                                if ev.answer and not turn_streamed_chunks:
-                                    step_text_chunks.append(ev.answer)
-                                    await scope.emit(
-                                        TextEvent(re=req.id, delta=ev.answer)
-                                    )
+                                # Plain-text endings were already streamed in this
+                                # step; final_answer tool replies were not, unless
+                                # the same text was streamed before the tool call.
+                                if ev.answer:
+                                    step_streamed = "".join(step_text_chunks).strip()
+                                    prior = last_step_streamed.strip()
+                                    already = step_streamed or prior
+                                    if ev.answer.strip() != already:
+                                        step_text_chunks.append(ev.answer)
+                                        await scope.emit(
+                                            TextEvent(re=req.id, delta=ev.answer)
+                                        )
                         break
                     except ModelContextLengthError:
                         task_indices = [
@@ -2046,6 +2061,7 @@ class AldwinHost:
                             )
                             step_text_chunks.clear()
                             turn_streamed_chunks.clear()
+                            last_step_streamed = ""
                             _, model_id = parse_model_ref_parts(self._model)
                             await scope.emit(
                                 NoticeEvent(

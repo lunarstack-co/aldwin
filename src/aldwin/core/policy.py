@@ -1516,8 +1516,6 @@ class PolicyWrappedTool(Tool):
         self.description = inner.description
         self.parameters = inner.parameters
         self.validate_arguments = inner.validate_arguments
-        policy = REGISTRY.get(inner.name)
-        self.parallel_safe = policy.parallel_safe if policy is not None else False
         self._exec_timeout = inner.timeout
         # Agentling applies `tool.timeout or agent.tool_timeout` around the
         # *entire* `call()`, which includes waiting on Diff/Ask. A finite
@@ -1541,6 +1539,17 @@ class PolicyWrappedTool(Tool):
     def inner_tool(self) -> Tool:
         """Return the underlying unwrapped `Tool`."""
         return self._inner
+
+    @property
+    def parallel_safe(self) -> bool:  # type: ignore[override]
+        """Registry may allow parallel use; the inner tool can still opt out.
+
+        Local search backends (e.g. SearXNG) set ``parallel_safe=False`` so a
+        multi-tool step cannot burst upstream engines.
+        """
+        policy = REGISTRY.get(self.name)
+        allowed = policy.parallel_safe if policy is not None else False
+        return allowed and bool(getattr(self._inner, "parallel_safe", True))
 
     def _is_edit_tool(self) -> bool:
         return _is_edit_tool_name(self.name)

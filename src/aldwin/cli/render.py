@@ -392,6 +392,7 @@ class ChatRenderer:
         display_home: str,
         display_workspace: str | None = None,
         tip: str | None = None,
+        search_provider: str | None = None,
     ) -> None:
         """Render the everyday welcome card (borderless, no panel chrome)."""
         from aldwin.cli.brand import TAGLINE
@@ -404,16 +405,21 @@ class ChatRenderer:
             self.console.print(body)
             return
 
+        search_bit = (
+            f" · {search_provider.strip()}"
+            if search_provider and search_provider.strip()
+            else ""
+        )
         raw_loc = (
             f"workspace: {display_workspace}" if display_workspace else display_home
         )
-        max_loc = max(12, width - len(model) - 18)
+        max_loc = max(12, width - len(model) - len(search_bit) - 18)
         shown_loc = (
             raw_loc if len(raw_loc) <= max_loc else f"…{raw_loc[-(max_loc - 1) :]}"
         )
         title = Text()
         title.append("Aldwin", style="accent")
-        title.append(f" · {model} · {shown_loc}", style="muted")
+        title.append(f" · {model}{search_bit} · {shown_loc}", style="muted")
         self.console.print(title)
         if tip:
             self.console.print(Text(tip, style="muted"))

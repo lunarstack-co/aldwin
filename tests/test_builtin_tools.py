@@ -48,7 +48,7 @@ async def _dummy_ask(_summary: str, _detail: str = "") -> bool:
 
 
 class _FastSearchProvider:
-    async def search(self, query: str, limit: int = 5) -> list[SearchResult]:
+    async def search(self, query: str, limit: int = 10) -> list[SearchResult]:
         return [
             SearchResult(
                 title=f"Result {i} for {query}",

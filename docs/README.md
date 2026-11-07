@@ -7,6 +7,7 @@
 - [Commands and shortcuts](commands.md): terminal commands, slash commands, keys, and uninstalling
 - [Safety](safety.md): approval tiers, blocked files and commands, and known limits
 - [Data and privacy](privacy.md): what leaves your computer and what Aldwin stores
+- [Set up SearXNG](searxng.md): self-hosted web search without a paid API key
 
 ## Developing Aldwin
 

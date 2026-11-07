@@ -79,7 +79,7 @@ logger = logging.getLogger("aldwin.cli")
 ESCAPE_FLUSH_DELAY: Final[float] = 0.05
 
 WHATS_NEW_TEXT: Final[str] = (
-    "Any model, including local. Switch cloud and local with /model — Ollama, "
+    "Any model, including local. Switch cloud and local with /model - Ollama, "
     "LM Studio, OpenAI, Anthropic, and more. OpenAI users keep working with no "
     "reconfigure. Conversation, memory and settings are kept."
 )
@@ -269,8 +269,9 @@ def format_toolbar_model_segment(
     todo_label: str | None = None,
     plain: bool = False,
     key_rejected: bool = False,
+    search_provider: str | None = None,
 ) -> FormattedText:
-    """Right-side footer: model · context bar · optional todo / key warning.
+    """Right-side footer: model · search · context bar · optional todo / key warning.
 
     Severity words use `bottom-toolbar.warn` / `.err` so colour matches the word
     labels (a11y still works when colour is unavailable).
@@ -278,6 +279,11 @@ def format_toolbar_model_segment(
     from aldwin.cli.theme import context_bar, context_meter_level
 
     display_name = format_model_provider_title(model)
+    search_bit = (
+        f" · {search_provider.strip()}"
+        if search_provider and search_provider.strip()
+        else ""
+    )
     pct = context_left_percent(model, used_tokens)
     level = context_meter_level(pct)
     bar = context_bar(pct, plain=plain)
@@ -286,7 +292,7 @@ def format_toolbar_model_segment(
     if level in ("warn", "err"):
         fresh_bit = " · /new to start fresh"
     key_bit = "Key rejected · run aldwin setup · " if key_rejected else ""
-    main = f"{key_bit}{display_name} · {bar}{pct}% context left{fresh_bit}"
+    main = f"{key_bit}{display_name}{search_bit} · {bar}{pct}% context left{fresh_bit}"
     fragments: list[tuple[str, str]] = [("", main)]
     if level == "warn":
         fragments.append(("class:bottom-toolbar.warn", " · warn"))
@@ -307,8 +313,9 @@ def format_bottom_toolbar(
     plain: bool = False,
     left_hint: str | None = None,
     key_rejected: bool = False,
+    search_provider: str | None = None,
 ) -> str:
-    """Format the bottom status line (left hint + model/context)."""
+    """Format the bottom status line (left hint + model/search/context)."""
     _ = session_id
     left = f" {left_hint or '? for shortcuts'} "
     right = to_plain_text(
@@ -318,6 +325,7 @@ def format_bottom_toolbar(
             todo_label=todo_label,
             plain=plain,
             key_rejected=key_rejected,
+            search_provider=search_provider,
         )
     )
     if width is not None and width >= len(left) + len(right) + 4:
@@ -868,6 +876,7 @@ async def _chat_loop(
     restore_draft: str | None = None
     key_rejected = False
     context_notice_shown = False
+    search_label: str | None = None
     key_check_task: asyncio.Task[None] | None = None
     update_task: asyncio.Task[str | None] | None = None
     notice_task: asyncio.Task[None] | None = None
@@ -882,6 +891,17 @@ async def _chat_loop(
         context_notice_shown = False
         renderer.clear_todo()
 
+    async def _refresh_search_label() -> None:
+        nonlocal search_label
+        try:
+            search_label = await asyncio.to_thread(client.active_search_provider_name)
+        except Exception:
+            logger.warning(
+                "Could not resolve the search provider label",
+                exc_info=True,
+            )
+            search_label = None
+
     def _toolbar_right() -> FormattedText:
         return format_toolbar_model_segment(
             client.model,
@@ -889,6 +909,7 @@ async def _chat_loop(
             todo_label=renderer.todo_view.toolbar_label(),
             plain=boot.plain,
             key_rejected=key_rejected,
+            search_provider=search_label,
         )
 
     def _maybe_context_notice() -> None:
@@ -947,6 +968,7 @@ async def _chat_loop(
         )
         if not enable_skills:
             session.lexer = None
+        await _refresh_search_label()
         history_ev = await client.history(limit=20)
         if not skip_welcome:
             from aldwin import __version__
@@ -959,6 +981,7 @@ async def _chat_loop(
                 display_home=boot.display_home,
                 display_workspace=boot.display_workspace or None,
                 tip=tip,
+                search_provider=search_label,
             )
             render_whats_new_if_due(
                 renderer,
@@ -1084,7 +1107,10 @@ async def _chat_loop(
                         on_reset_tokens=_reset_tokens,
                         input_dev=input_dev,
                         prompt_secret=_prompt_secret,
+                        home=boot.home,
                     )
+                    if user_text.strip().lower().startswith("/search"):
+                        await _refresh_search_label()
                     if should_exit:
                         break
                     continue
@@ -1225,6 +1251,7 @@ async def _chat_loop(
                                 )
                             else:
                                 last_context_tokens += turn_tokens
+                            await _refresh_search_label()
                         elif isinstance(ev, ErrorEvent):
                             turn_renderer.finish_error(ev)
                     leftover = listener.draft.strip()
