@@ -351,3 +351,123 @@ def test_approval_log_redacts_gemini_key() -> None:
     res = redact_secrets(f"curl -H 'x-goog-api-key: {gemini_key}'")
     assert gemini_key not in res
     assert "‹redacted›" in res
+
+
+def _openrouter_transport(seen: list[str], *, key_status: int) -> Any:
+    import httpx
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        if request.url.path.endswith("/key"):
+            return httpx.Response(key_status, json={"error": {"code": key_status}})
+        # OpenRouter's model list is public, so it answers 200 for any key.
+        return httpx.Response(200, json={"data": [{"id": "some/model"}]})
+
+    return httpx.MockTransport(handler)
+
+
+async def test_openrouter_fake_key_is_rejected_and_not_saved(
+    aldwin_home: Path,
+) -> None:
+    """The /key check catches a fake key even though /models would accept it."""
+    seen: list[str] = []
+    status = await save_provider_key(
+        "openrouter",
+        "sk-or-v1-fake-key-0000",
+        home=aldwin_home,
+        transport=_openrouter_transport(seen, key_status=401),
+    )
+    assert status == AccessStatus.INVALID_KEY
+    assert seen == ["/api/v1/key"]
+    assert load_secrets(aldwin_home).get_secret("openrouter_api_key") is None
+
+
+async def test_openrouter_real_key_checks_key_then_models(aldwin_home: Path) -> None:
+    seen: list[str] = []
+    status = await save_provider_key(
+        "openrouter",
+        "sk-or-v1-real-key-1111",
+        home=aldwin_home,
+        transport=_openrouter_transport(seen, key_status=200),
+    )
+    assert status == AccessStatus.OK
+    assert seen == ["/api/v1/key", "/api/v1/models"]
+    saved = load_secrets(aldwin_home).get_secret("openrouter_api_key")
+    assert saved == "sk-or-v1-real-key-1111"
+
+
+async def test_providers_without_key_path_still_list_models(
+    aldwin_home: Path,
+) -> None:
+    """DeepSeek and OpenAI keep the /models check."""
+    import httpx
+
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        return httpx.Response(401, json={"error": {"message": "bad key"}})
+
+    status = await save_provider_key(
+        "deepseek",
+        "sk-ds-fake",
+        home=aldwin_home,
+        transport=httpx.MockTransport(handler),
+    )
+    assert status == AccessStatus.INVALID_KEY
+    assert seen == ["/v1/models"]
+
+
+def test_custom_base_url_drops_the_key_path() -> None:
+    """A user-pointed OpenRouter clone may not have /key, so it is not called."""
+    from aldwin.core.providers.registry import get_provider
+
+    stock = get_provider("openrouter", None)
+    assert stock is not None and stock.key_check_path == "/key"
+    config = AldwinConfig.model_validate(
+        {"providers": {"openrouter": {"base_url": "https://gw.example.com/v1"}}}
+    )
+    custom = get_provider("openrouter", config)
+    assert custom is not None and custom.key_check_path is None
+
+
+def test_remove_provider_key_outcomes(
+    aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Remove a file key; refuse the provider in use; report env-only keys."""
+    from aldwin.core.providers.keys import KeyRemoval, remove_provider_key
+
+    save_secrets(
+        SecretsConfig.model_validate(
+            {"anthropic_api_key": "sk-ant-x", "gemini_api_key": "AIza-x"}
+        ),
+        aldwin_home,
+    )
+
+    in_use = remove_provider_key(
+        "anthropic", current_model="anthropic/claude-x", home=aldwin_home
+    )
+    assert in_use == (KeyRemoval.IN_USE, None)
+    assert load_secrets(aldwin_home).get_secret("anthropic_api_key") == "sk-ant-x"
+
+    removed = remove_provider_key(
+        "anthropic", current_model="gemini/gemini-x", home=aldwin_home
+    )
+    assert removed == (KeyRemoval.REMOVED, None)
+    secrets = load_secrets(aldwin_home)
+    assert secrets.get_secret("anthropic_api_key") is None
+    assert secrets.get_secret("gemini_api_key") == "AIza-x"
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-ds-env")
+    env_only = remove_provider_key(
+        "deepseek", current_model="gemini/gemini-x", home=aldwin_home
+    )
+    assert env_only == (KeyRemoval.ENV_ONLY, "DEEPSEEK_API_KEY")
+
+    missing = remove_provider_key(
+        "openrouter", current_model="gemini/gemini-x", home=aldwin_home
+    )
+    assert missing == (KeyRemoval.NOT_CONNECTED, None)
+
+    bare = remove_provider_key("openai", current_model="gpt-4o", home=aldwin_home)
+    assert bare == (KeyRemoval.IN_USE, None)

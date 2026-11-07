@@ -32,6 +32,7 @@ from aldwin.protocol import (
     HistoryEvent,
     ModelsEvent,
     ProviderModels,
+    SearchProvidersEvent,
     TodoUpdatedEvent,
 )
 
@@ -42,7 +43,7 @@ SLASH_COMMANDS: Final[tuple[tuple[str, str], ...]] = (
     ("/new", "Start a new conversation"),
     ("/history", "Show this conversation’s saved messages"),
     ("/model", "Switch model or provider"),
-    ("/search", "Show or switch the web search provider"),
+    ("/search", "Connect, switch or disconnect web search"),
     ("/persona", "Show current persona and file path"),
     ("/memory", "Show profile, recent notes, and index status"),
     ("/skills", "List skills · /skills show <name> for the body"),
@@ -126,6 +127,24 @@ class SlashCommandClient(Protocol):
 
     def active_search_provider_name(self) -> str | None: ...
 
+    async def search_list(self) -> SearchProvidersEvent: ...
+
+    async def search_connect(
+        self, provider: str, *, key: str | None = None, url: str | None = None
+    ) -> tuple[DoneEvent | ErrorEvent, list[str]]: ...
+
+    async def search_use(self, provider: str) -> DoneEvent | ErrorEvent: ...
+
+    async def search_disconnect(self, provider: str) -> DoneEvent | ErrorEvent: ...
+
+    async def disconnect_provider(self, provider: str) -> DoneEvent | ErrorEvent: ...
+
+
+_SEARCH_COMPLETION_HINTS: Final[dict[str, str]] = {
+    "auto": "use the first connected provider",
+    "status": "print a text summary",
+}
+
 
 class SlashCompleter(Completer):
     """Prompt-toolkit completer for `/help`, `/new`, `/model`, etc.."""
@@ -146,13 +165,14 @@ class SlashCompleter(Completer):
         if lowered == "/search" or lowered.startswith("/search "):
             parts = before.split(maxsplit=1)
             arg_prefix = parts[1].lower() if len(parts) == 2 else ""
-            for name in switchable_search_providers():
+            for name in (*switchable_search_providers(), "status"):
                 if name.startswith(arg_prefix):
                     yield Completion(
                         text=f"/search {name}",
                         start_position=-len(before),
                         display=name,
-                        display_meta="search provider",
+                        # Only entries that act differently get a hint.
+                        display_meta=_SEARCH_COMPLETION_HINTS.get(name, ""),
                     )
             return
 
@@ -305,6 +325,11 @@ async def _handle_model_command(
 
         rows.append("Other server")
         actions.append(("action_server", None))
+
+        keyed = [p for p in models_ev.providers if p.configured and not p.local]
+        if keyed:
+            rows.append("Manage keys…")
+            actions.append(("action_keys", keyed))
 
         chosen_idx: int | None = None
         if use_picker:
@@ -573,6 +598,81 @@ async def _handle_model_command(
                 console.print(Text(f"✓ Added provider {name}.", style="ok"))
                 models_ev = await client.list_models(refresh=True)
 
+        elif act_type == "action_keys":
+            if await _manage_model_keys(
+                payload,
+                client=client,
+                renderer=renderer,
+                ask=_ask,
+                ask_secret=_ask_secret,
+                use_picker=use_picker,
+                input_dev=input_dev,
+            ):
+                models_ev = await client.list_models(refresh=True)
+
+
+async def _manage_model_keys(
+    providers: list[ProviderModels],
+    *,
+    client: SlashCommandClient,
+    renderer: ChatRenderer,
+    ask: Callable[[str], Awaitable[str]],
+    ask_secret: Callable[[str], Awaitable[str]],
+    use_picker: bool,
+    input_dev: Input | None,
+) -> bool:
+    """Update or remove one cloud provider's key; True when something changed."""
+    from aldwin.cli.provider_actions import choose, confirm, pick_action
+
+    console = renderer.console
+    picked = await choose(
+        [p.title for p in providers],
+        console=console,
+        ask=ask,
+        use_picker=use_picker,
+        input_dev=input_dev,
+        plain=renderer.plain,
+        header="Manage keys",
+        cancel_hint="Enter to go back",
+    )
+    if picked is None:
+        return False
+    provider = providers[picked]
+    action = await pick_action(
+        provider.title,
+        ["Update key", "Disconnect"],
+        console=console,
+        ask=ask,
+        use_picker=use_picker,
+        input_dev=input_dev,
+        plain=renderer.plain,
+    )
+    if action == "Update key":
+        try:
+            key = (await ask_secret(f"New {provider.title} API key: ")).strip()
+        except (EOFError, KeyboardInterrupt):
+            key = ""
+        if not key:
+            console.print(Text("Cancelled.", style="muted"))
+            return False
+        console.print(Text("Checking key…", style="muted"))
+        res = await client.save_provider_key(provider.name, key)
+        if isinstance(res, ErrorEvent):
+            renderer.render_error(res.code, res.message)
+            return False
+        console.print(Text(f"✓ Updated key for {provider.title}.", style="ok"))
+        return True
+    if action == "Disconnect":
+        if not await confirm(ask, f"Disconnect {provider.title}?"):
+            return False
+        res = await client.disconnect_provider(provider.name)
+        if isinstance(res, ErrorEvent):
+            renderer.render_error(res.code, res.message)
+            return False
+        console.print(Text(f"✓ Disconnected {provider.title}.", style="ok"))
+        return True
+    return False
+
 
 def _render_persona(client: SlashCommandClient, renderer: ChatRenderer) -> None:
     console = renderer.console
@@ -749,30 +849,6 @@ async def _render_connector_tools(client: object, renderer: ChatRenderer) -> Non
     console.print(grid)
 
 
-async def _handle_search_command(
-    arg: str,
-    *,
-    client: SlashCommandClient,
-    renderer: ChatRenderer,
-) -> None:
-    """Show or switch the persisted web search provider (`/search`)."""
-    console = renderer.console
-    if not arg:
-        status = await asyncio.to_thread(client.describe_active_search)
-        console.print(Text(status, style="muted"))
-        return
-
-    result = await asyncio.to_thread(client.switch_search_provider, arg)
-    if result.ok:
-        status = await asyncio.to_thread(client.describe_active_search)
-        console.print(Text(status, style="muted"))
-        return
-    console.print(Text(result.message, style="warn"))
-    if "Unknown search provider" in result.message:
-        names = ", ".join(client.switchable_search_providers())
-        console.print(Text(f"Usage: /search [{names}]", style="muted"))
-
-
 async def handle_slash_command(
     line: str,
     *,
@@ -847,7 +923,16 @@ async def handle_slash_command(
         return False
 
     if cmd == "/search":
-        await _handle_search_command(arg, client=client, renderer=renderer)
+        from aldwin.cli.search_cmd import handle_search_command
+
+        await handle_search_command(
+            arg,
+            client=client,
+            renderer=renderer,
+            prompt_line=prompt_line,
+            prompt_secret=prompt_secret,
+            input_dev=input_dev,
+        )
         return False
 
     if cmd == "/persona":

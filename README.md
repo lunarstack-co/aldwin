@@ -40,7 +40,7 @@ uv tool upgrade aldwin
 
 ### First run
 
-The first time you run `aldwin`, it creates a private home folder at `~/.aldwin` and looks for a local model (Ollama or LM Studio). If one is running, you can chat with no account. Otherwise it offers a cloud provider (OpenAI, Anthropic, Gemini, OpenRouter, or DeepSeek) or shows how to install a local server. A hosted search key (for example Tavily) is optional; press `Enter` to skip it and add it later with `aldwin setup`, or set `search.searxng_url` for a JSON-enabled SearXNG instance.
+The first time you run `aldwin`, it creates a private home folder at `~/.aldwin` and looks for a local model (Ollama or LM Studio). If one is running, you can chat with no account. Otherwise it offers a cloud provider (OpenAI, Anthropic, Gemini, OpenRouter, or DeepSeek) or shows how to install a local server. A Tavily key for web search is optional: Aldwin checks it with Tavily before saving it, and `Enter` skips it. You can connect any search provider later with `/search`.
 
 If you already have an OpenAI key from an earlier install, Aldwin keeps it and does not force you to reconfigure.
 
@@ -178,7 +178,19 @@ See all [commands, slash commands, and shortcuts](https://github.com/lunarstack-
 
 Aldwin runs inside your terminal process; it isn't always-on yet. Closing the terminal stops any active task, and your conversation resumes next time you run `aldwin`. Windows is not yet supported.
 
-Web search: set `search.searxng_url` (or `SEARXNG_URL`) for self-hosted SearXNG, or a hosted API key via setup/secrets. Step-by-step: [Set up SearXNG](docs/searxng.md). More hosted providers (Brave and others) are on the way.
+Web search works with self-hosted SearXNG or one hosted search key. Type `/search`, pick a provider with the arrow keys, and paste its key: Aldwin checks the key with the provider before saving it, and tells you why if it doesn't work. The same screen switches provider, updates a key, or disconnects one. Step-by-step guides for every provider are at [askaldwin.com/docs/search](https://askaldwin.com/docs/search/overview); for SearXNG see also [Set up SearXNG](docs/searxng.md).
+
+| Provider | Cost | Key check |
+|---|---|---|
+| SearXNG | free, runs on your computer | found automatically on `:8080`, or enter its address |
+| Tavily | free monthly credits, then paid | free; can take up to 20 seconds |
+| Brave | paid plan | uses one Brave query |
+| Exa | paid | free |
+| Perplexity | paid | free |
+| Parallel | paid | free |
+| Firecrawl | paid plan with credits | free |
+
+Keys are saved in `~/.aldwin/secrets.yaml` (mode `0600`). You can also set them in the environment (`TAVILY_API_KEY`, `BRAVE_API_KEY` or `BRAVE_SEARCH_API_KEY`, `EXA_API_KEY`, `PERPLEXITY_API_KEY`, `PARALLEL_API_KEY`, `FIRECRAWL_API_KEY`, `SEARXNG_URL`); an environment variable wins over a saved key. With `search.provider: auto` (the default), Aldwin uses the first connected provider in the order above, so a Tavily key wins over SearXNG.
 
 ---
 

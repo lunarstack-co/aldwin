@@ -346,3 +346,80 @@ async def test_add_other_server_flow(monkeypatch: pytest.MonkeyPatch) -> None:
         for req in client.requests
     )
     assert "✓ Added provider office-gpu." in console.export_text()
+
+
+async def _model_session(
+    client: FakeClient,
+    answers: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    secret: str = "",
+) -> str:
+    import aldwin.cli.secret_prompt as sp_mod
+
+    async def fake_prompt_secret(_label: str) -> str:
+        return secret
+
+    monkeypatch.setattr(sp_mod, "prompt_secret", fake_prompt_secret)
+    console = create_console(plain=True, width=80, record=True, file=io.StringIO())
+    it = iter(answers)
+
+    async def _prompt(_label: str) -> str:
+        return next(it, "")
+
+    await handle_slash_command(
+        "/model",
+        client=client,
+        renderer=ChatRenderer(console, plain=True),
+        prompt_line=_prompt,
+    )
+    return console.export_text()
+
+
+async def test_manage_keys_lists_connected_cloud_providers_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = FakeClient()
+    client.models_event = _make_models_event()
+    text = await _model_session(client, ["7"], monkeypatch)
+    assert "7. Manage keys…" in text
+    manage = text.split("  Manage keys\n", 1)[1].split("Available providers")[0]
+    assert "1. OpenAI" in manage and "2. Anthropic" in manage
+    assert "Ollama" not in manage and "DeepSeek" not in manage
+
+
+async def test_manage_keys_update_checks_the_new_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = FakeClient()
+    client.models_event = _make_models_event()
+    text = await _model_session(
+        client, ["7", "2", "1"], monkeypatch, secret="sk-ant-new"
+    )
+    assert ("provider.key", "anthropic", "sk-ant-new") in client.requests
+    assert "Checking key…" in text
+    assert "✓ Updated key for Anthropic." in text
+
+
+async def test_manage_keys_disconnect(monkeypatch: pytest.MonkeyPatch) -> None:
+    from aldwin.protocol import ErrorEvent
+
+    client = FakeClient()
+    client.models_event = _make_models_event()
+    text = await _model_session(client, ["7", "2", "2", "y"], monkeypatch)
+    assert ("provider.disconnect", "anthropic") in client.requests
+    assert "✓ Disconnected Anthropic." in text
+
+    declined = FakeClient()
+    declined.models_event = _make_models_event()
+    await _model_session(declined, ["7", "2", "2", ""], monkeypatch)
+    assert not any(r[0] == "provider.disconnect" for r in declined.requests)
+
+    in_use = FakeClient()
+    in_use.models_event = _make_models_event()
+    in_use.provider_disconnect_result = ErrorEvent(
+        re="r",
+        code="request_rejected",
+        message="OpenAI runs the current model. Switch to another model first.",
+    )
+    text = await _model_session(in_use, ["7", "1", "2", "y"], monkeypatch)
+    assert "Switch to another model first." in " ".join(text.split())

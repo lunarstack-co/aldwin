@@ -43,6 +43,7 @@ ErrorCode = Literal[
     "auth_required",
     "request_rejected",
     "invalid_request",
+    "search_unavailable",
 ]
 ProviderModelStatus = Literal[
     "ok",
@@ -231,6 +232,42 @@ class ProviderServerRequest(RequestBase):
     local: bool = False
 
 
+class ProviderDisconnectRequest(RequestBase):
+    """Remove a cloud model provider's saved key."""
+
+    type: Literal["provider.disconnect"] = "provider.disconnect"
+    provider: str = Field(min_length=1)
+
+
+class SearchListRequest(RequestBase):
+    """List web search providers and how each one is connected."""
+
+    type: Literal["search.list"] = "search.list"
+
+
+class SearchConnectRequest(RequestBase):
+    """Check a search key (or a SearXNG address), then save and use it."""
+
+    type: Literal["search.connect"] = "search.connect"
+    provider: str = Field(min_length=1)
+    key: str | None = Field(default=None, repr=False)
+    url: str | None = None
+
+
+class SearchUseRequest(RequestBase):
+    """Use a connected search provider, or ``auto``."""
+
+    type: Literal["search.use"] = "search.use"
+    provider: str = Field(min_length=1)
+
+
+class SearchDisconnectRequest(RequestBase):
+    """Forget a search provider's saved key or address."""
+
+    type: Literal["search.disconnect"] = "search.disconnect"
+    provider: str = Field(min_length=1)
+
+
 class ConnectorsListRequest(RequestBase):
     """List connectors; answered with a `connectors` event."""
 
@@ -351,6 +388,11 @@ Request = Annotated[
     | ModelsListRequest
     | ProviderKeyRequest
     | ProviderServerRequest
+    | ProviderDisconnectRequest
+    | SearchListRequest
+    | SearchConnectRequest
+    | SearchUseRequest
+    | SearchDisconnectRequest
     | ConnectorsListRequest
     | ConnectorsImportRequest
     | ConnectorsAddRequest
@@ -527,6 +569,32 @@ class ModelsEvent(EventBase):
     providers: list[ProviderModels] = Field(default_factory=list)
 
 
+class SearchProviderItem(BaseModel):
+    """One web search provider as ``/search`` shows it; never carries a full key."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    title: str
+    kind: Literal["local", "hosted"]
+    connected: bool
+    source: Literal["env", "file", "config", "detected"] | None = None
+    detail: str = ""
+    active: bool = False
+    signup_url: str = ""
+    check_note: str | None = None
+    env_var: str | None = None
+
+
+class SearchProvidersEvent(EventBase):
+    """Search providers emitted in response to `search.list`."""
+
+    kind: Literal["search.providers"] = "search.providers"
+    setting: str
+    active: str | None = None
+    items: list[SearchProviderItem] = Field(default_factory=list)
+
+
 class ConnectorToolInfo(BaseModel):
     """One server tool as a door shows it."""
 
@@ -674,6 +742,7 @@ Event = Annotated[
     | HistoryEvent
     | StatusEvent
     | ModelsEvent
+    | SearchProvidersEvent
     | ConnectorsEvent
     | ConnectorsImportEvent
     | ConnectorStatusEvent

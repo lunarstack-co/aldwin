@@ -829,6 +829,12 @@ async def test_onboarding_tavily_key_entered(
             )
         ]
 
+    import aldwin.cli.onboarding as onboarding_mod
+
+    async def accept(_provider: str, _key: str) -> tuple[bool, str]:
+        return True, ""
+
+    monkeypatch.setattr(onboarding_mod, "check_search_key", accept)
     # Model 1, then enter Tavily key
     answers = iter(["1", "tvly-valid-test-key"])
 
@@ -961,3 +967,55 @@ async def test_setup_chat_only_warning_and_cancellation(
         prompt_fn=cancel_prompt,
     )
     assert ok3 is False
+
+
+async def test_tavily_key_is_checked_rejected_then_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rejected first-run Tavily key shows the reason and asks again."""
+    import aldwin.cli.onboarding as onboarding_mod
+
+    reason = "Tavily rejected this key (HTTP 401). Check it and try again."
+    checked: list[str] = []
+
+    async def checker(_provider: str, key: str) -> tuple[bool, str]:
+        checked.append(key)
+        return (key == "tvly-good-key-123", reason)
+
+    monkeypatch.setattr(onboarding_mod, "check_search_key", checker)
+    answers = iter(["tvly-bad-key-999", "tvly-good-key-123"])
+
+    async def prompt(_label: str, _hidden: bool) -> str:
+        return next(answers)
+
+    console = create_console(plain=True, width=100, record=True, file=io.StringIO())
+    key = await onboarding_mod._prompt_optional_tavily(prompt, console)
+    assert key == "tvly-good-key-123"
+    assert checked == ["tvly-bad-key-999", "tvly-good-key-123"]
+    text = console.export_text()
+    assert reason in text
+    assert "Tavily key… tvly-…-123 ✓" in text
+
+
+async def test_tavily_key_skip_and_give_up(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Enter skips; three rejected keys skip web search with a pointer to /search."""
+    import aldwin.cli.onboarding as onboarding_mod
+
+    async def reject(_provider: str, _key: str) -> tuple[bool, str]:
+        return False, "Could not reach Tavily to check the key (request timed out)."
+
+    monkeypatch.setattr(onboarding_mod, "check_search_key", reject)
+
+    async def enter(_label: str, _hidden: bool) -> str:
+        return ""
+
+    console = create_console(plain=True, width=100, record=True, file=io.StringIO())
+    assert await onboarding_mod._prompt_optional_tavily(enter, console) is None
+
+    async def always_bad(_label: str, _hidden: bool) -> str:
+        return "tvly-bad"
+
+    assert await onboarding_mod._prompt_optional_tavily(always_bad, console) is None
+    text = console.export_text()
+    assert text.count("Could not reach Tavily") == 3
+    assert "Skipped web search. Connect it later with /search." in text

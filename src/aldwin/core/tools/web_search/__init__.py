@@ -2,6 +2,29 @@
 
 from __future__ import annotations
 
+from aldwin.core.tools.web_search.brave import BRAVE_SEARCH_URL, BraveProvider
+from aldwin.core.tools.web_search.exa import EXA_SEARCH_URL, ExaProvider
+from aldwin.core.tools.web_search.firecrawl import (
+    FIRECRAWL_SEARCH_URL,
+    FirecrawlProvider,
+)
+from aldwin.core.tools.web_search.hosted import (
+    KEY_CHECK_TIMEOUT_SECONDS,
+    HostedSearchProvider,
+    KeyCheck,
+    KeyCheckResult,
+    load_search_secrets,
+    resolve_search_api_key,
+)
+from aldwin.core.tools.web_search.parallel import (
+    PARALLEL_MAX_QUERY_CHARS,
+    PARALLEL_SEARCH_URL,
+    ParallelProvider,
+)
+from aldwin.core.tools.web_search.perplexity import (
+    PERPLEXITY_SEARCH_URL,
+    PerplexityProvider,
+)
 from aldwin.core.tools.web_search.searxng import (
     SEARXNG_MIN_INTERVAL_SECONDS,
     SEARXNG_NOT_SET_UP_MESSAGE,
@@ -22,7 +45,6 @@ from aldwin.core.tools.web_search.shared import (
     MAX_SNIPPET_CHARS,
     MIN_LIMIT,
     NO_KEY_MESSAGE,
-    PROVIDER_UNAVAILABLE_MESSAGE,
     SEARCH_TIMEOUT_SECONDS,
     SearchProvider,
     SearchProviderError,
@@ -52,15 +74,29 @@ from aldwin.core.tools.web_search.tavily import (
 
 __all__ = [
     "AUTO_PROVIDER_ORDER",
+    "BRAVE_SEARCH_URL",
+    "BraveProvider",
     "DEFAULT_LIMIT",
     "DEFAULT_MAX_SEARCHES_PER_TURN",
+    "EXA_SEARCH_URL",
+    "ExaProvider",
+    "FIRECRAWL_SEARCH_URL",
+    "FirecrawlProvider",
+    "HostedSearchProvider",
     "IMPLEMENTED_SEARCH_PROVIDERS",
+    "KEY_CHECK_TIMEOUT_SECONDS",
+    "KeyCheck",
+    "KeyCheckResult",
     "MAX_LIMIT",
     "MAX_QUERY_CHARS",
     "MAX_SNIPPET_CHARS",
     "MIN_LIMIT",
     "NO_KEY_MESSAGE",
-    "PROVIDER_UNAVAILABLE_MESSAGE",
+    "PARALLEL_MAX_QUERY_CHARS",
+    "PARALLEL_SEARCH_URL",
+    "PERPLEXITY_SEARCH_URL",
+    "ParallelProvider",
+    "PerplexityProvider",
     "SEARCH_TIMEOUT_SECONDS",
     "SEARXNG_MIN_INTERVAL_SECONDS",
     "SEARXNG_NOT_SET_UP_MESSAGE",
@@ -81,9 +117,11 @@ __all__ = [
     "describe_active_search",
     "detect_local_searxng",
     "is_local_search_provider",
+    "load_search_secrets",
     "normalize_search_provider_arg",
     "ready_search_provider_names",
     "reset_web_search_turn_budget",
+    "resolve_search_api_key",
     "resolve_searxng_url",
     "resolve_tavily_key",
     "scrub_key",

@@ -672,9 +672,9 @@ def update_config_model(model: str, home: Path | None = None) -> None:
     atomic_write(config_path, updated, mode=FILE_MODE)
 
 
-def _set_search_provider_in_source(source: str, provider: str) -> str:
-    """Set ``search.provider`` in YAML text while preserving surrounding comments."""
-    serialized = yaml.safe_dump(provider, default_style=None).strip()
+def _set_search_key_in_source(source: str, key: str, value: str | None) -> str:
+    """Set ``search.<key>`` in YAML text while preserving surrounding comments."""
+    serialized = yaml.safe_dump(value, default_style=None).strip()
     if serialized.endswith("\n..."):
         serialized = serialized[:-4].strip()
 
@@ -683,6 +683,7 @@ def _set_search_provider_in_source(source: str, provider: str) -> str:
     in_search = False
     provider_set = False
     search_seen = False
+    nested_key = re.compile(rf"^([ \t]+){re.escape(key)}\s*:")
 
     for line in lines:
         if re.match(r"^search\s*:", line):
@@ -697,27 +698,27 @@ def _set_search_provider_in_source(source: str, provider: str) -> str:
                 and not line.lstrip().startswith("#")
             ):
                 if not provider_set:
-                    out.append(f"  provider: {serialized}\n")
+                    out.append(f"  {key}: {serialized}\n")
                     provider_set = True
                 in_search = False
                 out.append(line)
                 continue
-            nested = re.match(r"^([ \t]+)provider\s*:", line)
+            nested = nested_key.match(line)
             if nested:
-                out.append(f"{nested.group(1)}provider: {serialized}\n")
+                out.append(f"{nested.group(1)}{key}: {serialized}\n")
                 provider_set = True
                 continue
         out.append(line)
 
     if search_seen and in_search and not provider_set:
-        out.append(f"  provider: {serialized}\n")
+        out.append(f"  {key}: {serialized}\n")
         provider_set = True
 
     if provider_set:
         return "".join(out)
 
     sep = "" if source.endswith("\n") or not source else "\n"
-    return f"{source}{sep}search:\n  provider: {serialized}\n"
+    return f"{source}{sep}search:\n  {key}: {serialized}\n"
 
 
 def update_config_search_provider(provider: str, home: Path | None = None) -> None:
@@ -733,8 +734,19 @@ def update_config_search_provider(provider: str, home: Path | None = None) -> No
             expected=_EXPECTED_FIELD_TYPES["search.provider"],
             detail=str(exc.errors()[0].get("msg", "")),
         ) from None
-    updated = _set_search_provider_in_source(
-        _read_config_source(config_path), validated
+    updated = _set_search_key_in_source(
+        _read_config_source(config_path), "provider", validated
+    )
+    atomic_write(config_path, updated, mode=FILE_MODE)
+
+
+def update_config_searxng_url(url: str | None, home: Path | None = None) -> None:
+    """Persist ``search.searxng_url`` (``None`` clears it), preserving comments."""
+    root = (home if home is not None else home_dir()).expanduser().resolve()
+    config_path = root / CONFIG_FILENAME
+    cleaned = url.strip() if url is not None else None
+    updated = _set_search_key_in_source(
+        _read_config_source(config_path), "searxng_url", cleaned or None
     )
     atomic_write(config_path, updated, mode=FILE_MODE)
 
@@ -930,6 +942,25 @@ def save_secrets(secrets: SecretsConfig, home: Path | None = None) -> Path:
         serialized = yaml.safe_dump(payload, sort_keys=True) if payload else "{}\n"
         atomic_write(secrets_path, serialized, mode=FILE_MODE)
     return secrets_path
+
+
+def remove_secret(field: str, home: Path | None = None) -> bool:
+    """Delete one key from ``secrets.yaml``; return whether it was there.
+
+    Other keys and the file's ``0600`` mode are kept.
+    """
+    root = (home if home is not None else home_dir()).expanduser().resolve()
+    secrets_path = root / SECRETS_FILENAME
+    name = normalize_key_field(field)
+    with secrets_locked(root):
+        if not secrets_path.exists():
+            return False
+        payload = load_secrets(root).to_secret_dict()
+        if payload.pop(name, None) is None:
+            return False
+        serialized = yaml.safe_dump(payload, sort_keys=True) if payload else "{}\n"
+        atomic_write(secrets_path, serialized, mode=FILE_MODE)
+    return True
 
 
 def resolve_key(

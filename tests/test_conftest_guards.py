@@ -9,7 +9,7 @@ from pathlib import Path
 import httpx
 import pytest
 from agentling import AgentSession, FinalEvent
-from conftest import auto_approve, collect
+from conftest import SEARCH_KEY_ENV_VARS, auto_approve, collect
 from fakes.host import FakeHost
 from fakes.model import FakeModel, final, hang, raise_, text, tool_call
 
@@ -85,7 +85,8 @@ def test_sentinel_autouse_redirects_aldwin_home_and_user_home(
     assert (current_home / "config.yaml").is_file()
     assert (current_home / "persona.md").is_file()
     assert "OPENAI_API_KEY" not in os.environ
-    assert "TAVILY_API_KEY" not in os.environ
+    for name in SEARCH_KEY_ENV_VARS:
+        assert name not in os.environ
 
     # Even if a test deletes ALDWIN_HOME, Path.home() is isolated inside tmp_path.
     monkeypatch.delenv("ALDWIN_HOME", raising=False)

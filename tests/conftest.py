@@ -31,6 +31,17 @@ _ORIG_SOCKET_CONNECT_EX = socket.socket.connect_ex
 _ORIG_CREATE_CONNECTION = socket.create_connection
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
+# A developer's real search key would otherwise change which provider auto picks.
+SEARCH_KEY_ENV_VARS = (
+    "TAVILY_API_KEY",
+    "BRAVE_API_KEY",
+    "BRAVE_SEARCH_API_KEY",
+    "EXA_API_KEY",
+    "PERPLEXITY_API_KEY",
+    "PARALLEL_API_KEY",
+    "FIRECRAWL_API_KEY",
+)
+
 # Snapshot of the real user home before any test redirects HOME.
 _REAL_USER_HOME = Path.home().resolve()
 _REAL_ALDWIN = _REAL_USER_HOME / ".aldwin"
@@ -132,8 +143,8 @@ def aldwin_home(
     monkeypatch.setenv("ALDWIN_HOME", str(home))
 
     if not _allows_network(request):
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+        for name in ("OPENAI_API_KEY", *SEARCH_KEY_ENV_VARS):
+            monkeypatch.delenv(name, raising=False)
 
     if "uninitialized_home" not in request.keywords:
         ensure_home(home)

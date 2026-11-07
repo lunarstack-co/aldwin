@@ -27,8 +27,7 @@ _searxng_pace_loop: asyncio.AbstractEventLoop | None = None
 _searxng_last_search_at: float = 0.0
 
 SEARXNG_NOT_SET_UP_MESSAGE: Final[str] = (
-    "Web search isn't set up. Set search.searxng_url (or SEARXNG_URL / "
-    "SEARXNG_BASE_URL) to a JSON-enabled SearXNG instance."
+    "SearXNG search isn't set up. Ask the user to run /search to connect SearXNG."
 )
 
 _LOCAL_SEARXNG_CANDIDATES: Final[tuple[str, ...]] = (

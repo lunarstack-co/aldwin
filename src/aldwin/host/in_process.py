@@ -203,6 +203,20 @@ async def save_provider_key(
     return await _core_save_key(provider, key, home=home, base_url=base_url)
 
 
+async def check_search_key(provider: str, key: str) -> tuple[bool, str]:
+    """Check a search key with its provider; return ``(ok, reason)`` for a door."""
+    from aldwin.core.tools.web_search.connect import check_search_key as _check
+    from aldwin.core.tools.web_search.hosted import KeyCheck
+    from aldwin.core.tools.web_search.shared import hosted_provider_classes
+    from aldwin.host.runner import key_check_error
+
+    result = await _check(provider, key)
+    if result.outcome is KeyCheck.OK:
+        return True, ""
+    title = hosted_provider_classes()[provider].name
+    return False, key_check_error(title, provider, result)[1]
+
+
 async def verify_active_provider_key(
     provider: str,
     home: Path | None = None,
