@@ -28,6 +28,7 @@ Type `/` at the prompt for autocomplete:
 | `/help` | Show slash commands and keyboard shortcuts |
 | `/new` | Start a fresh conversation (previous session stays saved on disk) |
 | `/history` | Show this conversation's saved messages (up to 500) |
+| `/copy [code]` | Copy Aldwin's last answer as markdown, or with `code` just its last code block. See [Copying answers](#copying-answers) |
 | `/model [name\|all]` | Switch model or provider (local, cloud, custom servers, or Add a provider) |
 | `/search [auto\|tavily\|searxng]` | Show or switch the web search provider (saved in `config.yaml`) |
 | `/persona` | Show the active persona and `~/.aldwin/persona.md` character count |
@@ -51,6 +52,21 @@ Konsole). VS Code needs a notification-capable terminal extension. Terminal and
 desktop notification settings may also need to allow notifications. Unknown terminals
 use the bell. Notifications and the bell are silent in `--plain` mode, when `NO_COLOR`
 is set, and when output is redirected.
+
+## Copying answers
+
+`/copy` puts the exact text of Aldwin's last finished answer on your clipboard,
+without the indentation and line wrapping that selecting with the mouse picks up.
+`/copy code` copies only the last fenced code block in that answer.
+
+Aldwin copies with OSC 52 first, which also works over SSH. Most modern terminals
+support it, including iTerm2, kitty, WezTerm, Ghostty, Alacritty, Windows Terminal
+and the VS Code terminal. Inside tmux, turn it on with `set -g set-clipboard on`.
+OSC 52 is limited to about 75 KB of text (100 KB once encoded).
+
+When OSC 52 isn't available, such as in Terminal.app or GNOME Terminal, or the text
+is too large, Aldwin uses `pbcopy` on macOS, or `wl-copy` or `xclip` on Linux if one
+is installed. If none of these work, it says so and you can select with the mouse.
 
 ## Keyboard shortcuts
 
