@@ -442,9 +442,7 @@ def test_search_config_valid_nested_yaml(aldwin_home: Path) -> None:
 
 
 @pytest.mark.parametrize("provider", ["bing", "duckduckgo"])
-def test_search_config_invalid_provider(
-    aldwin_home: Path, provider: str
-) -> None:
+def test_search_config_invalid_provider(aldwin_home: Path, provider: str) -> None:
     """Unknown or removed search.provider raises ConfigError naming the field.
 
     Covers a never-shipped name (bing) and the removed DuckDuckGo catalogue
