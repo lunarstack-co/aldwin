@@ -13,7 +13,8 @@ from prompt_toolkit.input import Input
 from rich.table import Table
 from rich.text import Text
 
-from aldwin.cli.render import ChatRenderer
+from aldwin.cli.clipboard import copy_to_clipboard
+from aldwin.cli.render import ChatRenderer, last_code_block
 from aldwin.cli.theme import filter_canonical_models
 from aldwin.client import (
     MemorySummary,
@@ -42,6 +43,7 @@ SLASH_COMMANDS: Final[tuple[tuple[str, str], ...]] = (
     ("/help", "Show commands and keyboard shortcuts"),
     ("/new", "Start a new conversation"),
     ("/history", "Show this conversation’s saved messages"),
+    ("/copy", "Copy the last answer · /copy code for its last code block"),
     ("/model", "Switch model or provider"),
     ("/search", "Connect, switch or disconnect web search"),
     ("/persona", "Show current persona and file path"),
@@ -200,6 +202,44 @@ def render_shortcuts(renderer: ChatRenderer) -> None:
     for key, desc in KEYBINDINGS_HELP:
         grid.add_row(f"  {key}", desc)
     console.print(grid)
+
+
+COPY_NOTHING: Final[str] = "Nothing to copy yet."
+COPY_NO_CODE: Final[str] = "The last answer has no code block."
+COPY_FAILED: Final[str] = (
+    "Couldn't reach the clipboard here. Select the text with the mouse instead."
+)
+COPY_USAGE: Final[str] = "Usage: /copy or /copy code"
+
+
+def _handle_copy(arg: str, renderer: ChatRenderer) -> None:
+    """Put the last answer, or its last code block, on the clipboard."""
+    console = renderer.console
+    mode = arg.lower()
+    if mode not in ("", "code"):
+        console.print(Text(COPY_USAGE, style="warn"))
+        return
+
+    text = renderer.last_answer
+    if not text:
+        console.print(Text(COPY_NOTHING, style="muted"))
+        return
+    if mode == "code":
+        code = last_code_block(text)
+        if code is None:
+            console.print(Text(COPY_NO_CODE, style="muted"))
+            return
+        text = code
+
+    method = copy_to_clipboard(
+        text, stream=console.file, is_terminal=console.is_terminal
+    )
+    if method is None:
+        console.print(Text(COPY_FAILED, style="warn"))
+        return
+    count = len(text.splitlines())
+    unit = "line" if count == 1 else "lines"
+    console.print(Text(f"✓ Copied {count} {unit}", style="muted"))
 
 
 def _render_help(renderer: ChatRenderer) -> None:
@@ -898,6 +938,10 @@ async def handle_slash_command(
             show_messages=True,
             model=client.model,
         )
+        return False
+
+    if cmd == "/copy":
+        _handle_copy(arg, renderer)
         return False
 
     if cmd == "/todo":

@@ -286,6 +286,46 @@ def split_markdown_blocks(buffer: str) -> tuple[list[str], str]:
     return completed, remainder
 
 
+def _dedent_fence_line(line: str, indent: int) -> str:
+    """Drop up to `indent` leading spaces, as markdown does inside an indented fence."""
+    removable = len(line) - len(line.lstrip(" "))
+    return line[min(indent, removable) :]
+
+
+def last_code_block(markdown: str) -> str | None:
+    """Return the body of the last fenced code block in `markdown`, without fences.
+
+    A fence still open at the end counts, since markdown runs it to the end.
+    Returns `None` when there is no code block or the last one is empty.
+    """
+    last: list[str] | None = None
+    current: list[str] = []
+    open_fence: str | None = None
+    indent = 0
+
+    for line in markdown.splitlines():
+        stripped = line.strip()
+        if open_fence is None:
+            fence = _opening_fence(stripped)
+            if fence is not None:
+                open_fence = fence
+                indent = len(line) - len(line.lstrip(" "))
+                current = []
+            continue
+        if _is_closing_fence(stripped, open_fence):
+            last = current
+            open_fence = None
+            continue
+        current.append(_dedent_fence_line(line, indent))
+
+    if open_fence is not None:
+        last = current
+    if last is None:
+        return None
+    body = "\n".join(last)
+    return body if body.strip() else None
+
+
 def _tool_word(count: int) -> str:
     return "1 tool" if count == 1 else f"{count} tools"
 
@@ -346,6 +386,8 @@ class ChatRenderer:
         self.verbose = False
         self.notifications_enabled = True
         self.todo_view = TodoView(plain=plain, unicode=not plain)
+        # Markdown of the last answer that finished, for `/copy`.
+        self.last_answer: str | None = None
 
     def set_verbose(self, enabled: bool) -> None:
         """Turn file-tool previews on or off for this session and say which."""
@@ -740,6 +782,8 @@ class TurnRenderer:
         self._connector_rows: dict[str, tuple[str, str | None]] = {}
         self._printed_pending_ids: set[str] = set()
         self._markdown_buffer: str = ""
+        # Raw answer text, one segment per stretch between tool calls.
+        self._answer_segments: list[str] = [""]
         self._has_printed_text: bool = False
         self._last_printed_kind: Literal["none", "tool", "text"] = "none"
         self._retry_status: str | None = None
@@ -998,6 +1042,7 @@ class TurnRenderer:
         self._spinner_mode = "responding"
         self._note_activity()
         self._token_estimate += max(1, len(delta) // 4)
+        self._answer_segments[-1] += delta
         self._markdown_buffer += delta
         completed, remainder = split_markdown_blocks(self._markdown_buffer)
         self._markdown_buffer = remainder
@@ -1009,6 +1054,8 @@ class TurnRenderer:
         """Flush buffered text, track pending `●` card, and update spinner."""
         self._clear_retry_status()
         self._flush_markdown_buffer()
+        if self._answer_segments[-1]:
+            self._answer_segments.append("")
         self._note_activity()
         self._spinner_mode = "tool_use"
         self._active_tool_name = event.name
@@ -1201,6 +1248,21 @@ class TurnRenderer:
         return self._has_printed_text
 
     @property
+    def answer_text(self) -> str:
+        """The answer's markdown so far, as the model wrote it."""
+        parts: list[str] = []
+        for segment in self._answer_segments:
+            cleaned = segment.strip("\n")
+            if cleaned.strip():
+                parts.append(cleaned)
+        return "\n\n".join(parts)
+
+    def _keep_answer(self) -> None:
+        text = self.answer_text
+        if text:
+            self._chat.last_answer = text
+
+    @property
     def has_assistant_output(self) -> bool:
         """True if any assistant text was received (flushed or still buffered)."""
         return self._has_printed_text or bool(self._markdown_buffer.strip())
@@ -1272,6 +1334,7 @@ class TurnRenderer:
             return total_tokens
 
         self._flush_markdown_buffer()
+        self._keep_answer()
 
         if event.reason == "max_steps":
             steps = _steps_phrase(event.max_steps)
