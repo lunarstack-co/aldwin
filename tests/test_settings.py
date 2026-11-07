@@ -17,6 +17,7 @@ from aldwin.core.settings import (
     ConfigError,
     LimitsConfig,
     ResolvedKey,
+    SearchConfig,
     SecretsConfig,
     load_config,
     load_secrets,
@@ -25,6 +26,7 @@ from aldwin.core.settings import (
     save_secrets,
     update_config_last_seen_version,
     update_config_model,
+    update_config_search_provider,
     update_config_theme,
 )
 
@@ -42,6 +44,7 @@ def test_load_config_missing_file_returns_defaults(aldwin_home: Path) -> None:
             notes_days=7,
             persona_chars=2000,
             max_steps=15,
+            web_searches=5,
             connector_tools=40,
         ),
     )
@@ -230,6 +233,24 @@ def test_update_config_model_preserves_comments(aldwin_home: Path) -> None:
     assert load_config(aldwin_home).model == "gpt-4.1"
 
 
+def test_update_config_search_provider_preserves_comments(aldwin_home: Path) -> None:
+    """update_config_search_provider writes search.provider without wiping comments."""
+    ensure_home(aldwin_home)
+    config_path = aldwin_home / "config.yaml"
+
+    update_config_search_provider("searxng", aldwin_home)
+
+    raw_text = config_path.read_text(encoding="utf-8")
+    assert "# Default OpenAI chat model" in raw_text
+    assert "search:" in raw_text
+    assert "provider: searxng" in raw_text
+    assert load_config(aldwin_home).search.provider == "searxng"
+
+    update_config_search_provider("auto", aldwin_home)
+    assert load_config(aldwin_home).search.provider == "auto"
+    assert "# Default OpenAI chat model" in config_path.read_text(encoding="utf-8")
+
+
 def test_resolve_key_env_takes_priority_over_file(
     aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -393,6 +414,47 @@ def test_connectors_import_paths_must_be_a_list(aldwin_home: Path) -> None:
         encoding="utf-8",
     )
     assert load_config(aldwin_home).connectors.import_paths == ["~/team/mcp.toml"]
+
+
+def test_search_config_defaults(aldwin_home: Path) -> None:
+    """Default search config is auto / no URL / duckduckgo off."""
+    cfg = load_config(aldwin_home)
+    assert cfg.search == SearchConfig(
+        provider="auto",
+        searxng_url=None,
+        duckduckgo=False,
+    )
+
+
+def test_search_config_valid_nested_yaml(aldwin_home: Path) -> None:
+    """Nested search YAML loads provider, URL, and duckduckgo flag."""
+    atomic_write(
+        aldwin_home / "config.yaml",
+        (
+            "model: gpt-4o\n"
+            "search:\n"
+            "  provider: searxng\n"
+            "  searxng_url: http://127.0.0.1:8080\n"
+            "  duckduckgo: true\n"
+        ),
+    )
+    cfg = load_config(aldwin_home)
+    assert cfg.search.provider == "searxng"
+    assert cfg.search.searxng_url == "http://127.0.0.1:8080"
+    assert cfg.search.duckduckgo is True
+
+
+def test_search_config_invalid_provider(aldwin_home: Path) -> None:
+    """Unknown search.provider raises ConfigError naming the field."""
+    atomic_write(
+        aldwin_home / "config.yaml",
+        "model: gpt-4o\nsearch:\n  provider: bing\n",
+    )
+    with pytest.raises(ConfigError) as exc_info:
+        load_config(aldwin_home)
+    message = str(exc_info.value)
+    assert "search.provider" in message
+    assert "must be" in message
 
 
 def test_load_config_providers_validation_and_unknown_warnings(

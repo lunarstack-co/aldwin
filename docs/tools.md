@@ -57,8 +57,10 @@ Notes live in `~/.aldwin/memory/notes/YYYY-MM-DD.md`. A rebuildable SQLite FTS5 
 
 | Tool | What it does | Needs approval? |
 |---|---|---|
-| `web_search` | Searches the web via Tavily for current information | No |
+| `web_search` | Searches the web via the configured provider (SearXNG URL or a hosted key such as Tavily) | No |
 | `web_fetch` | Fetches and extracts readable text from an `http`/`https` page (≤ 20,000 chars) | No |
+
+For self-hosted search, see [Set up SearXNG](searxng.md).
 
 ## Terminal
 

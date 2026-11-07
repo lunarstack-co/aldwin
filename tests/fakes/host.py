@@ -11,11 +11,15 @@ from aldwin.client import (
     MemorySummary,
     NoteEntry,
     PersonaSummary,
+    SearchSwitchResult,
     SkillsReport,
     SkillSummary,
     ToolInfo,
     WorkspaceSummary,
     resolve_workspace_summary,
+)
+from aldwin.client import (
+    switchable_search_providers as list_switchable_search_providers,
 )
 from aldwin.protocol import (
     ApprovalAnswer,
@@ -330,6 +334,24 @@ class FakeHost:
 
     def persona_summary(self) -> PersonaSummary:
         return self.custom_persona
+
+    def describe_active_search(self) -> str:
+        from aldwin.client import describe_active_search
+
+        return describe_active_search()
+
+    def switch_search_provider(self, raw_name: str) -> SearchSwitchResult:
+        from aldwin.client import switch_search_provider
+
+        return switch_search_provider(raw_name)
+
+    def switchable_search_providers(self) -> tuple[str, ...]:
+        return list_switchable_search_providers()
+
+    def active_search_provider_name(self) -> str | None:
+        from aldwin.client import active_search_provider_name
+
+        return active_search_provider_name()
 
     def memory_summary(self) -> MemorySummary:
         return self.custom_memory

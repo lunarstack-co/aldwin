@@ -514,6 +514,7 @@ async def test_invalid_key_passes_key_rejected_to_toolbar(aldwin_home: Path) -> 
         todo_label: str | None = None,
         plain: bool = False,
         key_rejected: bool = False,
+        search_provider: str | None = None,
     ) -> object:
         seen_rejected.append(key_rejected)
         return real(
@@ -522,6 +523,7 @@ async def test_invalid_key_passes_key_rejected_to_toolbar(aldwin_home: Path) -> 
             todo_label=todo_label,
             plain=plain,
             key_rejected=key_rejected,
+            search_provider=search_provider,
         )
 
     buf = io.StringIO()

@@ -766,6 +766,115 @@ async def test_turn_final_answer_with_streamed_prefix_does_not_duplicate(
         await host.stop_host()
 
 
+async def test_turn_final_answer_after_planning_text_is_shown(
+    aldwin_home: Path,
+    fake_model: FakeModel,
+) -> None:
+    """Planning chatter before tools must not hide the real ``final_answer``."""
+    ensure_home(aldwin_home)
+
+    from agentling import Tool
+
+    class _Ping(Tool):
+        name = "ping"
+        description = "Ping."
+        parameters = {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        }
+
+        async def forward(self) -> str:  # type: ignore[override]
+            return "pong"
+
+    fake_model.add_turns(
+        FakeTurn.tool_call(
+            "ping",
+            {},
+            call_id="c_ping",
+            content="I will look that up.",
+        ),
+        FakeTurn.final_answer_tool(
+            "Here is what I found about you.",
+            call_id="c_fa",
+        ),
+    )
+    transport = InProcessTransport()
+    host = AldwinHost(
+        transport,
+        agent_builder=lambda _m, _ask: Agent(model=fake_model, tools=[_Ping()]),
+    )
+    await host.start()
+    client = AldwinClient(transport.connect())
+
+    try:
+        await client.connect()
+        events = await _collect_turn(client, "tell me about me")
+        texts = [ev.delta for ev in events if isinstance(ev, TextEvent)]
+        assert texts == [
+            "I will look that up.",
+            "Here is what I found about you.",
+        ]
+        assert isinstance(events[-1], DoneEvent)
+        assert events[-1].reason == "answered"
+    finally:
+        await client.close()
+        await host.stop_host()
+
+
+async def test_turn_plain_text_answer_after_tool_not_duplicated(
+    aldwin_home: Path,
+    fake_model: FakeModel,
+) -> None:
+    """Plain-text final step after tool narration emits the answer once."""
+    ensure_home(aldwin_home)
+
+    from agentling import Tool
+
+    class _Ping(Tool):
+        name = "ping"
+        description = "Ping."
+        parameters = {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        }
+
+        async def forward(self) -> str:  # type: ignore[override]
+            return "pong"
+
+    fake_model.add_turns(
+        FakeTurn.tool_call(
+            "ping",
+            {},
+            call_id="c_ping",
+            content="I will look that up.",
+        ),
+        FakeTurn.final("Here is the answer."),
+    )
+    transport = InProcessTransport()
+    host = AldwinHost(
+        transport,
+        agent_builder=lambda _m, _ask: Agent(model=fake_model, tools=[_Ping()]),
+    )
+    await host.start()
+    client = AldwinClient(transport.connect())
+
+    try:
+        await client.connect()
+        events = await _collect_turn(client, "look it up")
+        texts = [ev.delta for ev in events if isinstance(ev, TextEvent)]
+        assert texts == [
+            "I will look that up.",
+            "Here is the answer.",
+        ]
+        assert isinstance(events[-1], DoneEvent)
+        assert events[-1].reason == "answered"
+    finally:
+        await client.close()
+        await host.stop_host()
+
+
 async def test_turn_length_finish_reason_emits_notice(
     aldwin_home: Path,
 ) -> None:

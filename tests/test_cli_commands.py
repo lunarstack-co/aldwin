@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
+import pytest
 from fakes.host import FakeClient
 from prompt_toolkit.completion import CompleteEvent
 from prompt_toolkit.document import Document
@@ -476,3 +477,75 @@ async def test_tools_command_labels_follow_approval_tier() -> None:
     assert "(replace= shows a diff)" in lines["remember"]
     assert "(" not in lines["read_file"]
     assert "always asks" not in lines["edit_file"]
+
+
+async def test_slash_search_command(
+    aldwin_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`/search` shows status, switches when ready, and completes provider names."""
+    from aldwin.core.tools.web_search import searxng as searxng_mod
+
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    monkeypatch.delenv("SEARXNG_URL", raising=False)
+    monkeypatch.delenv("SEARXNG_BASE_URL", raising=False)
+    monkeypatch.setenv("SEARXNG_URL", "http://127.0.0.1:8080")
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test-key-12345678")
+    monkeypatch.setattr(searxng_mod, "_probe_searxng_json", lambda *_a, **_k: False)
+    searxng_mod.clear_searxng_detection_cache()
+
+    completer = SlashCompleter()
+    search_items = list(
+        completer.get_completions(Document("/search "), CompleteEvent())
+    )
+    assert [c.text for c in search_items] == [
+        "/search auto",
+        "/search searxng",
+        "/search tavily",
+    ]
+    bare_search = list(completer.get_completions(Document("/search"), CompleteEvent()))
+    assert [c.text for c in bare_search] == [
+        "/search auto",
+        "/search searxng",
+        "/search tavily",
+    ]
+    assert all(c.text != "/search" for c in bare_search)
+
+    client = FakeClient()
+    buf = io.StringIO()
+    console = create_console(plain=True, width=80, record=True, file=buf)
+    renderer = ChatRenderer(console, plain=True)
+
+    await handle_slash_command(
+        "/search",
+        client=client,
+        renderer=renderer,
+        prompt_line=_noop_prompt,
+        home=aldwin_home,
+    )
+    await handle_slash_command(
+        "/search searxng",
+        client=client,
+        renderer=renderer,
+        prompt_line=_noop_prompt,
+        home=aldwin_home,
+    )
+    await handle_slash_command(
+        "/search brave",
+        client=client,
+        renderer=renderer,
+        prompt_line=_noop_prompt,
+        home=aldwin_home,
+    )
+
+    text = console.export_text()
+    assert "Search · Tavily (auto)" in text
+    assert "Providers:" in text
+    assert "tavily" in text
+    assert "searxng" in text
+    assert "Search · SearXNG" in text
+    assert "not available" in text
+    assert "/search" in Path("docs/commands.md").read_text(encoding="utf-8")
+    from aldwin.core.settings import load_config
+
+    assert load_config(aldwin_home).search.provider == "searxng"

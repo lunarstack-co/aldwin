@@ -365,6 +365,50 @@ def get_persona_summary(home: Path | None = None) -> PersonaSummary:
     return persona_summary(root, cap=config.limits.persona_chars)
 
 
+@dataclass(frozen=True, slots=True)
+class SearchSwitchResult:
+    """Outcome of inspecting or switching the search backend (door-facing)."""
+
+    ok: bool
+    message: str
+    provider: str | None = None
+
+
+def describe_active_search(home: Path | None = None) -> str:
+    """Status text for bare `/search` (re-detects local SearXNG)."""
+    from aldwin.core.tools.web_search import describe_active_search as _describe
+
+    return _describe(_resolve_home(home))
+
+
+def switch_search_provider(
+    raw_name: str, *, home: Path | None = None
+) -> SearchSwitchResult:
+    """Validate and persist ``search.provider`` for `/search <name>`."""
+    from aldwin.core.tools.web_search import switch_search_provider as _switch
+
+    result = _switch(raw_name, home=_resolve_home(home))
+    return SearchSwitchResult(
+        ok=result.ok, message=result.message, provider=result.provider
+    )
+
+
+def switchable_search_providers() -> tuple[str, ...]:
+    """Provider names accepted by `/search` autocomplete."""
+    from aldwin.core.tools.web_search import switchable_search_providers as _names
+
+    return _names()
+
+
+def active_search_provider_name(home: Path | None = None) -> str | None:
+    """Display name of the search backend that would run, or None."""
+    from aldwin.core.tools.web_search import (
+        active_search_provider_name as _active_name,
+    )
+
+    return _active_name(_resolve_home(home))
+
+
 def resolve_workspace_summary(
     new_root: Path | str,
     *,

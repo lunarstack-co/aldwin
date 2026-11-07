@@ -53,6 +53,7 @@ _EXPECTED_FIELD_TYPES: Final[dict[str, str]] = {
     "limits.notes_days": "an integer >= 1",
     "limits.persona_chars": "an integer >= 100",
     "limits.max_steps": "an integer >= 1",
+    "limits.web_searches": "an integer >= 1",
     "limits.connector_tools": "an integer >= 5",
     "run_command": "a mapping of run_command settings",
     "run_command.env_allow": "a list of environment variable names",
@@ -60,6 +61,13 @@ _EXPECTED_FIELD_TYPES: Final[dict[str, str]] = {
     "connectors": "a mapping of connector settings",
     "connectors.import_paths": "a list of paths",
     "connectors.import_paths.*": "a path (a string)",
+    "search": "a mapping of web search settings",
+    "search.provider": (
+        "'auto', 'searxng', 'duckduckgo', 'tavily', 'brave', 'exa', "
+        "'perplexity', 'parallel', or 'firecrawl'"
+    ),
+    "search.searxng_url": "a SearXNG base URL string, or null",
+    "search.duckduckgo": "true or false",
     "providers": "a mapping of custom provider settings",
     "providers.*": "a mapping of provider settings",
     "providers.*.shape": "'openai_chat', 'anthropic', or 'ollama'",
@@ -154,6 +162,8 @@ class LimitsConfig(BaseModel):
     notes_days: StrictInt = Field(default=7, ge=1)
     persona_chars: StrictInt = Field(default=2000, ge=100)
     max_steps: StrictInt = Field(default=15, ge=1)
+    # Stops one turn from spending many searches and tripping upstream rate limits.
+    web_searches: StrictInt = Field(default=5, ge=1)
     connector_tools: StrictInt = Field(default=40, ge=5)
 
 
@@ -172,6 +182,60 @@ class ConnectorsConfig(BaseModel):
 
     # Extra MCP config files `aldwin connectors import` looks at without a path.
     import_paths: list[str] = Field(default_factory=list)
+
+
+SearchProviderName = Literal[
+    "auto",
+    "searxng",
+    "duckduckgo",
+    "tavily",
+    "brave",
+    "exa",
+    "perplexity",
+    "parallel",
+    "firecrawl",
+]
+_VALID_SEARCH_PROVIDERS: Final[frozenset[str]] = frozenset(
+    {
+        "auto",
+        "searxng",
+        "duckduckgo",
+        "tavily",
+        "brave",
+        "exa",
+        "perplexity",
+        "parallel",
+        "firecrawl",
+    }
+)
+
+
+class SearchConfig(BaseModel):
+    """Web search backend settings from ``config.yaml``."""
+
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+
+    provider: SearchProviderName = "auto"
+    searxng_url: str | None = None
+    duckduckgo: bool = False
+
+    @field_validator("provider", mode="before")
+    @classmethod
+    def _validate_provider(cls, value: object) -> object:
+        if not isinstance(value, str):
+            raise ValueError("provider must be a string")
+        cleaned = value.strip().lower()
+        if cleaned not in _VALID_SEARCH_PROVIDERS:
+            raise ValueError(f"invalid search provider '{value}'")
+        return cleaned
+
+    @field_validator("searxng_url")
+    @classmethod
+    def _validate_searxng_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
 
 
 ProviderShape = Literal["openai_chat", "anthropic", "ollama"]
@@ -239,6 +303,7 @@ class AldwinConfig(BaseModel):
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
     run_command: RunCommandConfig = Field(default_factory=RunCommandConfig)
     connectors: ConnectorsConfig = Field(default_factory=ConnectorsConfig)
+    search: SearchConfig = Field(default_factory=SearchConfig)
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
 
     @field_validator("providers", mode="before")
@@ -443,6 +508,12 @@ def _warn_unknown_config_keys(raw: dict[str, Any], config_path: Path) -> None:
                 config_path,
             )
 
+    raw_search = raw.get("search")
+    if isinstance(raw_search, dict):
+        known_search = set(SearchConfig.model_fields.keys())
+        for key in sorted(set(raw_search.keys()) - known_search):
+            logger.warning("Ignoring unknown key 'search.%s' in %s", key, config_path)
+
     raw_providers = raw.get("providers")
     if isinstance(raw_providers, dict):
         known_provider_fields = set(ProviderConfig.model_fields.keys())
@@ -511,6 +582,8 @@ def load_config(home: Path | None = None) -> AldwinConfig:
         parsed = {**parsed, "limits": {}}
     if "run_command" in parsed and parsed["run_command"] is None:
         parsed = {**parsed, "run_command": {}}
+    if "search" in parsed and parsed["search"] is None:
+        parsed = {**parsed, "search": {}}
     if "providers" in parsed and parsed["providers"] is None:
         parsed = {**parsed, "providers": {}}
 
@@ -600,6 +673,73 @@ def update_config_model(model: str, home: Path | None = None) -> None:
     validate_model_ref(cleaned, existing_cfg, file=config_path)
 
     updated = _set_yaml_scalar_key(_read_config_source(config_path), "model", cleaned)
+    atomic_write(config_path, updated, mode=FILE_MODE)
+
+
+def _set_search_provider_in_source(source: str, provider: str) -> str:
+    """Set ``search.provider`` in YAML text while preserving surrounding comments."""
+    serialized = yaml.safe_dump(provider, default_style=None).strip()
+    if serialized.endswith("\n..."):
+        serialized = serialized[:-4].strip()
+
+    lines = source.splitlines(keepends=True)
+    out: list[str] = []
+    in_search = False
+    provider_set = False
+    search_seen = False
+
+    for line in lines:
+        if re.match(r"^search\s*:", line):
+            in_search = True
+            search_seen = True
+            out.append(line)
+            continue
+        if in_search:
+            if (
+                line.strip()
+                and not line[0].isspace()
+                and not line.lstrip().startswith("#")
+            ):
+                if not provider_set:
+                    out.append(f"  provider: {serialized}\n")
+                    provider_set = True
+                in_search = False
+                out.append(line)
+                continue
+            nested = re.match(r"^([ \t]+)provider\s*:", line)
+            if nested:
+                out.append(f"{nested.group(1)}provider: {serialized}\n")
+                provider_set = True
+                continue
+        out.append(line)
+
+    if search_seen and in_search and not provider_set:
+        out.append(f"  provider: {serialized}\n")
+        provider_set = True
+
+    if provider_set:
+        return "".join(out)
+
+    sep = "" if source.endswith("\n") or not source else "\n"
+    return f"{source}{sep}search:\n  provider: {serialized}\n"
+
+
+def update_config_search_provider(provider: str, home: Path | None = None) -> None:
+    """Persist ``search.provider`` in ``config.yaml`` while preserving comments."""
+    root = (home if home is not None else home_dir()).expanduser().resolve()
+    config_path = root / CONFIG_FILENAME
+    try:
+        validated = SearchConfig.model_validate({"provider": provider}).provider
+    except ValidationError as exc:
+        raise ConfigError(
+            file=config_path,
+            field="search.provider",
+            expected=_EXPECTED_FIELD_TYPES["search.provider"],
+            detail=str(exc.errors()[0].get("msg", "")),
+        ) from None
+    updated = _set_search_provider_in_source(
+        _read_config_source(config_path), validated
+    )
     atomic_write(config_path, updated, mode=FILE_MODE)
 
 

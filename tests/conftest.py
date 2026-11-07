@@ -102,6 +102,15 @@ def _session_home_guard(assert_real_home_unchanged: None) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _no_local_searxng_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Never probe a developer's local SearXNG from the default test run."""
+    from aldwin.core.tools.web_search import searxng as searxng_mod
+
+    monkeypatch.setattr(searxng_mod, "_probe_searxng_json", lambda *_a, **_k: False)
+    searxng_mod.clear_searxng_detection_cache()
+
+
+@pytest.fixture(autouse=True)
 def aldwin_home(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -33,6 +33,15 @@ limits:
   # Maximum agent steps per turn before asking to continue
   max_steps: 15
 
+  # Maximum web_search tool calls per user turn
+  web_searches: 5
+
+# Web search backend (auto picks the first ready provider)
+# search:
+#   provider: auto   # auto | searxng | tavily | …
+#   searxng_url: null
+#   duckduckgo: false
+
 # Extra environment variable names (beyond a minimal safe set) passed to
 # run_command; secret-looking names are always ignored
 run_command:

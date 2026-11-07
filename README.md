@@ -40,7 +40,7 @@ uv tool upgrade aldwin
 
 ### First run
 
-The first time you run `aldwin`, it creates a private home folder at `~/.aldwin` and looks for a local model (Ollama or LM Studio). If one is running, you can chat with no account. Otherwise it offers a cloud provider (OpenAI, Anthropic, Gemini, OpenRouter, or DeepSeek) or shows how to install a local server. A Tavily key for web search is optional; press `Enter` to skip it and add it later with `aldwin setup`.
+The first time you run `aldwin`, it creates a private home folder at `~/.aldwin` and looks for a local model (Ollama or LM Studio). If one is running, you can chat with no account. Otherwise it offers a cloud provider (OpenAI, Anthropic, Gemini, OpenRouter, or DeepSeek) or shows how to install a local server. A hosted search key (for example Tavily) is optional; press `Enter` to skip it and add it later with `aldwin setup`, or set `search.searxng_url` for a JSON-enabled SearXNG instance.
 
 If you already have an OpenAI key from an earlier install, Aldwin keeps it and does not force you to reconfigure.
 
@@ -178,7 +178,7 @@ See all [commands, slash commands, and shortcuts](https://github.com/lunarstack-
 
 Aldwin runs inside your terminal process; it isn't always-on yet. Closing the terminal stops any active task, and your conversation resumes next time you run `aldwin`. Windows is not yet supported.
 
-Next: more web search providers.
+Web search: set `search.searxng_url` (or `SEARXNG_URL`) for self-hosted SearXNG, or a hosted API key via setup/secrets. Step-by-step: [Set up SearXNG](docs/searxng.md). More providers (DuckDuckGo, Brave, and others) are on the way.
 
 ---
 

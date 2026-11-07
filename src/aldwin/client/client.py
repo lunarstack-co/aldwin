@@ -25,6 +25,7 @@ from aldwin.host.in_process import (
     OnboardingStatus,
     PersonaSummary,
     PlatformNotSupportedError,
+    SearchSwitchResult,
     SkillsReport,
     SkillSummary,
     ToolInfo,
@@ -59,6 +60,18 @@ from aldwin.host.in_process import (
     update_available_nudge,
     verify_active_openai_key,
     whats_new_due,
+)
+from aldwin.host.in_process import (
+    active_search_provider_name as get_active_search_provider_name,
+)
+from aldwin.host.in_process import (
+    describe_active_search as get_describe_active_search,
+)
+from aldwin.host.in_process import (
+    switch_search_provider as apply_switch_search_provider,
+)
+from aldwin.host.in_process import (
+    switchable_search_providers as list_switchable_search_providers,
 )
 from aldwin.protocol import (
     HOST_EVENT_RE,
@@ -415,6 +428,22 @@ class AldwinClient:
     def persona_summary(self) -> PersonaSummary:
         """Return current persona text and path metadata for `/persona`."""
         return get_persona_summary(self._home)
+
+    def describe_active_search(self) -> str:
+        """Return status text for bare `/search`."""
+        return get_describe_active_search(self._home)
+
+    def switch_search_provider(self, raw_name: str) -> SearchSwitchResult:
+        """Validate and persist ``search.provider`` for `/search <name>`."""
+        return apply_switch_search_provider(raw_name, home=self._home)
+
+    def switchable_search_providers(self) -> tuple[str, ...]:
+        """Return provider names accepted by `/search` autocomplete."""
+        return list_switchable_search_providers()
+
+    def active_search_provider_name(self) -> str | None:
+        """Return the display name of the active search backend, or None."""
+        return get_active_search_provider_name(self._home)
 
     def memory_summary(self) -> MemorySummary:
         """Return profile and recent notes summary for `/memory`."""
