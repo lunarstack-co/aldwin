@@ -60,7 +60,6 @@ AUTO_PROVIDER_ORDER: Final[tuple[str, ...]] = (
     "perplexity",
     "parallel",
     "firecrawl",
-    "duckduckgo",
 )
 
 _SEARCH_PROVIDER_ALIASES: Final[dict[str, str]] = {
@@ -230,8 +229,8 @@ def build_search_provider(
     """Select a SearchProvider from config and secrets.
 
     When search.provider is auto, walk the catalogue order and return the first
-    implemented backend that has credentials or a URL. Unimplemented names
-    (hosted providers, DuckDuckGo) are skipped until those backends ship.
+    implemented backend that has credentials or a URL. Unimplemented hosted
+    names are skipped until those backends ship.
     """
     if config is not None:
         effective_config = config

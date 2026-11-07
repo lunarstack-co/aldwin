@@ -762,7 +762,7 @@ async def test_searxng_surfaces_upstream_rate_limits() -> None:
                 "results": [],
                 "unresponsive_engines": [
                     ["brave", "Suspended: too many requests"],
-                    ["duckduckgo", "CAPTCHA"],
+                    ["google", "CAPTCHA"],
                 ],
             },
         )
