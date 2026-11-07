@@ -156,7 +156,7 @@ You should see a `web_search` tool result with numbered titles, URLs, and snippe
 
 ## Rate limits
 
-Upstream engines behind SearXNG (Brave, DuckDuckGo, Google CSE, …) can CAPTCHA or suspend your instance if Aldwin searches too fast. Aldwin mitigates this by:
+Upstream engines behind SearXNG (Brave, Google CSE, …) can CAPTCHA or suspend your instance if Aldwin searches too fast. Aldwin mitigates this by:
 
 - Serializing SearXNG calls with a short gap between them
 - Capping `web_search` calls per turn (`limits.web_searches`, default **5**)

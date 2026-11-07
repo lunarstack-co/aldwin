@@ -63,11 +63,10 @@ _EXPECTED_FIELD_TYPES: Final[dict[str, str]] = {
     "connectors.import_paths.*": "a path (a string)",
     "search": "a mapping of web search settings",
     "search.provider": (
-        "'auto', 'searxng', 'duckduckgo', 'tavily', 'brave', 'exa', "
+        "'auto', 'searxng', 'tavily', 'brave', 'exa', "
         "'perplexity', 'parallel', or 'firecrawl'"
     ),
     "search.searxng_url": "a SearXNG base URL string, or null",
-    "search.duckduckgo": "true or false",
     "providers": "a mapping of custom provider settings",
     "providers.*": "a mapping of provider settings",
     "providers.*.shape": "'openai_chat', 'anthropic', or 'ollama'",
@@ -187,7 +186,6 @@ class ConnectorsConfig(BaseModel):
 SearchProviderName = Literal[
     "auto",
     "searxng",
-    "duckduckgo",
     "tavily",
     "brave",
     "exa",
@@ -199,7 +197,6 @@ _VALID_SEARCH_PROVIDERS: Final[frozenset[str]] = frozenset(
     {
         "auto",
         "searxng",
-        "duckduckgo",
         "tavily",
         "brave",
         "exa",
@@ -217,7 +214,6 @@ class SearchConfig(BaseModel):
 
     provider: SearchProviderName = "auto"
     searxng_url: str | None = None
-    duckduckgo: bool = False
 
     @field_validator("provider", mode="before")
     @classmethod

@@ -417,17 +417,16 @@ def test_connectors_import_paths_must_be_a_list(aldwin_home: Path) -> None:
 
 
 def test_search_config_defaults(aldwin_home: Path) -> None:
-    """Default search config is auto / no URL / duckduckgo off."""
+    """Default search config is auto with no SearXNG URL."""
     cfg = load_config(aldwin_home)
     assert cfg.search == SearchConfig(
         provider="auto",
         searxng_url=None,
-        duckduckgo=False,
     )
 
 
 def test_search_config_valid_nested_yaml(aldwin_home: Path) -> None:
-    """Nested search YAML loads provider, URL, and duckduckgo flag."""
+    """Nested search YAML loads provider and SearXNG URL."""
     atomic_write(
         aldwin_home / "config.yaml",
         (
@@ -435,20 +434,25 @@ def test_search_config_valid_nested_yaml(aldwin_home: Path) -> None:
             "search:\n"
             "  provider: searxng\n"
             "  searxng_url: http://127.0.0.1:8080\n"
-            "  duckduckgo: true\n"
         ),
     )
     cfg = load_config(aldwin_home)
     assert cfg.search.provider == "searxng"
     assert cfg.search.searxng_url == "http://127.0.0.1:8080"
-    assert cfg.search.duckduckgo is True
 
 
-def test_search_config_invalid_provider(aldwin_home: Path) -> None:
-    """Unknown search.provider raises ConfigError naming the field."""
+@pytest.mark.parametrize("provider", ["bing", "duckduckgo"])
+def test_search_config_invalid_provider(
+    aldwin_home: Path, provider: str
+) -> None:
+    """Unknown or removed search.provider raises ConfigError naming the field.
+
+    Covers a never-shipped name (bing) and the removed DuckDuckGo catalogue
+    entry so a stale ``provider: duckduckgo`` fails closed.
+    """
     atomic_write(
         aldwin_home / "config.yaml",
-        "model: gpt-4o\nsearch:\n  provider: bing\n",
+        f"model: gpt-4o\nsearch:\n  provider: {provider}\n",
     )
     with pytest.raises(ConfigError) as exc_info:
         load_config(aldwin_home)

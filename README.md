@@ -178,7 +178,7 @@ See all [commands, slash commands, and shortcuts](https://github.com/lunarstack-
 
 Aldwin runs inside your terminal process; it isn't always-on yet. Closing the terminal stops any active task, and your conversation resumes next time you run `aldwin`. Windows is not yet supported.
 
-Web search: set `search.searxng_url` (or `SEARXNG_URL`) for self-hosted SearXNG, or a hosted API key via setup/secrets. Step-by-step: [Set up SearXNG](docs/searxng.md). More providers (DuckDuckGo, Brave, and others) are on the way.
+Web search: set `search.searxng_url` (or `SEARXNG_URL`) for self-hosted SearXNG, or a hosted API key via setup/secrets. Step-by-step: [Set up SearXNG](docs/searxng.md). More hosted providers (Brave and others) are on the way.
 
 ---
 
