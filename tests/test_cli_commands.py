@@ -483,7 +483,7 @@ async def test_slash_search_command(
     aldwin_home: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`/search` shows status, switches when ready, and completes provider names."""
+    """`/search` completes provider names and `status` prints the text summary."""
     from aldwin.core.tools.web_search import searxng as searxng_mod
 
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
@@ -500,14 +500,26 @@ async def test_slash_search_command(
     )
     assert [c.text for c in search_items] == [
         "/search auto",
+        "/search brave",
+        "/search exa",
+        "/search firecrawl",
+        "/search parallel",
+        "/search perplexity",
         "/search searxng",
         "/search tavily",
+        "/search status",
     ]
     bare_search = list(completer.get_completions(Document("/search"), CompleteEvent()))
     assert [c.text for c in bare_search] == [
         "/search auto",
+        "/search brave",
+        "/search exa",
+        "/search firecrawl",
+        "/search parallel",
+        "/search perplexity",
         "/search searxng",
         "/search tavily",
+        "/search status",
     ]
     assert all(c.text != "/search" for c in bare_search)
 
@@ -517,21 +529,7 @@ async def test_slash_search_command(
     renderer = ChatRenderer(console, plain=True)
 
     await handle_slash_command(
-        "/search",
-        client=client,
-        renderer=renderer,
-        prompt_line=_noop_prompt,
-        home=aldwin_home,
-    )
-    await handle_slash_command(
-        "/search searxng",
-        client=client,
-        renderer=renderer,
-        prompt_line=_noop_prompt,
-        home=aldwin_home,
-    )
-    await handle_slash_command(
-        "/search brave",
+        "/search status",
         client=client,
         renderer=renderer,
         prompt_line=_noop_prompt,
@@ -541,11 +539,18 @@ async def test_slash_search_command(
     text = console.export_text()
     assert "Search · Tavily (auto)" in text
     assert "Providers:" in text
-    assert "tavily" in text
     assert "searxng" in text
-    assert "Search · SearXNG" in text
-    assert "not available" in text
     assert "/search" in Path("docs/commands.md").read_text(encoding="utf-8")
-    from aldwin.core.settings import load_config
 
-    assert load_config(aldwin_home).search.provider == "searxng"
+
+def test_search_completions_only_hint_special_entries() -> None:
+    """Provider names carry no repeated label; auto and status explain themselves."""
+    completer = SlashCompleter()
+    items = {
+        c.text: c.display_meta_text
+        for c in completer.get_completions(Document("/search "), CompleteEvent())
+    }
+    assert items["/search auto"] == "use the first connected provider"
+    assert items["/search status"] == "print a text summary"
+    assert items["/search brave"] == ""
+    assert items["/search searxng"] == ""

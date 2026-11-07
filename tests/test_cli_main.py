@@ -227,7 +227,11 @@ def test_setup_cli_command_end_to_end(
             ),
         ]
 
+    async def accept_search_key(_provider: str, _key: str) -> tuple[bool, str]:
+        return True, ""
+
     monkeypatch.setattr(onboarding_mod, "check_openai_key", fake_check)
+    monkeypatch.setattr(onboarding_mod, "check_search_key", accept_search_key)
     monkeypatch.setattr(onboarding_mod, "list_models_for", fake_models)
 
     res = runner.invoke(

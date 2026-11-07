@@ -27,7 +27,6 @@ from aldwin.core.tools.web_search import (
     DEFAULT_LIMIT,
     MAX_SNIPPET_CHARS,
     NO_KEY_MESSAGE,
-    PROVIDER_UNAVAILABLE_MESSAGE,
     SEARXNG_NOT_SET_UP_MESSAGE,
     SearchProvider,
     SearchProviderError,
@@ -375,8 +374,9 @@ async def test_web_search_zero_and_single_result_and_custom_provider(
     assert res_1.summary == "1 result"
     assert res_1.ok is True
 
-    # Also test key resolution from SecretsConfig when passed directly.
+    # With a home folder, the key comes from secrets.yaml.
     secrets = SecretsConfig(tavily_api_key=SecretStr("tvly-from-secrets-obj"))
+    save_secrets(secrets, aldwin_home)
 
     def ok_handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["authorization"] == "Bearer tvly-from-secrets-obj"
@@ -607,9 +607,12 @@ def test_switch_search_provider_persists(
     assert unknown.ok is False
     assert "Unknown" in unknown.message
 
-    unavailable = switch_search_provider("brave", home=aldwin_home)
-    assert unavailable.ok is False
-    assert "not available" in unavailable.message
+    unready = switch_search_provider("brave", home=aldwin_home)
+    assert unready.ok is False
+    assert unready.message == (
+        "brave isn't ready. Connect it with /search, or set BRAVE_API_KEY "
+        "(or BRAVE_SEARCH_API_KEY)."
+    )
 
     monkeypatch.setenv("SEARXNG_URL", "http://127.0.0.1:8080")
     monkeypatch.setenv("TAVILY_API_KEY", "tvly-test-key-12345678")
@@ -647,8 +650,7 @@ async def test_web_search_factory_wiring(
     res_bare = await bare.call({"query": "news"})
     assert res_bare.ok is False
     assert str(res_bare) == NO_KEY_MESSAGE
-    assert "searxng_url" in NO_KEY_MESSAGE
-    assert "API key" in NO_KEY_MESSAGE
+    assert "/search" in NO_KEY_MESSAGE
     assert "Tavily" not in NO_KEY_MESSAGE
 
     atomic_write(
@@ -660,7 +662,7 @@ async def test_web_search_factory_wiring(
     assert res_sx.ok is False
     assert str(res_sx) == SEARXNG_NOT_SET_UP_MESSAGE
     assert res_sx.summary == "not set up"
-    assert "SearXNG" in str(res_sx) or "searxng_url" in str(res_sx)
+    assert "/search" in str(res_sx)
 
     atomic_write(
         aldwin_home / "config.yaml",
@@ -669,8 +671,10 @@ async def test_web_search_factory_wiring(
     brave_tool = build_web_search_tool(home=aldwin_home)
     res_brave = await brave_tool.call({"query": "news"})
     assert res_brave.ok is False
-    assert str(res_brave) == PROVIDER_UNAVAILABLE_MESSAGE.format(name="brave")
-    assert res_brave.summary == "not available"
+    assert str(res_brave) == (
+        "Brave search isn't set up. Ask the user to run /search to connect Brave."
+    )
+    assert res_brave.summary == "not set up"
 
     # Localhost SearXNG is allowed; this path never goes through web_fetch SSRF guards.
     atomic_write(

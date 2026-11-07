@@ -47,6 +47,8 @@ class ProviderEntry:
     env_var: str | None = None
     key_hint: str | None = None
     default_port: int | None = None
+    # Path under base_url that answers 401 for a bad key, when /models does not.
+    key_check_path: str | None = None
 
 
 def is_loopback_host(host: str) -> bool:
@@ -109,6 +111,7 @@ def load_builtin_providers() -> tuple[ProviderEntry, ...]:
             env_var=p.get("env_var"),
             key_hint=p.get("key_hint"),
             default_port=p.get("default_port"),
+            key_check_path=p.get("key_check_path"),
         )
         for p in raw_providers
     )
@@ -150,6 +153,7 @@ def list_providers(config: AldwinConfig | None = None) -> list[ProviderEntry]:
                     env_var=b.env_var,
                     key_hint=b.key_hint,
                     default_port=b.default_port,
+                    key_check_path=None if override.base_url else b.key_check_path,
                 )
             )
         else:

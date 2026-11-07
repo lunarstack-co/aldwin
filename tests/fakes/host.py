@@ -30,6 +30,8 @@ from aldwin.protocol import (
     ModelEntry,
     ModelsEvent,
     ProviderModels,
+    SearchProviderItem,
+    SearchProvidersEvent,
     SkillBodyEvent,
     SkillCatalogItem,
     SkillsEvent,
@@ -60,6 +62,18 @@ class FakeHost:
             interrupted=False,
         )
         self.models_event = models_event
+        # Scripted `/search` state: the list shown, and answers to each action.
+        self.search_event = SearchProvidersEvent(re="req_search", setting="auto")
+        self.search_connect_results: list[tuple[DoneEvent | ErrorEvent, list[str]]] = []
+        self.search_use_result: DoneEvent | ErrorEvent = DoneEvent(
+            re="req_use", reason="ok"
+        )
+        self.search_disconnect_result: DoneEvent | ErrorEvent = DoneEvent(
+            re="req_disc", reason="ok"
+        )
+        self.provider_disconnect_result: DoneEvent | ErrorEvent = DoneEvent(
+            re="req_pdisc", reason="ok"
+        )
 
         self.connected = False
         self.closed = False
@@ -320,6 +334,30 @@ class FakeHost:
         self.requests.append(("provider.key", provider, key))
         return DoneEvent(re="req_key", reason="ok")
 
+    async def search_list(self) -> SearchProvidersEvent:
+        self.requests.append(("search.list",))
+        return self.search_event
+
+    async def search_connect(
+        self, provider: str, *, key: str | None = None, url: str | None = None
+    ) -> tuple[DoneEvent | ErrorEvent, list[str]]:
+        self.requests.append(("search.connect", provider, key, url))
+        if self.search_connect_results:
+            return self.search_connect_results.pop(0)
+        return DoneEvent(re="req_conn", reason="ok"), []
+
+    async def search_use(self, provider: str) -> DoneEvent | ErrorEvent:
+        self.requests.append(("search.use", provider))
+        return self.search_use_result
+
+    async def search_disconnect(self, provider: str) -> DoneEvent | ErrorEvent:
+        self.requests.append(("search.disconnect", provider))
+        return self.search_disconnect_result
+
+    async def disconnect_provider(self, provider: str) -> DoneEvent | ErrorEvent:
+        self.requests.append(("provider.disconnect", provider))
+        return self.provider_disconnect_result
+
     async def add_provider_server(
         self,
         name: str,
@@ -400,3 +438,26 @@ class FakeHost:
 
 
 FakeClient = FakeHost
+
+
+def search_item(name: str, **fields: object) -> SearchProviderItem:
+    """A `/search` row for tests, with sensible defaults per provider."""
+    titles = {
+        "searxng": "SearXNG",
+        "tavily": "Tavily",
+        "brave": "Brave",
+        "exa": "Exa",
+        "perplexity": "Perplexity",
+        "parallel": "Parallel",
+        "firecrawl": "Firecrawl",
+    }
+    base: dict[str, object] = {
+        "name": name,
+        "title": titles[name],
+        "kind": "local" if name == "searxng" else "hosted",
+        "connected": False,
+        "signup_url": f"https://{name}.example/keys",
+        "env_var": None if name == "searxng" else f"{name.upper()}_API_KEY",
+    }
+    base.update(fields)
+    return SearchProviderItem.model_validate(base)

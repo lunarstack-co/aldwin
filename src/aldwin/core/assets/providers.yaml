@@ -48,6 +48,8 @@ providers:
     docs_url: https://openrouter.ai/docs
     signup_url: https://openrouter.ai/keys
     key_hint: sk-or-...
+    # /models is public on OpenRouter, so a fake key would pass that check.
+    key_check_path: /key
     default_port: null
 
   - name: deepseek

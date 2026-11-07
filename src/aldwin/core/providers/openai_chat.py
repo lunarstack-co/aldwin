@@ -635,8 +635,29 @@ class OpenAIChatBackend:
             )
         return results
 
+    async def _check_key_path(self, path: str) -> AccessStatus | None:
+        """Return a failing status from the provider's key endpoint, else None."""
+        try:
+            async with httpx.AsyncClient(
+                transport=self.transport, timeout=self.timeout
+            ) as client:
+                resp = await client.get(
+                    f"{self.base_url}{path}", headers=self._build_headers()
+                )
+        except httpx.HTTPError:
+            return AccessStatus.UNREACHABLE
+        if resp.status_code in (401, 403):
+            return AccessStatus.INVALID_KEY
+        if resp.status_code != 200:
+            return AccessStatus.UNREACHABLE
+        return None
+
     async def check_access(self) -> AccessStatus:
         """Verify reachability and credentials."""
+        if self.entry.key_check_path:
+            failed = await self._check_key_path(self.entry.key_check_path)
+            if failed is not None:
+                return failed
         try:
             models = await self.list_models()
             if not models and self.entry.name.lower() == "openai":

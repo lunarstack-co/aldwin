@@ -76,11 +76,11 @@ For the local-first path (Ollama/LM Studio found on first run), see **Step 20**.
   - Turn ends with `✻ Worked for <N>s`; when tools ran it includes `· <N> tool(s)`, and when token usage is available it includes `· <N> tokens`. Plain mode uses `*` instead of `✻`.
 - [ ] Pass / Fail
 
-### Step 4: Web search without a Tavily key
-- **Action:** Ask `Use web_search to look up today's Python release news.`
+### Step 4: Web search with nothing connected
+- **Action:** With no search key and no SearXNG running, ask `Use web_search to look up today's Python release news.`
 - **Expected:**
   - Tool card shows `⚙ web_search` followed by `✗ web_search  not set up`.
-  - Aldwin does not crash; it explains that web search needs a Tavily key via `aldwin setup`.
+  - Aldwin does not crash; it tells you to run `/search` to connect a search provider.
 - [ ] Pass / Fail
 
 ### Step 5: Command approval (`no` then `yes`)
@@ -332,9 +332,34 @@ Needs an OpenAI API key and Ollama running locally with a tool-capable model (e.
    - Run `/model`, select `Add a provider…`, select `DeepSeek`.
    - Expect: masked key prompt `DeepSeek API key:`. Key input does not echo.
    - Enter invalid key: error shown, secrets file untouched.
+   - Repeat with `OpenRouter` and the fake key `sk-or-v1-notarealkey000`. Expect: `Your OpenRouter key was rejected. Check the key and try again.`
+5a. Manage keys:
+   - Run `/model`, select `Manage keys…`, pick a provider that is not running the current model, then `Disconnect` and `y`.
+   - Expect: `✓ Disconnected <Provider>.`; the provider leaves "Available providers" and its key leaves `secrets.yaml`.
+   - Try to disconnect the provider of the current model. Expect: `<Provider> runs the current model. Switch to another model first.`
 6. Typed `/model`:
    - Type `/model gpt-4o`.
    - Expect: switches directly without picker, prints `✓ Switched to gpt-4o (OpenAI).`, status bar updates.
+
+### Step 21: Connect web search
+
+Needs at least one real search key (any of Tavily, Brave, Exa, Perplexity, Parallel, Firecrawl). Never paste a real key into a terminal you are screen-sharing.
+
+1. Run `/search`.
+   - Expect: `Web search · …` header, a `Connected` group, a `Not connected` group, and `Automatic` last. Brave shows `key check uses one Brave query`; Tavily shows `key check can take up to 20 seconds` until it is connected.
+2. Pick a provider you have no key for and paste `fake-key-000000`.
+   - Expect: `Checking key…`, then `<Provider> rejected this key (HTTP 401). Check it and try again.` (Brave says `HTTP 422`), and the key prompt again. Press `Enter`: `Cancelled.` Nothing is written to `secrets.yaml`.
+3. Pick a provider you have a real key for and paste it.
+   - Expect: `✓ <Provider> connected · now used for search`. The status bar shows the provider. Ask `Use web_search to look up today's Python release news.` and get numbered results.
+4. Run `/search`, pick the connected provider, then `Disconnect` and `y`.
+   - Expect: `✓ <Provider> disconnected`; the list falls back to `Automatic`, and the key is gone from `secrets.yaml`.
+5. Set `export BRAVE_API_KEY=anything`, start `aldwin`, run `/search`, pick Brave, `Disconnect`, `y`.
+   - Expect: `Brave's key comes from BRAVE_API_KEY in your environment. Remove it from your shell profile, then restart Aldwin.`
+6. Pick SearXNG and press `Enter` at the address prompt.
+   - Expect: `Checking SearXNG…`, then either `✓ SearXNG connected at http://127.0.0.1:8080 · now used for search` or `Could not reach SearXNG (no SearXNG with JSON at http://127.0.0.1:8080). …`.
+7. Run `/search status`.
+   - Expect: the plain text list of every provider with `ready` / `not ready`.
+- [ ] Pass / Fail
 
 ## 3. Manual test run log template
 

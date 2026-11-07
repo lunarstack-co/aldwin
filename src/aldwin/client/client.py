@@ -107,9 +107,16 @@ from aldwin.protocol import (
     HistoryRequest,
     ModelsEvent,
     ModelsListRequest,
+    NoticeEvent,
+    ProviderDisconnectRequest,
     ProviderKeyRequest,
     ProviderServerRequest,
     Request,
+    SearchConnectRequest,
+    SearchDisconnectRequest,
+    SearchListRequest,
+    SearchProvidersEvent,
+    SearchUseRequest,
     SetModelRequest,
     SkillBodyEvent,
     SkillsEvent,
@@ -231,6 +238,29 @@ class AldwinClient:
                     )
                 if isinstance(event, (DoneEvent, ErrorEvent)):
                     return event
+        finally:
+            self._queues.pop(request.id, None)
+
+    async def _request_with_notices(
+        self, request: Request
+    ) -> tuple[DoneEvent | ErrorEvent, list[str]]:
+        """Like `_request_terminal`, also returning any notices sent on the way."""
+        self._ensure_reader()
+        queue: asyncio.Queue[Event | None] = asyncio.Queue()
+        self._queues[request.id] = queue
+        notices: list[str] = []
+        try:
+            await self._transport.send(request)
+            while True:
+                event = await queue.get()
+                if event is None:
+                    raise ProtocolError(
+                        f"Transport closed before request {request.id!r} completed."
+                    )
+                if isinstance(event, NoticeEvent):
+                    notices.append(event.message)
+                elif isinstance(event, (DoneEvent, ErrorEvent)):
+                    return event, notices
         finally:
             self._queues.pop(request.id, None)
 
@@ -404,6 +434,58 @@ class AldwinClient:
         return await self._request_terminal(
             ProviderKeyRequest(provider=provider, key=key)
         )
+
+    async def disconnect_provider(self, provider: str) -> DoneEvent | ErrorEvent:
+        """Remove a cloud model provider's saved key."""
+        return await self._request_terminal(
+            ProviderDisconnectRequest(provider=provider)
+        )
+
+    async def search_list(self) -> SearchProvidersEvent:
+        """Fetch every web search provider and how it is connected."""
+        self._ensure_reader()
+        request = SearchListRequest()
+        queue: asyncio.Queue[Event | None] = asyncio.Queue()
+        self._queues[request.id] = queue
+        result: SearchProvidersEvent | None = None
+        try:
+            await self._transport.send(request)
+            while True:
+                event = await queue.get()
+                if event is None:
+                    raise ProtocolError(
+                        "Transport closed before `search.list` completed."
+                    )
+                if isinstance(event, SearchProvidersEvent):
+                    result = event
+                elif isinstance(event, ErrorEvent):
+                    raise ProtocolError(event.message, code=event.code)
+                elif isinstance(event, DoneEvent):
+                    if result is None:
+                        return SearchProvidersEvent(re=request.id, setting="auto")
+                    return result
+        finally:
+            self._queues.pop(request.id, None)
+
+    async def search_connect(
+        self,
+        provider: str,
+        *,
+        key: str | None = None,
+        url: str | None = None,
+    ) -> tuple[DoneEvent | ErrorEvent, list[str]]:
+        """Check and save a search key or SearXNG address; return notices too."""
+        return await self._request_with_notices(
+            SearchConnectRequest(provider=provider, key=key, url=url)
+        )
+
+    async def search_use(self, provider: str) -> DoneEvent | ErrorEvent:
+        """Use a connected search provider, or ``auto``."""
+        return await self._request_terminal(SearchUseRequest(provider=provider))
+
+    async def search_disconnect(self, provider: str) -> DoneEvent | ErrorEvent:
+        """Forget a search provider's saved key or address."""
+        return await self._request_terminal(SearchDisconnectRequest(provider=provider))
 
     async def add_provider_server(
         self,

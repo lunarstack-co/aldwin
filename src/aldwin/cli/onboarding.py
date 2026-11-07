@@ -21,6 +21,7 @@ from aldwin.client import (
     LocalProviderStatus,
     ModelInfo,
     check_openai_key,
+    check_search_key,
     detect_local_providers,
     get_onboarding_status,
     list_models_for,
@@ -297,20 +298,30 @@ async def _prompt_optional_tavily(
     prompt_fn: PromptCallable,
     console: Console,
 ) -> str | None:
-    """Prompt for optional Tavily web search key."""
-    try:
-        tavily_raw = await prompt_fn(
-            "Tavily key for web search (input hidden, Enter to skip): ",
-            True,
-        )
-    except (EOFError, KeyboardInterrupt):
-        tavily_raw = ""
-    tavily_key = tavily_raw.strip() or None
-    if tavily_key:
-        tavily_line = Text(f"Tavily key… {mask_secret(tavily_key)} ", style="muted")
-        tavily_line.append("✓", style="ok")
-        console.print(tavily_line)
-    return tavily_key
+    """Ask for an optional Tavily key and keep it only if Tavily accepts it."""
+    for _attempt in range(MAX_KEY_ATTEMPTS):
+        try:
+            tavily_raw = await prompt_fn(
+                "Tavily key for web search (input hidden, Enter to skip): ",
+                True,
+            )
+        except (EOFError, KeyboardInterrupt):
+            tavily_raw = ""
+        tavily_key = tavily_raw.strip()
+        if not tavily_key:
+            return None
+        with console.status("Checking Tavily key…"):
+            ok, reason = await check_search_key("tavily", tavily_key)
+        if ok:
+            tavily_line = Text(f"Tavily key… {mask_secret(tavily_key)} ", style="muted")
+            tavily_line.append("✓", style="ok")
+            console.print(tavily_line)
+            return tavily_key
+        console.print(Text(reason, style="err"), soft_wrap=True)
+    console.print(
+        Text("Skipped web search. Connect it later with /search.", style="muted")
+    )
+    return None
 
 
 async def _handle_path_b_free_model(console: Console) -> bool:

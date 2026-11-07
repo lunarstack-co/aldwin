@@ -57,10 +57,10 @@ Notes live in `~/.aldwin/memory/notes/YYYY-MM-DD.md`. A rebuildable SQLite FTS5 
 
 | Tool | What it does | Needs approval? |
 |---|---|---|
-| `web_search` | Searches the web via the configured provider (SearXNG URL or a hosted key such as Tavily) | No |
+| `web_search` | Searches the web via the configured provider: self-hosted SearXNG, or a Tavily, Brave, Exa, Perplexity, Parallel, or Firecrawl key | No |
 | `web_fetch` | Fetches and extracts readable text from an `http`/`https` page (≤ 20,000 chars) | No |
 
-For self-hosted search, see [Set up SearXNG](searxng.md).
+Connect a provider with `/search`: pick it, paste the key, and Aldwin checks it before saving. For self-hosted search, see [Set up SearXNG](searxng.md); key and environment variable names are in the [README](../README.md#whats-next).
 
 ## Terminal
 

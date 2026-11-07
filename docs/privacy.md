@@ -5,7 +5,7 @@ Aldwin collects no analytics or telemetry. Everything it stores lives in one fol
 ## What leaves your computer
 
 - **To OpenAI or other cloud model providers:** when using a cloud model, your prompts, conversation exchanges, your profile and daily notes (within character caps), and the contents of any file, document, or page Aldwin reads for the turn.
-- **To search providers and websites:** when `web_search` runs, the query goes to the configured backend (Tavily, a self-hosted SearXNG instance, or another configured provider). Prefer a SearXNG instance you run yourself. SearXNG may be a localhost or private URL; that is intentional and is not blocked as SSRF. JSON output must be enabled on the instance (`format=json` / `search.formats`). When `web_fetch` runs, HTTP GET requests go to the target URL.
+- **To search providers and websites:** when `web_search` runs, the query goes to the configured backend: a self-hosted SearXNG instance, or Tavily, Brave, Exa, Perplexity, Parallel, or Firecrawl when you connected that provider. A hosted provider receives the query text and handles it under its own privacy terms. When you connect a provider with `/search` (or `/model` for model keys), Aldwin sends the key to that provider once to check it, and saves it only if the provider accepts it. Prefer a SearXNG instance you run yourself. SearXNG may be a localhost or private URL; that is intentional and is not blocked as SSRF. JSON output must be enabled on the instance (`format=json` / `search.formats`). When `web_fetch` runs, HTTP GET requests go to the target URL.
 - **To PyPI:** on launch, Aldwin may fetch public project metadata from `https://pypi.org/pypi/aldwin/json` to tell you an update is available. No user id, keys, or home path are sent. Set `check_for_updates: false` in `config.yaml` to turn this off.
 
 Everything else under `~/.aldwin` stays on your computer, including your API keys, the approval log, the memory index, and saved conversations.
@@ -31,7 +31,7 @@ All local data lives in `~/.aldwin`. Set `ALDWIN_HOME=/path/to/dir` to use a dif
 ```text
 ~/.aldwin/                  (mode 0700)
 ├── config.yaml             model, theme, limits, providers:, run_command.env_allow, connectors.import_paths
-├── secrets.yaml            provider API keys (openai, anthropic, gemini, …) and Tavily (mode 0600)
+├── secrets.yaml            model provider keys (openai, anthropic, gemini, …) and search keys (tavily, brave, exa, …) (mode 0600)
 ├── persona.md              assistant persona (user-editable or y/n approved)
 ├── skills/
 │   └── using-aldwin/

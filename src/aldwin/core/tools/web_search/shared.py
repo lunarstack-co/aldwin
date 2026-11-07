@@ -6,7 +6,7 @@ import asyncio
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final, Protocol, get_args, runtime_checkable
+from typing import TYPE_CHECKING, Any, Final, Protocol, get_args, runtime_checkable
 
 import httpx
 from agentling import Tool
@@ -20,6 +20,9 @@ from aldwin.core.settings import (
     update_config_search_provider,
 )
 from aldwin.core.tools import ToolOutput
+
+if TYPE_CHECKING:
+    from aldwin.core.tools.web_search.hosted import HostedSearchProvider
 
 SEARCH_TIMEOUT_SECONDS: Final[float] = 15.0
 MAX_QUERY_CHARS: Final[int] = 400
@@ -42,16 +45,14 @@ _turn_budget: ContextVar[_TurnSearchBudget | None] = ContextVar(
 )
 
 NO_KEY_MESSAGE: Final[str] = (
-    "Web search isn't set up. Set search.searxng_url (or SEARXNG_URL), "
-    "or add a search API key via aldwin setup / secrets."
-)
-PROVIDER_UNAVAILABLE_MESSAGE: Final[str] = (
-    "Search provider '{name}' is not available in this build yet."
+    "Web search isn't set up. Ask the user to run /search to connect a search provider."
 )
 
-IMPLEMENTED_SEARCH_PROVIDERS: Final[frozenset[str]] = frozenset({"tavily", "searxng"})
+IMPLEMENTED_SEARCH_PROVIDERS: Final[frozenset[str]] = frozenset(
+    {"tavily", "searxng", "brave", "exa", "perplexity", "parallel", "firecrawl"}
+)
 
-# Auto order: hosted keys first, then SearXNG URL, then later backends when implemented.
+# Auto order: Tavily key, then SearXNG URL, then the other hosted keys.
 AUTO_PROVIDER_ORDER: Final[tuple[str, ...]] = (
     "tavily",
     "searxng",
@@ -69,13 +70,44 @@ _SEARCH_PROVIDER_ALIASES: Final[dict[str, str]] = {
     "auto": "auto",
 }
 
-_SEARCH_SETUP_HINTS: Final[dict[str, str]] = {
-    "tavily": "Add a Tavily key with aldwin setup (or secrets / TAVILY_API_KEY).",
-    "searxng": (
-        "Start SearXNG with JSON on :8080 (auto-detected), or set "
-        "search.searxng_url / SEARXNG_URL."
-    ),
-}
+_SEARXNG_SETUP_HINT: Final[str] = (
+    "Start SearXNG with JSON on :8080 (found automatically), or connect it "
+    "with /search."
+)
+
+
+def hosted_provider_classes() -> dict[str, type[HostedSearchProvider]]:
+    """Hosted backends by catalogue name (imported lazily: they import this module)."""
+    from aldwin.core.tools.web_search.brave import BraveProvider
+    from aldwin.core.tools.web_search.exa import ExaProvider
+    from aldwin.core.tools.web_search.firecrawl import FirecrawlProvider
+    from aldwin.core.tools.web_search.parallel import ParallelProvider
+    from aldwin.core.tools.web_search.perplexity import PerplexityProvider
+    from aldwin.core.tools.web_search.tavily import TavilyProvider
+
+    classes: tuple[type[HostedSearchProvider], ...] = (
+        TavilyProvider,
+        BraveProvider,
+        ExaProvider,
+        PerplexityProvider,
+        ParallelProvider,
+        FirecrawlProvider,
+    )
+    return {cls.provider_id: cls for cls in classes}
+
+
+def _setup_hint(name: str) -> str:
+    if name == "searxng":
+        return _SEARXNG_SETUP_HINT
+    hosted = hosted_provider_classes().get(name)
+    return hosted.setup_hint() if hosted is not None else "Configure it first."
+
+
+def _display_name(name: str) -> str:
+    if name == "searxng":
+        return "SearXNG"
+    hosted = hosted_provider_classes().get(name)
+    return hosted.name if hosted is not None else name
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,26 +214,34 @@ def try_build_provider(
     timeout: float,
     http_client: httpx.AsyncClient | None,
     detect_local: bool = False,
+    secret_sources: tuple[SecretsConfig, ...] | None = None,
 ) -> SearchProvider | None:
     """Build one named provider when implemented and credentials/URL are present.
 
     Local SearXNG auto-detect is opt-in (``detect_local=True``) so the tool path
     never does a synchronous HTTP probe on the event loop. CLI status/switch
-    may pass ``detect_local=True``.
+    may pass ``detect_local=True``. Callers building several providers pass
+    ``secret_sources`` so ``secrets.yaml`` is read once.
     """
     if name not in IMPLEMENTED_SEARCH_PROVIDERS:
         return None
 
-    if name == "tavily":
-        from aldwin.core.tools.web_search.tavily import (
-            TavilyProvider,
-            resolve_tavily_key,
+    hosted = hosted_provider_classes().get(name)
+    if hosted is not None:
+        from aldwin.core.tools.web_search.hosted import (
+            load_search_secrets,
+            resolve_search_api_key,
         )
 
-        api_key = resolve_tavily_key(home, secrets)
+        sources = (
+            secret_sources
+            if secret_sources is not None
+            else load_search_secrets(home, secrets)
+        )
+        api_key = resolve_search_api_key(name, sources, env_aliases=hosted.env_aliases)
         if not api_key:
             return None
-        return TavilyProvider(api_key, client=http_client, timeout=timeout)
+        return hosted(api_key, client=http_client, timeout=timeout)
 
     if name == "searxng":
         from aldwin.core.tools.web_search.searxng import (
@@ -229,9 +269,10 @@ def build_search_provider(
     """Select a SearchProvider from config and secrets.
 
     When search.provider is auto, walk the catalogue order and return the first
-    implemented backend that has credentials or a URL. Unimplemented hosted
-    names are skipped until those backends ship.
+    backend that has credentials or a URL.
     """
+    from aldwin.core.tools.web_search.hosted import load_search_secrets
+
     if config is not None:
         effective_config = config
     elif home is not None:
@@ -241,6 +282,7 @@ def build_search_provider(
     search = effective_config.search
 
     if search.provider == "auto":
+        sources = load_search_secrets(home, secrets)
         for provider_name in AUTO_PROVIDER_ORDER:
             built = try_build_provider(
                 provider_name,
@@ -250,6 +292,7 @@ def build_search_provider(
                 timeout=timeout,
                 http_client=http_client,
                 detect_local=detect_local,
+                secret_sources=sources,
             )
             if built is not None:
                 return built
@@ -311,12 +354,15 @@ def ready_search_provider_names(
     config: AldwinConfig | None = None,
 ) -> tuple[str, ...]:
     """Implemented backends that currently have credentials or a URL."""
+    from aldwin.core.tools.web_search.hosted import load_search_secrets
+
     if config is not None:
         effective = config
     elif home is not None:
         effective = load_config(home)
     else:
         effective = AldwinConfig()
+    sources = load_search_secrets(home, secrets)
     ready: list[str] = []
     for name in sorted(IMPLEMENTED_SEARCH_PROVIDERS):
         built = try_build_provider(
@@ -327,6 +373,7 @@ def ready_search_provider_names(
             timeout=SEARCH_TIMEOUT_SECONDS,
             http_client=None,
             detect_local=True,
+            secret_sources=sources,
         )
         if built is not None:
             ready.append(name)
@@ -381,7 +428,7 @@ def describe_active_search(
         if name == "auto":
             marker = "· current" if configured == "auto" else ""
             detail = "first ready backend"
-            lines.append(f"  auto     {detail}{f' {marker}' if marker else ''}")
+            lines.append(f"  {'auto':<10} {detail}{f' {marker}' if marker else ''}")
             continue
 
         if name in ready:
@@ -392,15 +439,10 @@ def describe_active_search(
                 url = resolve_searxng_url(home, config=effective, detect_local=False)
                 if url:
                     extra = f" · {url}"
-            display = {
-                "tavily": "Tavily",
-                "searxng": "SearXNG",
-            }.get(name)
-            active = " · active" if label and display == label else ""
-            lines.append(f"  {name:<8} ready{extra}{active}")
+            active = " · active" if label and _display_name(name) == label else ""
+            lines.append(f"  {name:<10} ready{extra}{active}")
         else:
-            hint = _SEARCH_SETUP_HINTS.get(name, "not configured")
-            lines.append(f"  {name:<8} not ready - {hint}")
+            lines.append(f"  {name:<10} not ready - {_setup_hint(name)}")
 
     lines.append("Switch with /search <name> (saved in config.yaml).")
     return "\n".join(lines)
@@ -422,13 +464,6 @@ def switch_search_provider(
             message=f"Unknown search provider {raw_name.strip()!r}. Use: {names}",
         )
 
-    if canonical != "auto" and canonical not in IMPLEMENTED_SEARCH_PROVIDERS:
-        return SearchSwitchResult(
-            ok=False,
-            message=PROVIDER_UNAVAILABLE_MESSAGE.format(name=canonical),
-            provider=canonical,
-        )
-
     if config is not None:
         effective = config
     elif home is not None:
@@ -447,10 +482,9 @@ def switch_search_provider(
             detect_local=True,
         )
         if built is None:
-            hint = _SEARCH_SETUP_HINTS.get(canonical, "Configure it first.")
             return SearchSwitchResult(
                 ok=False,
-                message=f"{canonical} isn't ready. {hint}",
+                message=f"{canonical} isn't ready. {_setup_hint(canonical)}",
                 provider=canonical,
             )
 
@@ -489,14 +523,15 @@ def not_set_up_message(provider: SearchProviderName) -> tuple[str, str]:
     """Return ``(message, summary)`` when the factory could not build a provider."""
     from aldwin.core.tools.web_search.searxng import SEARXNG_NOT_SET_UP_MESSAGE
 
-    if provider not in ("auto", *IMPLEMENTED_SEARCH_PROVIDERS):
-        return (
-            PROVIDER_UNAVAILABLE_MESSAGE.format(name=provider),
-            "not available",
-        )
+    if provider == "auto":
+        return NO_KEY_MESSAGE, "not set up"
     if provider == "searxng":
         return SEARXNG_NOT_SET_UP_MESSAGE, "not set up"
-    return NO_KEY_MESSAGE, "not set up"
+    title = _display_name(provider)
+    message = (
+        f"{title} search isn't set up. Ask the user to run /search to connect {title}."
+    )
+    return message, "not set up"
 
 
 def scrub_secret_for_provider(provider: SearchProvider) -> str:

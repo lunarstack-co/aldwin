@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import os
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,6 +23,7 @@ from aldwin.core.settings import (
     load_config,
     load_secrets,
     normalize_key_field,
+    remove_secret,
     save_secrets,
 )
 
@@ -105,3 +108,48 @@ async def save_provider_key(
         return AccessStatus.OK
 
     return status
+
+
+class KeyRemoval(StrEnum):
+    """What removing a model provider's key did."""
+
+    REMOVED = "removed"
+    # The key is in an environment variable, which Aldwin cannot change.
+    ENV_ONLY = "env_only"
+    # The current model runs on this provider.
+    IN_USE = "in_use"
+    NOT_CONNECTED = "not_connected"
+
+
+def provider_of_model(model_ref: str) -> str:
+    """Provider name of a model reference (``openai`` for a bare model id)."""
+    cleaned = model_ref.strip()
+    return cleaned.split("/", 1)[0].lower() if "/" in cleaned else "openai"
+
+
+def remove_provider_key(
+    provider: str,
+    *,
+    current_model: str,
+    home: Path | None = None,
+    config: AldwinConfig | None = None,
+) -> tuple[KeyRemoval, str | None]:
+    """Remove a cloud provider's key from secrets.yaml.
+
+    Returns the outcome and, for ``ENV_ONLY``, the environment variable name.
+    The provider of the current model is never disconnected.
+    """
+    root = (home if home is not None else home_dir()).expanduser().resolve()
+    active_config = config
+    if active_config is None and (root / "config.yaml").exists():
+        active_config = load_config(root)
+    name = provider.strip().lower()
+    if provider_of_model(current_model) == name:
+        return KeyRemoval.IN_USE, None
+    field = resolve_provider_secret_field(name, active_config, root)
+    entry = get_provider(name, active_config)
+    env_var = (entry.env_var if entry is not None else None) or field.upper()
+    removed = remove_secret(field, root)
+    if os.environ.get(env_var, "").strip():
+        return KeyRemoval.ENV_ONLY, env_var
+    return (KeyRemoval.REMOVED if removed else KeyRemoval.NOT_CONNECTED), None

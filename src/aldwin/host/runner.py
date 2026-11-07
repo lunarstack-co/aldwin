@@ -78,7 +78,12 @@ from aldwin.core.policy import (
     sanitize_display_text,
 )
 from aldwin.core.providers.registry import parse_model_ref
-from aldwin.core.settings import load_config, load_secrets, update_config_model
+from aldwin.core.settings import (
+    ConfigError,
+    load_config,
+    load_secrets,
+    update_config_model,
+)
 from aldwin.core.skills import (
     LoadedSkill,
     build_catalogue,
@@ -96,6 +101,7 @@ from aldwin.core.tools.files import row_summary as file_row_summary
 from aldwin.core.tools.files import running_summary as file_running_summary
 from aldwin.core.tools.memory_tools import running_summary as memory_running_summary
 from aldwin.core.tools.todo import todo_counts, validate_todo_items
+from aldwin.core.tools.web_search.hosted import KeyCheck, KeyCheckResult
 from aldwin.core.workspace import (
     Workspace,
     default_workspace_root,
@@ -160,11 +166,18 @@ from aldwin.protocol import (
     ModelsEvent,
     ModelsListRequest,
     NoticeEvent,
+    ProviderDisconnectRequest,
     ProviderKeyRequest,
     ProviderModels,
     ProviderModelStatus,
     ProviderServerRequest,
     Request,
+    SearchConnectRequest,
+    SearchDisconnectRequest,
+    SearchListRequest,
+    SearchProviderItem,
+    SearchProvidersEvent,
+    SearchUseRequest,
     SetModelRequest,
     SkillBodyEvent,
     SkillsEvent,
@@ -584,6 +597,63 @@ class ApprovalBroker:
                         reason=None,
                     )
                 )
+
+
+def _env_key_message(
+    title: str, env_var: str | None, *, removed_saved_key: bool = False
+) -> str:
+    name = env_var or "the environment variable"
+    removed = "The saved key was removed. " if removed_saved_key else ""
+    return (
+        f"{removed}{title}'s key comes from {name} in your environment. Remove it "
+        "from your shell profile, then restart Aldwin."
+    )
+
+
+def key_check_error(
+    title: str, provider: str, check: KeyCheckResult
+) -> tuple[ErrorCode, str]:
+    """User-facing reason a key or address was not connected."""
+    detail = check.detail
+    if provider == "searxng":
+        if check.outcome is KeyCheck.UNEXPECTED:
+            return (
+                "invalid_request",
+                "Enter an address starting with http:// or https://.",
+            )
+        return (
+            "search_unavailable",
+            f"Could not reach SearXNG ({detail}). Start it with JSON output on, "
+            "or check the address.",
+        )
+    if check.outcome is KeyCheck.REJECTED:
+        return (
+            "auth_failed",
+            f"{title} rejected this key ({detail}). Check it and try again.",
+        )
+    if check.outcome is KeyCheck.NO_CREDITS:
+        return (
+            "request_rejected",
+            f"{title} accepted the key, but the account is out of credits "
+            f"({detail}). Add credit, then connect again.",
+        )
+    if check.outcome is KeyCheck.RATE_LIMITED:
+        return (
+            "rate_limited",
+            f"{title} is rate limiting this key ({detail}). "
+            "Wait a minute and try again.",
+        )
+    if check.outcome is KeyCheck.UNREACHABLE:
+        return (
+            "search_unavailable",
+            f"Could not reach {title} to check the key ({detail}). Check your "
+            "connection and try again.",
+        )
+    return (
+        "search_unavailable",
+        f"{title} gave an unexpected answer while checking the key ({detail}). "
+        "Try again in a minute.",
+    )
 
 
 class AldwinHost:
@@ -1048,6 +1118,16 @@ class AldwinHost:
                 await self._handle_provider_key(scope, req)
             elif isinstance(req, ProviderServerRequest):
                 await self._handle_provider_server(scope, req)
+            elif isinstance(req, ProviderDisconnectRequest):
+                await self._handle_provider_disconnect(scope, req)
+            elif isinstance(req, SearchListRequest):
+                await self._handle_search_list(scope, req)
+            elif isinstance(req, SearchConnectRequest):
+                await self._handle_search_connect(scope, req)
+            elif isinstance(req, SearchUseRequest):
+                await self._handle_search_use(scope, req)
+            elif isinstance(req, SearchDisconnectRequest):
+                await self._handle_search_disconnect(scope, req)
             elif isinstance(req, SkillsListRequest):
                 self._maybe_rebuild_skills_from_disk()
                 await scope.emit(self._skills_event(req.id))
@@ -1693,6 +1773,177 @@ class AldwinHost:
                 "model_unavailable",
                 f"Could not reach {title} to verify the key.",
             )
+
+    async def _handle_provider_disconnect(
+        self,
+        scope: RequestScope,
+        req: ProviderDisconnectRequest,
+    ) -> None:
+        from aldwin.core.providers.keys import KeyRemoval, remove_provider_key
+        from aldwin.core.providers.registry import get_provider
+
+        provider = req.provider.strip().lower()
+        entry = get_provider(provider, self._config)
+        title = entry.title if entry else provider.title()
+        outcome, env_var = await asyncio.to_thread(
+            remove_provider_key,
+            provider,
+            current_model=self._model,
+            home=self._home,
+            config=self._config,
+        )
+        if outcome is KeyRemoval.REMOVED:
+            self._provider_models_cache.pop(provider, None)
+            await scope.done("ok")
+        elif outcome is KeyRemoval.IN_USE:
+            await scope.error(
+                "request_rejected",
+                f"{title} runs the current model. Switch to another model first.",
+            )
+        elif outcome is KeyRemoval.ENV_ONLY:
+            await scope.error("request_rejected", _env_key_message(title, env_var))
+        else:
+            await scope.error("not_found", f"{title} has no saved key.")
+
+    async def _handle_search_list(
+        self,
+        scope: RequestScope,
+        req: SearchListRequest,
+    ) -> None:
+        from dataclasses import asdict
+
+        from aldwin.core.tools.web_search.connect import search_overview
+
+        try:
+            overview = await asyncio.to_thread(search_overview, self._home)
+        except ConfigError as exc:
+            await scope.error("invalid_request", str(exc))
+            return
+        await scope.emit(
+            SearchProvidersEvent(
+                re=req.id,
+                setting=overview.setting,
+                active=overview.active,
+                items=[SearchProviderItem(**asdict(i)) for i in overview.items],
+            )
+        )
+        await scope.done("ok")
+
+    async def _handle_search_connect(
+        self,
+        scope: RequestScope,
+        req: SearchConnectRequest,
+    ) -> None:
+        from aldwin.core.tools.web_search.connect import (
+            connect_search_key,
+            connect_searxng,
+        )
+        from aldwin.core.tools.web_search.shared import hosted_provider_classes
+
+        provider = req.provider.strip().lower()
+        hosted = hosted_provider_classes().get(provider)
+        try:
+            if provider == "searxng":
+                title = "SearXNG"
+                result = await connect_searxng(req.url or "", home=self._home)
+            elif hosted is not None:
+                title = hosted.name
+                if not (req.key or "").strip():
+                    await scope.error("invalid_request", f"Enter a {title} API key.")
+                    return
+                result = await connect_search_key(
+                    provider,
+                    req.key or "",
+                    home=self._home,
+                    transport=self._backend_transport,
+                )
+            else:
+                await scope.error(
+                    "invalid_request", f"Unknown search provider {req.provider!r}."
+                )
+                return
+        except ConfigError as exc:
+            await scope.error("invalid_request", str(exc))
+            return
+
+        if result.check.outcome is KeyCheck.OK:
+            if result.env_override:
+                await scope.emit(
+                    NoticeEvent(
+                        re=req.id,
+                        message=(
+                            f"{result.env_override} in your environment still "
+                            "takes priority over this key."
+                        ),
+                    )
+                )
+            await scope.done("ok")
+            return
+        code, message = key_check_error(title, provider, result.check)
+        await scope.error(code, message)
+
+    async def _handle_search_use(
+        self,
+        scope: RequestScope,
+        req: SearchUseRequest,
+    ) -> None:
+        from aldwin.core.tools.web_search import switch_search_provider
+
+        try:
+            result = await asyncio.to_thread(
+                switch_search_provider, req.provider, self._home
+            )
+        except ConfigError as exc:
+            await scope.error("invalid_request", str(exc))
+            return
+        if result.ok:
+            await scope.done("ok")
+        else:
+            await scope.error("request_rejected", result.message)
+
+    async def _handle_search_disconnect(
+        self,
+        scope: RequestScope,
+        req: SearchDisconnectRequest,
+    ) -> None:
+        from aldwin.core.tools.web_search.connect import (
+            DisconnectOutcome,
+            disconnect_search,
+        )
+        from aldwin.core.tools.web_search.shared import hosted_provider_classes
+
+        provider = req.provider.strip().lower()
+        hosted = hosted_provider_classes().get(provider)
+        if provider != "searxng" and hosted is None:
+            await scope.error(
+                "invalid_request", f"Unknown search provider {req.provider!r}."
+            )
+            return
+        title = "SearXNG" if hosted is None else hosted.name
+        try:
+            result = await asyncio.to_thread(
+                disconnect_search, provider, home=self._home
+            )
+        except ConfigError as exc:
+            await scope.error("invalid_request", str(exc))
+            return
+        if result.outcome is DisconnectOutcome.REMOVED:
+            await scope.done("ok")
+        elif result.outcome is DisconnectOutcome.ENV_ONLY:
+            await scope.error(
+                "request_rejected",
+                _env_key_message(
+                    title, result.env_var, removed_saved_key=result.removed_saved_key
+                ),
+            )
+        elif result.outcome is DisconnectOutcome.DETECTED:
+            await scope.error(
+                "request_rejected",
+                "SearXNG was found running on this computer, so there is nothing "
+                "to disconnect. Stop it, or pick another provider.",
+            )
+        else:
+            await scope.error("not_found", f"{title} is not connected.")
 
     async def _handle_provider_server(
         self,
