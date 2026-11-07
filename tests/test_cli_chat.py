@@ -687,10 +687,10 @@ def test_render_whats_new_copy_and_plain_mode() -> None:
     buf = io.StringIO()
     console = create_console(plain=True, width=80, record=True, file=buf)
     renderer = ChatRenderer(console, plain=True)
-    renderer.render_whats_new(WHATS_NEW_TEXT, version="0.0.4")
+    renderer.render_whats_new(WHATS_NEW_TEXT, version="0.0.5")
     text = console.export_text()
-    assert "What's new in 0.0.4" in text
-    assert "Any model, including local" in text
-    assert "/model" in text
-    assert "no reconfigure" in text
+    assert "What's new in 0.0.5" in text
+    assert "Web search your way" in text
+    assert "/search" in text
+    assert "SearXNG" in text
     assert "Conversation, memory and settings" in text

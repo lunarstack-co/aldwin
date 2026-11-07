@@ -32,7 +32,7 @@ Then start Aldwin:
 aldwin
 ```
 
-Already on `0.0.3`? Upgrade in place and keep your conversation, memory, persona, and settings:
+Already on `0.0.4`? Upgrade in place and keep your conversation, memory, persona, and settings:
 
 ```bash
 uv tool upgrade aldwin
@@ -95,7 +95,7 @@ Supported shapes are `openai_chat`, `anthropic`, and `ollama`. Non-loopback `htt
 - **Documents:** read PDF, Word, PowerPoint, Excel, CSV, and HTML files as markdown, and download files from the web.
 - **Notes and memory:** remember facts you tell it, search past notes and conversations, and keep a profile you write yourself.
 - **Persona:** change how Aldwin talks by editing `persona.md` or asking it to.
-- **Web:** search the web and read pages.
+- **Web:** search the web with SearXNG or a hosted key (`/search`), and read pages.
 - **Terminal:** run shell commands, always with your approval.
 - **Planning:** keep a live checklist for longer jobs and do exact arithmetic and date maths.
 - **Skills:** ten built-in skills, your own skills in `~/.aldwin/skills/`, and an `@` picker to choose one for a message.
@@ -154,6 +154,7 @@ Read the [safety model](https://github.com/lunarstack-co/aldwin/blob/main/docs/s
 - **No telemetry.** Aldwin collects no analytics.
 - **Sent to a cloud model provider:** when you use a cloud model, your prompts, recent conversation, your profile and recent notes, and anything Aldwin reads for the turn — including connector tool results — go to that provider.
 - **Fully local:** when you use Ollama, LM Studio, or another loopback model, conversation data stays on your machine (except optional web tools, remote connectors, and the PyPI update check).
+- **Web search:** with SearXNG, the query goes to your instance (often localhost). With a hosted key, the query goes to that provider. Connect or switch with `/search`.
 - **Stays local:** everything else in `~/.aldwin`, including your API keys, saved conversations, sign-in tokens, and logs. Connector tokens never go to the model.
 - **Platforms:** macOS 13+ and Linux. Local MCP servers are not supported on Windows.
 
@@ -174,11 +175,9 @@ See all [commands, slash commands, and shortcuts](https://github.com/lunarstack-
 
 ---
 
-## What's next
+## Web search
 
-Aldwin runs inside your terminal process; it isn't always-on yet. Closing the terminal stops any active task, and your conversation resumes next time you run `aldwin`. Windows is not yet supported.
-
-Web search works with self-hosted SearXNG or one hosted search key. Type `/search`, pick a provider with the arrow keys, and paste its key: Aldwin checks the key with the provider before saving it, and tells you why if it doesn't work. The same screen switches provider, updates a key, or disconnects one. Step-by-step guides for every provider are at [askaldwin.com/docs/search](https://askaldwin.com/docs/search/overview); for SearXNG see also [Set up SearXNG](docs/searxng.md).
+Web search works with self-hosted SearXNG or one hosted search key — all behind the same `web_search` tool. Type `/search`, pick a provider with the arrow keys, and paste its key: Aldwin checks the key with the provider before saving it, and tells you why if it doesn't work. The same screen switches provider, updates a key, or disconnects one. Step-by-step guides for every provider are at [askaldwin.com/docs/search](https://askaldwin.com/docs/search/overview); for SearXNG see also [Set up SearXNG](docs/searxng.md).
 
 | Provider | Cost | Key check |
 |---|---|---|
@@ -191,6 +190,14 @@ Web search works with self-hosted SearXNG or one hosted search key. Type `/searc
 | Firecrawl | paid plan with credits | free |
 
 Keys are saved in `~/.aldwin/secrets.yaml` (mode `0600`). You can also set them in the environment (`TAVILY_API_KEY`, `BRAVE_API_KEY` or `BRAVE_SEARCH_API_KEY`, `EXA_API_KEY`, `PERPLEXITY_API_KEY`, `PARALLEL_API_KEY`, `FIRECRAWL_API_KEY`, `SEARXNG_URL`); an environment variable wins over a saved key. With `search.provider: auto` (the default), Aldwin uses the first connected provider in the order above, so a Tavily key wins over SearXNG.
+
+SearXNG must expose JSON results (`format=json` / `search.formats`). Prefer SearXNG when you want queries to stay on a machine you control; a hosted provider receives the query under its own privacy terms. Brave's key check uses one of your plan's queries.
+
+---
+
+## What's next
+
+Aldwin runs inside your terminal process; it isn't always-on yet. Closing the terminal stops any active task, and your conversation resumes next time you run `aldwin`. Windows is not yet supported.
 
 ---
 

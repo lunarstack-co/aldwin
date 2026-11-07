@@ -102,15 +102,15 @@ def built_distributions(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path,
 
 
 @pytest.mark.uninitialized_home
-def test_version_is_0_0_4(aldwin_home: Path) -> None:
-    """TC-01: pyproject.toml, aldwin.__version__, and `aldwin --version` are 0.0.4."""
+def test_version_is_0_0_5(aldwin_home: Path) -> None:
+    """TC-01: pyproject.toml, aldwin.__version__, and `aldwin --version` are 0.0.5."""
     pyproject_data = tomllib.loads(
         (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )
-    assert pyproject_data["project"]["version"] == "0.0.4"
-    assert aldwin.__version__ == "0.0.4"
+    assert pyproject_data["project"]["version"] == "0.0.5"
+    assert aldwin.__version__ == "0.0.5"
     expected = (
-        f"aldwin 0.0.4 (protocol v2, agentling {metadata.version('agentling')},"
+        f"aldwin 0.0.5 (protocol v2, agentling {metadata.version('agentling')},"
         f" mcp {metadata.version('mcp')})"
     )
 
@@ -172,8 +172,8 @@ def test_build_produces_sdist_and_wheel_under_1mb(
 ) -> None:
     """TC-01: `uv build` produces sdist and wheel in dist/ under the 1 MB budget."""
     wheel_path, sdist_path = built_distributions
-    assert wheel_path.name == "aldwin-0.0.4-py3-none-any.whl"
-    assert sdist_path.name == "aldwin-0.0.4.tar.gz"
+    assert wheel_path.name == "aldwin-0.0.5-py3-none-any.whl"
+    assert sdist_path.name == "aldwin-0.0.5.tar.gz"
 
     assert 0 < wheel_path.stat().st_size < MAX_DIST_BYTES
     assert 0 < sdist_path.stat().st_size < MAX_DIST_BYTES
@@ -202,7 +202,7 @@ def test_wheel_and_sdist_include_assets_and_exclude_dev_files(
         sdist_names = set(tf.getnames())
 
     for asset in EXPECTED_WHEEL_ASSETS:
-        expected_sdist_entry = f"aldwin-0.0.4/src/{asset}"
+        expected_sdist_entry = f"aldwin-0.0.5/src/{asset}"
         assert expected_sdist_entry in sdist_names, (
             f"Missing {expected_sdist_entry} in sdist"
         )
@@ -213,10 +213,10 @@ def test_wheel_and_sdist_include_assets_and_exclude_dev_files(
         "CHANGELOG.md",
         "pyproject.toml",
     ):
-        assert f"aldwin-0.0.4/{required_root_file}" in sdist_names
+        assert f"aldwin-0.0.5/{required_root_file}" in sdist_names
 
     for entry in sdist_names:
-        rel_entry = entry.removeprefix("aldwin-0.0.4/")
+        rel_entry = entry.removeprefix("aldwin-0.0.5/")
         for forbidden in FORBIDDEN_ARCHIVE_PREFIXES:
             assert not rel_entry.startswith(forbidden), (
                 f"Forbidden path {entry!r} leaked into sdist"
@@ -408,6 +408,44 @@ def test_docs_index_links_every_doc() -> None:
         "docs/releasing.md",
     ):
         assert Path(doc).name in index, f"docs/README.md does not link to {doc}"
+
+
+def test_changelog_0_0_5_entry() -> None:
+    """CHANGELOG.md has a complete 0.0.5 entry for multi-provider web search."""
+    changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "## [0.0.5] - 2026-11-07" in changelog
+    assert "https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.5" in changelog
+
+    start = changelog.index("## [0.0.5]")
+    end = changelog.index("## [0.0.4]")
+    assert start < end
+    section = changelog[start:end]
+    for heading in (
+        "### Added",
+        "### Changed",
+        "### Security",
+        "### Upgrade notes",
+        "### Known limitations",
+        "### Sizes",
+    ):
+        assert heading in section, f"Missing {heading!r} in the 0.0.5 changelog entry"
+
+    for snippet in (
+        "Multi-provider web search",
+        "/search",
+        "SearXNG",
+        "Tavily",
+        "Brave",
+        "Exa",
+        "Perplexity",
+        "Parallel",
+        "Firecrawl",
+        "search.provider: auto",
+        "DuckDuckGo is not in the catalogue",
+    ):
+        assert snippet in section, f"Missing {snippet!r} in the 0.0.5 changelog entry"
+    assert "co-authored-by" not in section.lower()
+    assert "generated with" not in section.lower()
 
 
 def test_changelog_0_0_4_entry() -> None:

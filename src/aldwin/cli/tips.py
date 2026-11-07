@@ -10,6 +10,7 @@ TIPS: Final[tuple[str, ...]] = (
     "Try: find every TODO in this folder",
     "Try: summarise report.pdf",
     "Switch between cloud and local models any time with /model.",
+    "Connect web search with /search — SearXNG or a hosted key.",
     "Press Esc to stop an answer in progress",
     "Alt+Enter (or Shift+Enter) inserts a newline",
     "Use /verbose to see tool output previews",
