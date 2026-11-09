@@ -64,6 +64,21 @@ Every test runs against a temporary home folder, so your real `~/.aldwin` is nev
 
 See [tests/README.md](tests/README.md) for the test layout and shared fixtures (`aldwin_home`, `workspace`, `fake_model`, `host_client` and others).
 
+## Web UI
+
+The browser interface is a Next.js app in [web/](web/). It builds to static files that are copied into `src/aldwin/web/static/` and shipped inside the Python package, so people who install Aldwin never need Node. You only need Node 22 and npm if you change the web UI:
+
+```bash
+cd web
+npm ci
+npm run lint
+npm run typecheck
+npm run build        # writes the static export into src/aldwin/web/static/
+npm run test:e2e     # serves the export and runs the Cypress smoke test
+```
+
+CI runs these in a separate `web` job. See [web/README.md](web/README.md) for the dev server and the design tokens.
+
 ## How the code is organised
 
 Aldwin is split into packages that only talk to each other in one direction:
@@ -75,10 +90,11 @@ Aldwin is split into packages that only talk to each other in one direction:
 | `aldwin.host` | Runs turns, turns agent events into protocol events, handles approvals and sessions |
 | `aldwin.client` | The Python API an interface uses to talk to the host |
 | `aldwin.cli` | The terminal interface: commands, input and rendering |
+| `aldwin.web` | The browser interface: holds the bundled web UI in `static/` |
 
 The rules below are checked by [tests/test_architecture.py](tests/test_architecture.py), so a pull request that breaks them fails CI:
 
-- **`cli` never imports `core`.** The terminal sends requests through `client` and draws protocol events. It never touches the agent, tools or skill files directly.
+- **`cli` and `web` never import `core`.** An interface sends requests through `client` and draws protocol events. It never touches the agent, tools or skill files directly.
 - **`client` and `protocol` never import `core` or Agentling.**
 - **`core` never imports `protocol`, `host`, `client` or `cli`.**
 

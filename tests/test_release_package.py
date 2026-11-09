@@ -10,6 +10,7 @@ import tarfile
 import time
 import tomllib
 import zipfile
+from collections.abc import Callable
 from importlib import metadata
 from pathlib import Path
 from typing import Any
@@ -23,7 +24,8 @@ from aldwin.cli.main import app
 from aldwin.core.home import STARTER_ASSETS
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-MAX_DIST_BYTES = 1_048_576  # 1 MB NFR package size cap
+# 3 MiB leaves room for the bundled web UI and its fonts.
+MAX_DIST_BYTES = 3_145_728
 MAX_GIF_BYTES = 5_242_880  # 5 MB NFR GIF size cap
 
 EXPECTED_WHEEL_ASSETS = (
@@ -56,6 +58,8 @@ EXPECTED_WHEEL_ASSETS = (
     "aldwin/core/assets/skills/using-aldwin/SKILL.md.tmpl",
     "aldwin/core/assets/skills/files/SKILL.md",
     "aldwin/core/assets/skills/terminal/SKILL.md",
+    "aldwin/web/__init__.py",
+    "aldwin/web/static/index.html",
 )
 
 FORBIDDEN_ARCHIVE_PREFIXES = (
@@ -167,10 +171,10 @@ def test_docs_extra_declared() -> None:
     assert names == {"python-docx", "openpyxl", "reportlab"}
 
 
-def test_build_produces_sdist_and_wheel_under_1mb(
+def test_build_produces_sdist_and_wheel_under_3mib(
     built_distributions: tuple[Path, Path],
 ) -> None:
-    """TC-01: `uv build` produces sdist and wheel in dist/ under the 1 MB budget."""
+    """TC-01, TC-16: sdist and wheel stay under the 3 MiB budget."""
     wheel_path, sdist_path = built_distributions
     assert wheel_path.name == "aldwin-0.0.5-py3-none-any.whl"
     assert sdist_path.name == "aldwin-0.0.5.tar.gz"
@@ -221,6 +225,32 @@ def test_wheel_and_sdist_include_assets_and_exclude_dev_files(
             assert not rel_entry.startswith(forbidden), (
                 f"Forbidden path {entry!r} leaked into sdist"
             )
+
+
+def test_wheel_ships_web_export_but_not_the_web_project(
+    built_distributions: tuple[Path, Path],
+) -> None:
+    """TC-15, TC-18, TC-20: the UI ships as static files only.
+
+    The fixture builds without Node, so this also proves the committed page
+    is enough for a Python-only build.
+    """
+    wheel_path, sdist_path = built_distributions
+    with zipfile.ZipFile(wheel_path) as zf:
+        web_entries = [n for n in zf.namelist() if n.startswith("aldwin/web/")]
+        index_html = zf.read("aldwin/web/static/index.html").decode("utf-8")
+
+    assert 'data-testid="aldwin-stub"' in index_html
+    for entry in web_entries:
+        assert entry == "aldwin/web/__init__.py" or entry.startswith(
+            "aldwin/web/static/"
+        ), f"Unexpected web file {entry!r} in wheel"
+        for marker in ("node_modules", "package.json", ".next/", "cypress"):
+            assert marker not in entry, f"{entry!r} leaked into wheel"
+
+    with tarfile.open(sdist_path, "r:gz") as tf:
+        sdist_names = tf.getnames()
+    assert not any(n.startswith("aldwin-0.0.5/web/") for n in sdist_names)
 
 
 def test_wheel_assets_loadable_from_unpacked_package(
@@ -655,3 +685,27 @@ def test_release_workflow_permissions_and_version_guard() -> None:
     build_steps = jobs["build"]["steps"]
     step_names = [s.get("name", "") for s in build_steps]
     assert any("tag matches pyproject.toml" in name for name in step_names)
+
+
+def test_release_workflow_builds_spa_before_uv_build() -> None:
+    """TC-13: release builds the web UI with Node before `uv build`."""
+    workflow_path = REPO_ROOT / ".github" / "workflows" / "release.yml"
+    data: dict[str, Any] = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    steps: list[dict[str, Any]] = data["jobs"]["build"]["steps"]
+
+    def index_of(predicate: Callable[[dict[str, Any]], bool]) -> int:
+        matches = [i for i, step in enumerate(steps) if predicate(step)]
+        assert matches, "Expected step not found in release build job"
+        return matches[0]
+
+    node = index_of(lambda s: s.get("uses", "").startswith("actions/setup-node@"))
+    spa = index_of(lambda s: "npm run build" in s.get("run", ""))
+    tests = index_of(lambda s: "pytest" in s.get("run", ""))
+    uv_build = index_of(lambda s: s.get("run", "").strip() == "uv build")
+
+    assert node < spa < tests < uv_build
+    assert steps[node]["with"]["node-version"] == "22"
+    spa_step = steps[spa]
+    assert spa_step["working-directory"] == "web"
+    assert "npm ci" in spa_step["run"]
+    assert "test -f ../src/aldwin/web/static/index.html" in spa_step["run"]

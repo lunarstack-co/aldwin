@@ -95,3 +95,46 @@ jobs:
 
       - name: Security + policy suite
         run: uv run pytest tests/security -q --tb=short
+
+  web:
+    name: web
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        run: |
+          npm ci
+          npx cypress install
+
+      - name: Lint (eslint)
+        run: npm run lint
+
+      - name: Type-check (tsc)
+        run: npm run typecheck
+
+      - name: Build static export
+        run: npm run build
+
+      # The action's built-in URL probe gives up on the first refused
+      # connection when Node reports it as ERR_SOCKET_CLOSED_BEFORE_CONNECTION,
+      # so the wait-on CLI, which retries every error, does the waiting.
+      - name: Smoke test (Cypress)
+        uses: cypress-io/github-action@v6
+        with:
+          working-directory: web
+          install: false
+          start: npm run preview
+          wait-on: npx wait-on --timeout 60000 http-get://127.0.0.1:4173
