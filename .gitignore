@@ -37,3 +37,14 @@ tests/e2e/out/
 .vscode/
 .idea/
 .DS_Store
+
+# Web UI (web/). Its build output is copied into src/aldwin/web/static/,
+# which stays tracked so a Python-only build still ships a page.
+web/node_modules/
+web/.next/
+web/out/
+web/next-env.d.ts
+web/**/*.tsbuildinfo
+web/cypress/screenshots/
+web/cypress/videos/
+web/cypress/downloads/

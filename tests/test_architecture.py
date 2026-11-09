@@ -9,6 +9,7 @@ import sys
 import tomllib
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import yaml
 from packaging.version import Version
@@ -90,6 +91,18 @@ def test_cli_never_imports_core() -> None:
         == []
     )
     assert mcp_import_violations(SRC_ALDWIN / "cli") == []
+
+
+def test_web_door_never_imports_core() -> None:
+    """TC-21: the web door keeps the same walls as the CLI door."""
+    assert (
+        check_forbidden_imports(
+            SRC_ALDWIN / "web",
+            ("aldwin.core", "agentling"),
+        )
+        == []
+    )
+    assert mcp_import_violations(SRC_ALDWIN / "web") == []
 
 
 def test_client_never_imports_core_or_agentling() -> None:
@@ -335,6 +348,47 @@ def test_ci_workflow_runs_matrix_and_uploads_coverage() -> None:
     assert "workflow_dispatch" in e2e_text
     assert "schedule:" in e2e_text
     assert "pytest -m e2e" in e2e_text
+
+
+def _ci_jobs() -> dict[str, Any]:
+    ci_path = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+    jobs: dict[str, Any] = yaml.safe_load(ci_path.read_text(encoding="utf-8"))["jobs"]
+    return jobs
+
+
+def test_ci_workflow_has_web_job() -> None:
+    """TC-10: a separate `web` job lints, type-checks, builds and smokes."""
+    web = _ci_jobs()["web"]
+    assert web["runs-on"] == "ubuntu-latest"
+    assert web["defaults"]["run"]["working-directory"] == "web"
+
+    steps: list[dict[str, Any]] = web["steps"]
+    node = next(s for s in steps if s.get("uses", "").startswith("actions/setup-node@"))
+    assert node["with"]["node-version"] == "22"
+    runs = [s.get("run", "") for s in steps]
+    for command in ("npm run lint", "npm run typecheck", "npm run build"):
+        assert command in runs, f"web job is missing {command!r}"
+    install = next(r for r in runs if "npm ci" in r)
+    # The action runs with install: false, so the job must fetch the binary
+    # itself rather than rely on npm running postinstall scripts.
+    assert "npx cypress install" in install
+
+    cypress = next(
+        s for s in steps if s.get("uses", "") == "cypress-io/github-action@v6"
+    )
+    assert cypress["with"]["working-directory"] == "web"
+    assert cypress["with"]["install"] is False
+
+
+def test_ci_test_job_remains_node_free() -> None:
+    """TC-12: the Python matrix never needs Node; the web job owns it."""
+    for step in _ci_jobs()["test"]["steps"]:
+        uses = step.get("uses", "")
+        run = step.get("run", "")
+        assert not uses.startswith("actions/setup-node@")
+        assert "cypress" not in uses
+        for tool in ("npm ", "npx ", "node "):
+            assert tool not in run, f"test job runs {tool.strip()!r}"
 
 
 def test_manual_test_doc_exists_and_covers_all_fr11_steps() -> None:

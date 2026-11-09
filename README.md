@@ -203,7 +203,7 @@ Aldwin runs inside your terminal process; it isn't always-on yet. Closing the te
 
 ## Contributing
 
-Contributions are welcome. Read the [contributing guide](https://github.com/lunarstack-co/aldwin/blob/main/CONTRIBUTING.md) to get set up, and see the [docs index](https://github.com/lunarstack-co/aldwin/blob/main/docs/README.md) for the protocol, test, and release docs.
+Contributions are welcome. Read the [contributing guide](https://github.com/lunarstack-co/aldwin/blob/main/CONTRIBUTING.md) to get set up, and see the [docs index](https://github.com/lunarstack-co/aldwin/blob/main/docs/README.md) for the protocol, test, and release docs. Working on the browser interface? Start with the [web UI guide](https://github.com/lunarstack-co/aldwin/blob/main/web/README.md).
 
 Have a question or an idea? Start a [discussion](https://github.com/lunarstack-co/aldwin/discussions). Found a bug? Open an [issue](https://github.com/lunarstack-co/aldwin/issues).
 
