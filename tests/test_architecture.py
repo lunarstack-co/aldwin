@@ -378,6 +378,11 @@ def test_ci_workflow_has_web_job() -> None:
     )
     assert cypress["with"]["working-directory"] == "web"
     assert cypress["with"]["install"] is False
+    # A bare URL uses the action's own probe, which stops on the first
+    # refused connection instead of waiting for the preview server.
+    wait_on = cypress["with"]["wait-on"]
+    assert wait_on.startswith("npx wait-on "), wait_on
+    assert "http-get://127.0.0.1:4173" in wait_on
 
 
 def test_ci_test_job_remains_node_free() -> None:

@@ -128,10 +128,13 @@ jobs:
       - name: Build static export
         run: npm run build
 
+      # The action's built-in URL probe gives up on the first refused
+      # connection when Node reports it as ERR_SOCKET_CLOSED_BEFORE_CONNECTION,
+      # so the wait-on CLI, which retries every error, does the waiting.
       - name: Smoke test (Cypress)
         uses: cypress-io/github-action@v6
         with:
           working-directory: web
           install: false
           start: npm run preview
-          wait-on: http://127.0.0.1:4173
+          wait-on: npx wait-on --timeout 60000 http-get://127.0.0.1:4173
