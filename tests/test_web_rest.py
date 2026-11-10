@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 import yaml
-from fastapi.routing import APIRoute
+from fastapi.routing import APIRoute, APIWebSocketRoute
 from fastapi.testclient import TestClient
 
 from aldwin.core.providers.base import AccessStatus, ModelInfo
@@ -23,6 +23,8 @@ from aldwin.web.auth import COOKIE_NAME, Authenticator
 from aldwin.web.routes.conversations import conversations_router
 from aldwin.web.routes.settings import settings_router
 from aldwin.web.routes.setup import setup_router
+from aldwin.web.routes.ws import ws_router
+from aldwin.web.runtime import WebHostRuntime
 
 PORT = 7841
 BASE = f"http://127.0.0.1:{PORT}"
@@ -45,9 +47,6 @@ HTTP_ROUTES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
     ("POST", "/v1/setup/models", {"provider": "openai"}),
     ("POST", "/v1/setup/save", {}),
     ("POST", "/v1/setup/profile", {"skipped": True}),
-)
-# Served by the WebSocket bridge; its signed-out check runs once it is mounted.
-PENDING_ROUTES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
     ("POST", "/v1/ws-ticket", None),
 )
 
@@ -130,26 +129,9 @@ def test_every_route_refuses_a_signed_out_request(
     assert "aldwin web" in response.json()["detail"]
 
 
-@pytest.mark.parametrize(("method", "path", "body"), PENDING_ROUTES)
-def test_pending_routes_refuse_a_signed_out_request(
-    api: TestClient,
-    anon: TestClient,
-    auth: Authenticator,
-    method: str,
-    path: str,
-    body: dict[str, Any] | None,
-) -> None:
-    """TC-08: the WebSocket ticket route is listed and checked once it exists."""
-    # Before the route exists, the UI's static files answer 404 or 405.
-    if _call(api, method, path, body).status_code in (404, 405):
-        pytest.skip(f"{method} {path} is not served yet")
-    anon.cookies.clear()
-    assert _call(anon, method, path, body).status_code == 401
-
-
 def test_inventory_lists_the_websocket_ticket_route() -> None:
-    """TC-08: the ticket route stays in the inventory before it is served."""
-    assert ("POST", "/v1/ws-ticket") in {(m, p) for m, p, _ in PENDING_ROUTES}
+    """TC-08: the WebSocket ticket route is covered by the signed-out check."""
+    assert ("POST", "/v1/ws-ticket") in {(m, p) for m, p, _ in HTTP_ROUTES}
 
 
 def test_inventory_covers_every_rest_route(tmp_path: Path) -> None:
@@ -159,8 +141,11 @@ def test_inventory_covers_every_rest_route(tmp_path: Path) -> None:
         conversations_router(tmp_path),
         settings_router(tmp_path),
         setup_router(tmp_path),
+        ws_router(WebHostRuntime(), Authenticator.mint("127.0.0.1", PORT)),
     ):
         for route in router.routes:
+            if isinstance(route, APIWebSocketRoute):
+                continue
             assert isinstance(route, APIRoute)
             for method in route.methods or ():
                 served.add((method, f"/v1{route.path}"))

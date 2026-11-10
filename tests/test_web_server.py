@@ -8,6 +8,7 @@ import subprocess
 import sys
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -21,6 +22,7 @@ from aldwin.web.app import (
 )
 from aldwin.web.auth import COOKIE_NAME, Authenticator
 from aldwin.web.lock import WebProcessLock
+from aldwin.web.runtime import WebHostRuntime
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PORT = 7841
@@ -181,17 +183,15 @@ def test_wrong_cookie_value_is_401(client: TestClient) -> None:
     assert client.get("/v1/health").status_code == 401
 
 
-def test_no_websocket_api_or_docs_yet(client: TestClient, auth: Authenticator) -> None:
-    """TC-30: the WebSocket bridge and the OpenAPI docs are not served."""
+def test_docs_are_off_and_the_web_door_never_starts_a_host(
+    client: TestClient, auth: Authenticator
+) -> None:
+    """TC-30: no OpenAPI docs; tickets wait for a host the door does not start."""
     _sign_in(client, auth)
-    for path in ("/v1/ws", "/v1/ws-ticket"):
-        assert client.get(path).status_code == 404, path
-    with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect("/v1/ws"):
-            pass
     assert client.get("/openapi.json").status_code == 404
     assert client.get("/docs").status_code == 404
-    sources = "".join(p.read_text("utf-8") for p in STATIC_DIR.parent.glob("*.py"))
+    assert client.post("/v1/ws-ticket", headers={"Origin": BASE}).status_code == 503
+    sources = "".join(p.read_text("utf-8") for p in STATIC_DIR.parent.rglob("*.py"))
     assert "AldwinHost" not in sources
 
 
@@ -404,12 +404,22 @@ def test_run_web_holds_the_lock_while_serving_then_releases(
         seen.append(WebProcessLock(aldwin_home).read())
         sock.close()
 
+    runtimes: list[object] = []
+    real_create_app = web_cli.create_app
+
+    def recording_create_app(**kwargs: Any) -> Any:
+        runtimes.append(kwargs.get("runtime"))
+        return real_create_app(**kwargs)
+
     monkeypatch.setattr(web_cli, "serve", fake_serve)
+    monkeypatch.setattr(web_cli, "create_app", recording_create_app)
     monkeypatch.setattr(web_cli.webbrowser, "open", opened.append)
 
     code = web_cli.run_web(host="127.0.0.1", port=0, open_browser=True, workspace=None)
 
     assert code == 0
+    assert len(runtimes) == 1 and isinstance(runtimes[0], WebHostRuntime)
+    assert not runtimes[0].ready
     record = seen[0]
     assert record is not None and isinstance(record["port"], int)
     out = capsys.readouterr().out

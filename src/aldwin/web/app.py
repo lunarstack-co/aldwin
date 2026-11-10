@@ -17,9 +17,12 @@ from aldwin.web.auth import COOKIE_NAME, TOKEN_QUERY, Authenticator
 from aldwin.web.routes.conversations import conversations_router
 from aldwin.web.routes.settings import settings_router
 from aldwin.web.routes.setup import setup_router
+from aldwin.web.routes.ws import WS_PATH, ws_router
+from aldwin.web.runtime import WebHostRuntime
 
 STATIC_DIR = Path(__file__).with_name("static")
 API_PREFIX = "/v1"
+WS_ROUTE = f"{API_PREFIX}{WS_PATH}"
 
 SIGN_IN_MESSAGE = "Open Aldwin from the link that `aldwin web` printed."
 FOREIGN_ORIGIN_MESSAGE = "This request did not come from the Aldwin page."
@@ -41,8 +44,11 @@ class SessionGuard:
             await self._app(scope, receive, send)
             return
         if scope["type"] == "websocket":
-            # No WebSocket route has a check yet, so every upgrade is refused.
-            await WebSocketClose(code=1008)(scope, receive, send)
+            # Only /v1/ws checks its own ticket and Origin; refuse anything else.
+            if scope.get("path") == WS_ROUTE:
+                await self._app(scope, receive, send)
+            else:
+                await WebSocketClose(code=1008)(scope, receive, send)
             return
         request = Request(scope)
         headers = request.headers
@@ -67,8 +73,13 @@ def create_app(
     home_display: str,
     version: str,
     static_dir: Path = STATIC_DIR,
+    runtime: WebHostRuntime | None = None,
 ) -> FastAPI:
-    """Build the app that serves the web UI, the session bootstrap and ``/v1``."""
+    """Build the app that serves the web UI, the session bootstrap and ``/v1``.
+
+    ``runtime`` carries the WebSocket transport; without one, tickets and
+    sockets are refused until a host is started on it.
+    """
     index = static_dir / "index.html"
     if not index.is_file():
         raise StaticFilesMissingError(
@@ -94,6 +105,7 @@ def create_app(
     api.include_router(conversations_router(home))
     api.include_router(settings_router(home))
     api.include_router(setup_router(home))
+    api.include_router(ws_router(runtime or WebHostRuntime(), authenticator))
     app.include_router(api)
 
     @app.get("/", include_in_schema=False)

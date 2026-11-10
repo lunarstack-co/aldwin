@@ -58,6 +58,8 @@ All local data lives in `~/.aldwin`. Set `ALDWIN_HOME=/path/to/dir` to use a dif
 
 Anyone holding that link or cookie can use Aldwin as you, with your keys, files and conversations, until the server stops. Do not share the link. Requests from any other page are refused, including pages served by other programs on this computer.
 
+The page talks to Aldwin over a WebSocket. Browsers do not apply the same-origin rules to WebSockets, so the socket does not trust the cookie alone: the page first asks for a ticket, which works once and only for 30 seconds, and is kept in the server's memory only. The socket must also come from the Aldwin page itself. Only one browser tab is connected at a time.
+
 The page can save API keys, but no answer from the server ever contains one: keys come back masked (`sk-…a1b2`) with where they were found (`env`, `file` or `missing`). A key is checked with its provider before it is saved, and a key that fails the check is not written.
 
 ## Secrets pasted into chat
