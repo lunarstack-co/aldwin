@@ -62,6 +62,7 @@ if TYPE_CHECKING:
     )
     from aldwin.host.sessions import (
         SessionMeta,
+        SessionMetaSummary,
         SessionStore,
         StoredSession,
         derive_session_title,
@@ -81,6 +82,7 @@ _RUNNER_EXPORTS = {
 
 _SESSIONS_EXPORTS = {
     "SessionMeta",
+    "SessionMetaSummary",
     "SessionStore",
     "StoredSession",
     "derive_session_title",
@@ -122,6 +124,7 @@ __all__ = [
     "RequestScope",
     "SearchSwitchResult",
     "SessionMeta",
+    "SessionMetaSummary",
     "SessionStore",
     "SkillSummary",
     "SkillsReport",

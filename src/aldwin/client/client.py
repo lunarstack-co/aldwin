@@ -117,6 +117,10 @@ from aldwin.protocol import (
     SearchListRequest,
     SearchProvidersEvent,
     SearchUseRequest,
+    SessionsEvent,
+    SessionsListRequest,
+    SessionsNewRequest,
+    SessionsOpenRequest,
     SetModelRequest,
     SkillBodyEvent,
     SkillsEvent,
@@ -355,6 +359,26 @@ class AldwinClient:
                     return history_event
         finally:
             self._queues.pop(request.id, None)
+
+    async def sessions_list(self) -> SessionsEvent:
+        """List saved conversations with turns, newest first, and the active one."""
+        return await self._one(SessionsListRequest(), SessionsEvent)
+
+    async def sessions_open(self, session_id: str) -> SessionsEvent:
+        """Switch to a saved conversation; fetch `history` afterwards to show it.
+
+        Raises `ProtocolError` with code `busy` mid-turn or `not_found`.
+        """
+        return await self._one(
+            SessionsOpenRequest(session_id=session_id), SessionsEvent
+        )
+
+    async def sessions_new(self) -> SessionsEvent:
+        """Start a conversation, reusing the latest one while it is still empty.
+
+        Raises `ProtocolError` with code `busy` mid-turn.
+        """
+        return await self._one(SessionsNewRequest(), SessionsEvent)
 
     async def todo_get(self) -> TodoUpdatedEvent:
         """Fetch the current session todo list from the host."""
