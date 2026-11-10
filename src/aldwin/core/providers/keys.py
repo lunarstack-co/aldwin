@@ -46,7 +46,7 @@ def resolve_provider_secret_field(
     return normalize_key_field(provider)
 
 
-async def save_provider_key(
+async def check_provider_key(
     provider: str,
     key: str,
     *,
@@ -56,10 +56,7 @@ async def save_provider_key(
     backend: ProviderBackend | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> AccessStatus:
-    """Validate a candidate API key and persist to secrets.yaml only on success.
-
-    Leaves secrets.yaml completely untouched if validation does not return OK.
-    """
+    """Check a candidate API key with the provider without saving it."""
     cleaned_key = key.strip()
     if not cleaned_key:
         return AccessStatus.INVALID_KEY
@@ -73,12 +70,11 @@ async def save_provider_key(
     if entry is not None and (entry.local or not entry.secret):
         raise ValueError(f"Provider '{provider}' does not use an API key.")
 
-    secret_field = resolve_provider_secret_field(provider, active_config, root)
-
     active_backend: ProviderBackend
     if backend is not None:
         active_backend = backend
     else:
+        secret_field = resolve_provider_secret_field(provider, active_config, root)
         candidate_secrets = SecretsConfig(**{secret_field: SecretStr(cleaned_key)})
         target_provider: str | ProviderEntry = provider
         if base_url is not None and base_url.strip() and entry is not None:
@@ -94,20 +90,48 @@ async def save_provider_key(
         )
 
     try:
-        status = await active_backend.check_access()
+        return await active_backend.check_access()
     except Exception as exc:
         logger.warning("Error checking provider '%s' key: %s", provider, exc)
         return AccessStatus.UNREACHABLE
 
-    if status == AccessStatus.OK:
-        existing = load_secrets(root)
-        existing_dict = existing.to_secret_dict()
-        existing_dict[secret_field] = cleaned_key
-        updated = SecretsConfig(**{k: SecretStr(v) for k, v in existing_dict.items()})
-        save_secrets(updated, root)
-        return AccessStatus.OK
 
-    return status
+async def save_provider_key(
+    provider: str,
+    key: str,
+    *,
+    home: Path | None = None,
+    base_url: str | None = None,
+    config: AldwinConfig | None = None,
+    backend: ProviderBackend | None = None,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> AccessStatus:
+    """Validate a candidate API key and persist to secrets.yaml only on success.
+
+    Leaves secrets.yaml completely untouched if validation does not return OK.
+    """
+    root = (home if home is not None else home_dir()).expanduser().resolve()
+    active_config = config
+    if active_config is None and (root / "config.yaml").exists():
+        active_config = load_config(root)
+    status = await check_provider_key(
+        provider,
+        key,
+        home=root,
+        base_url=base_url,
+        config=active_config,
+        backend=backend,
+        transport=transport,
+    )
+    if status != AccessStatus.OK:
+        return status
+
+    secret_field = resolve_provider_secret_field(provider, active_config, root)
+    existing_dict = load_secrets(root).to_secret_dict()
+    existing_dict[secret_field] = key.strip()
+    updated = SecretsConfig(**{k: SecretStr(v) for k, v in existing_dict.items()})
+    save_secrets(updated, root)
+    return AccessStatus.OK
 
 
 class KeyRemoval(StrEnum):

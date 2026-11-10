@@ -102,7 +102,8 @@ class DisconnectResult:
     removed_saved_key: bool = False
 
 
-def _env_key(cls: type[HostedSearchProvider]) -> tuple[str, str] | None:
+def env_key(cls: type[HostedSearchProvider]) -> tuple[str, str] | None:
+    """Return ``(variable, value)`` for the first set environment key, or None."""
     for name in (cls.env_var(), *cls.env_aliases):
         value = os.environ.get(name, "").strip()
         if value:
@@ -159,7 +160,7 @@ def search_overview(home: Path) -> SearchOverview:
             )
             continue
         cls = hosted[name]
-        env = _env_key(cls)
+        env = env_key(cls)
         stored = secrets.get_secret(normalize_key_field(name))
         key_source: KeySource | None = "env" if env else ("file" if stored else None)
         key = env[1] if env else stored
@@ -216,7 +217,7 @@ async def connect_search_key(
     secrets = SecretsConfig.model_validate({field: SecretStr(key.strip())})
     await asyncio.to_thread(save_secrets, secrets, home)
     await asyncio.to_thread(update_config_search_provider, provider, home)
-    env = _env_key(hosted_provider_classes()[provider])
+    env = env_key(hosted_provider_classes()[provider])
     override = env[0] if env and env[1] != key.strip() else None
     return ConnectResult(check, env_override=override)
 
@@ -258,7 +259,7 @@ def disconnect_search(provider: str, *, home: Path) -> DisconnectResult:
         if cls is None:
             raise ValueError(f"{provider!r} is not a search provider")
         removed = remove_secret(normalize_key_field(provider), home)
-        env = _env_key(cls)
+        env = env_key(cls)
         if env:
             return DisconnectResult(
                 DisconnectOutcome.ENV_ONLY, env[0], removed_saved_key=removed

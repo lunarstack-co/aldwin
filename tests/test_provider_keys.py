@@ -15,7 +15,10 @@ from aldwin.core.providers import (
     ModelInfo,
     save_provider_key,
 )
-from aldwin.core.providers.keys import resolve_provider_secret_field
+from aldwin.core.providers.keys import (
+    check_provider_key,
+    resolve_provider_secret_field,
+)
 from aldwin.core.settings import (
     AldwinConfig,
     ProviderConfig,
@@ -471,3 +474,28 @@ def test_remove_provider_key_outcomes(
 
     bare = remove_provider_key("openai", current_model="gpt-4o", home=aldwin_home)
     assert bare == (KeyRemoval.IN_USE, None)
+
+
+async def test_check_provider_key_never_writes_secrets(aldwin_home: Path) -> None:
+    """Checking a key, even a good one, leaves secrets.yaml alone."""
+    backend = DummyBackend(AccessStatus.OK)
+    status = await check_provider_key("openai", "sk-good-key-1234", backend=backend)
+    assert status == AccessStatus.OK
+    assert backend.check_access_called
+    assert load_secrets(aldwin_home).openai_api_key is None
+
+
+async def test_check_provider_key_reports_a_failed_check(aldwin_home: Path) -> None:
+    class Broken(DummyBackend):
+        async def check_access(self) -> AccessStatus:
+            raise RuntimeError("socket closed")
+
+    assert (
+        await check_provider_key(
+            "openai", "sk-x-12345678", backend=Broken(AccessStatus.OK)
+        )
+        == AccessStatus.UNREACHABLE
+    )
+    assert await check_provider_key("openai", "   ") == AccessStatus.INVALID_KEY
+    with pytest.raises(ValueError, match="does not use an API key"):
+        await check_provider_key("ollama", "sk-x-12345678")

@@ -242,9 +242,10 @@ def test_wheel_ships_web_export_but_not_the_web_project(
 
     assert 'data-testid="aldwin-stub"' in index_html
     assert "aldwin/web/app.py" in web_entries
+    assert "aldwin/web/routes/settings.py" in web_entries
     for entry in web_entries:
         name = entry.removeprefix("aldwin/web/")
-        is_module = name.endswith(".py") and "/" not in name
+        is_module = name.endswith(".py") and not name.startswith("static/")
         assert is_module or name.startswith("static/"), (
             f"Unexpected web file {entry!r} in wheel"
         )

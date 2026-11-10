@@ -5,6 +5,18 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from aldwin.host.home_api import (
+    KeyOutcome,
+    SettingsError,
+    apply_settings_patch,
+    check_key,
+    get_settings_view,
+    get_setup_status,
+    list_conversation_metas,
+    load_conversation_json,
+    save_key,
+    save_onboarding_profile,
+)
 from aldwin.host.in_process import (
     AccessStatus,
     BootstrapResult,
@@ -151,5 +163,15 @@ __all__ = [
     "switch_search_provider",
     "switchable_search_providers",
     "update_available_nudge",
+    "KeyOutcome",
+    "SettingsError",
+    "apply_settings_patch",
+    "check_key",
+    "get_settings_view",
+    "get_setup_status",
+    "list_conversation_metas",
+    "load_conversation_json",
+    "save_key",
+    "save_onboarding_profile",
     "whats_new_due",
 ]

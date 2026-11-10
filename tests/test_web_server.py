@@ -43,9 +43,12 @@ def auth() -> Authenticator:
 
 
 @pytest.fixture
-def client(auth: Authenticator, static_dir: Path) -> Iterator[TestClient]:
+def client(
+    auth: Authenticator, static_dir: Path, aldwin_home: Path
+) -> Iterator[TestClient]:
     app = create_app(
         authenticator=auth,
+        home=aldwin_home,
         home_display="~/.aldwin",
         version="9.9.9",
         static_dir=static_dir,
@@ -178,12 +181,10 @@ def test_wrong_cookie_value_is_401(client: TestClient) -> None:
     assert client.get("/v1/health").status_code == 401
 
 
-def test_skeleton_serves_only_health_and_home(
-    client: TestClient, auth: Authenticator
-) -> None:
-    """TC-30: no conversation, settings or WebSocket API exists yet."""
+def test_no_websocket_api_or_docs_yet(client: TestClient, auth: Authenticator) -> None:
+    """TC-30: the WebSocket bridge and the OpenAPI docs are not served."""
     _sign_in(client, auth)
-    for path in ("/v1/conversations", "/v1/settings", "/v1/ws", "/v1/ws-ticket"):
+    for path in ("/v1/ws", "/v1/ws-ticket"):
         assert client.get(path).status_code == 404, path
     with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect("/v1/ws"):
@@ -202,11 +203,15 @@ def test_non_ascii_token_or_cookie_is_refused_not_500(client: TestClient) -> Non
 
 
 def test_websocket_under_v1_is_refused_even_with_cookie(
-    auth: Authenticator, static_dir: Path
+    auth: Authenticator, static_dir: Path, tmp_path: Path
 ) -> None:
     """A WebSocket route under ``/v1`` is closed until it has its own check."""
     app = create_app(
-        authenticator=auth, home_display="~", version="1", static_dir=static_dir
+        authenticator=auth,
+        home=tmp_path,
+        home_display="~",
+        version="1",
+        static_dir=static_dir,
     )
 
     @app.websocket("/v1/echo")
@@ -227,15 +232,16 @@ def test_missing_static_tree_fails_fast(auth: Authenticator, tmp_path: Path) -> 
     with pytest.raises(StaticFilesMissingError, match="npm run build"):
         create_app(
             authenticator=auth,
+            home=tmp_path,
             home_display="~",
             version="1",
             static_dir=tmp_path / "nope",
         )
 
 
-def test_packaged_static_page_is_served(auth: Authenticator) -> None:
+def test_packaged_static_page_is_served(auth: Authenticator, tmp_path: Path) -> None:
     """TC-01: the page shipped in the package is what ``/`` serves."""
-    app = create_app(authenticator=auth, home_display="~", version="1")
+    app = create_app(authenticator=auth, home=tmp_path, home_display="~", version="1")
     with TestClient(app, base_url=BASE) as test_client:
         response = test_client.get("/")
     assert response.status_code == 200
