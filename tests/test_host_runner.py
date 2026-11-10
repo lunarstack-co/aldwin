@@ -20,6 +20,7 @@ from agentling import (
 from agentling.errors import ModelError
 from agentling.memory import FinalStep
 from fakes.model import FakeModel, FakeTurn
+from fakes.tools import GatedCommandTool
 
 from aldwin.client import AldwinClient, ProtocolError
 from aldwin.core.home import ensure_home
@@ -49,30 +50,6 @@ from aldwin.protocol import (
     ToolResultEvent,
     TurnRequest,
 )
-
-
-class GatedCommandTool(Tool):
-    """Test tool that awaits `ask` before running."""
-
-    name = "run_command"
-    description = "Run a shell command after approval."
-    parameters = {
-        "type": "object",
-        "properties": {"command": {"type": "string", "description": "Shell command"}},
-        "required": ["command"],
-    }
-
-    def __init__(self, ask: AskFn) -> None:
-        super().__init__()
-        self._ask = ask
-        self.executed_commands: list[str] = []
-
-    async def forward(self, *, command: str) -> str:  # type: ignore[override]
-        approved = await self._ask("Run this command?", command)
-        if not approved:
-            return "user declined"
-        self.executed_commands.append(command)
-        return f"ran: {command}"
 
 
 async def _collect_turn(client: AldwinClient, text: str) -> list[Event]:

@@ -334,6 +334,22 @@ async def test_in_process_transport_rejects_send_after_close() -> None:
     await transport.send_event(DoneEvent(re="req_1", reason="ok"))
 
 
+async def test_in_process_attached_true_while_open() -> None:
+    """TC-03: an open CLI transport is attached and not closed."""
+    transport = InProcessTransport()
+    assert transport.attached is True
+    assert transport.closed is False
+
+
+async def test_in_process_close_detaches_and_ends_requests() -> None:
+    """TC-04: closing detaches for good and wakes `receive_request` with `None`."""
+    transport = InProcessTransport()
+    await transport.close()
+    assert transport.attached is False
+    assert transport.closed is True
+    assert await transport.receive_request() is None
+
+
 def test_protocol_v2_messages_round_trip() -> None:
     """Protocol v2 messages and approval fields round-trip through JSON."""
     assert PROTOCOL_VERSION == 2
