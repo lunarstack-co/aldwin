@@ -126,6 +126,8 @@ from aldwin.protocol import (
     SkillsEvent,
     SkillsListRequest,
     SkillsShowRequest,
+    StatusEvent,
+    StatusRequest,
     StopRequest,
     TodoGetRequest,
     TodoUpdatedEvent,
@@ -379,6 +381,10 @@ class AldwinClient:
         Raises `ProtocolError` with code `busy` mid-turn.
         """
         return await self._one(SessionsNewRequest(), SessionsEvent)
+
+    async def status(self) -> StatusEvent:
+        """Fetch the current turn's progress; empty fields when no turn runs."""
+        return await self._one(StatusRequest(), StatusEvent)
 
     async def todo_get(self) -> TodoUpdatedEvent:
         """Fetch the current session todo list from the host."""

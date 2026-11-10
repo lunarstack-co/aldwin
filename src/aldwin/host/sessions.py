@@ -107,6 +107,15 @@ def session_has_turns(turns: Any, title: str) -> bool:
     return bool(title)
 
 
+def session_file_fingerprint(path: Path) -> tuple[int, int]:
+    """Return ``(mtime_ns, size)`` of a session file, or ``(0, 0)`` if missing."""
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return (0, 0)
+    return (stat.st_mtime_ns, stat.st_size)
+
+
 def _full_model_name(raw_model: str) -> str:
     return raw_model if "/" in raw_model else f"openai/{raw_model}"
 

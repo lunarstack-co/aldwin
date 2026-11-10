@@ -44,7 +44,7 @@ All local data lives in `~/.aldwin`. Set `ALDWIN_HOME=/path/to/dir` to use a dif
 │   ├── notes/
 │   │   └── YYYY-MM-DD.md   daily notes written by `remember`
 │   └── index.sqlite        rebuildable search index over notes and sessions
-├── state/                  migration marker, last-shown tip, recent skills for @
+├── state/                  migration marker, last-shown tip, recent skills for @, and locks/<session id>.lock held while a turn runs
 ├── tmp/                    trimmed tool output, cleared after 7 days
 ├── history                 prompt_toolkit input history
 └── logs/

@@ -612,3 +612,19 @@ def test_list_metas_treats_malformed_turns_as_empty(aldwin_home: Path) -> None:
     assert store.list_metas() == []
     loaded = store.load_id("odd")
     assert loaded is not None and loaded.turns is None
+
+
+def test_session_file_fingerprint_tracks_saves(aldwin_home: Path) -> None:
+    """TC-14: a save changes the fingerprint; a missing file is zeros."""
+    from aldwin.host.sessions import session_file_fingerprint
+
+    store = SessionStore()
+    stored = store.create_new(model="gpt-4o")
+    before = session_file_fingerprint(stored.path)
+    assert len(before) == 2 and before[0] > 0 and before[1] > 0
+
+    stored.memory.add(TaskStep(task="A longer first message"))
+    store.save(stored, stored.memory, interrupted=False)
+    assert session_file_fingerprint(stored.path) != before
+
+    assert session_file_fingerprint(aldwin_home / "sessions" / "nope.json") == (0, 0)

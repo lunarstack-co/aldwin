@@ -231,6 +231,12 @@ class SkillsShowRequest(RequestBase):
     name: str = Field(min_length=1)
 
 
+class StatusRequest(RequestBase):
+    """Ask for the current turn's progress, answered with one `status` event."""
+
+    type: Literal["status"] = "status"
+
+
 class TodoGetRequest(RequestBase):
     """Request the current session todo list from the host."""
 
@@ -420,6 +426,7 @@ Request = Annotated[
     | SkillsListRequest
     | SkillsShowRequest
     | TodoGetRequest
+    | StatusRequest
     | ModelsListRequest
     | ProviderKeyRequest
     | ProviderServerRequest
@@ -569,10 +576,13 @@ class SessionsEvent(EventBase):
 
 
 class StatusEvent(EventBase):
-    """Non-terminal status notice (such as OpenAI retry progress)."""
+    """A status notice plus the current turn's progress, for reconnecting doors."""
 
     kind: Literal["status"] = "status"
-    message: str
+    message: str = ""
+    turn_streamed_chunks: int = Field(default=0, ge=0)
+    active_tool: str | None = None
+    partial_text: str | None = None
 
 
 class DoneEvent(EventBase):

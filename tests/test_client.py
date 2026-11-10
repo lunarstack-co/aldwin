@@ -256,3 +256,11 @@ async def test_verify_active_openai_key_uses_home_secret(
 
     save_secrets(SecretsConfig(openai_api_key=SecretStr("")), home=aldwin_home)
     assert await verify_active_openai_key(aldwin_home) == "invalid"
+
+
+async def test_client_status_reports_an_idle_host(host_client: AldwinClient) -> None:
+    """The client's status call reaches the host and returns empty progress."""
+    status = await host_client.status()
+
+    assert status.turn_streamed_chunks == 0
+    assert status.active_tool is None and status.partial_text is None
