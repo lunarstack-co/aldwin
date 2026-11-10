@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from importlib import metadata
 from pathlib import Path
 
@@ -363,8 +364,9 @@ def test_web_help_lists_its_options() -> None:
     """TC-24: `aldwin web --help` works and names every option."""
     res = runner.invoke(app, ["web", "--help"])
     assert res.exit_code == 0
+    plain_output = re.sub(r"\x1b\[[0-9;]*m", "", res.output)
     for option in ("--host", "--port", "--no-open", "--workspace"):
-        assert option in res.output
+        assert option in plain_output
 
 
 @pytest.mark.parametrize("host", ["0.0.0.0", "8.8.8.8", "::", "example.com"])
