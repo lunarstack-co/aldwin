@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from collections.abc import Awaitable, Iterator
 from pathlib import Path
 
 import pytest
@@ -19,12 +20,16 @@ from aldwin.core.settings import (
     ResolvedKey,
     SearchConfig,
     SecretsConfig,
+    config_locked,
+    config_secrets_fingerprint,
     load_config,
     load_secrets,
     mask_secret,
     resolve_key,
     save_secrets,
+    secrets_locked,
     update_config_last_seen_version,
+    update_config_limits,
     update_config_model,
     update_config_search_provider,
     update_config_theme,
@@ -593,3 +598,365 @@ async def test_concurrent_save_secrets_maintains_yaml_integrity(
     assert len(raw) == 10
     for idx in range(10):
         assert raw.get(f"key_{idx}") == f"secret_{idx}"
+
+
+def _slow_reads(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Widen the gap between read and write so a missing lock loses updates."""
+    import time
+
+    import aldwin.core.settings as settings_module
+
+    real = settings_module._read_config_source
+
+    def slow(path: Path) -> str:
+        text = real(path)
+        time.sleep(0.02)
+        return text
+
+    monkeypatch.setattr(settings_module, "_read_config_source", slow)
+
+
+async def test_concurrent_update_config_maintains_yaml_integrity(
+    aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TC-01: concurrent writers serialise, so no update is lost or torn."""
+    import asyncio
+
+    _slow_reads(monkeypatch)
+    wanted = {
+        "context_exchanges": 31,
+        "profile_chars": 4100,
+        "notes_chars": 4200,
+        "notes_days": 9,
+        "persona_chars": 2100,
+        "max_steps": 21,
+        "web_searches": 6,
+        "connector_tools": 44,
+    }
+    jobs: list[Awaitable[object]] = [
+        asyncio.to_thread(update_config_limits, {key: value}, aldwin_home)
+        for key, value in wanted.items()
+    ]
+    jobs.append(asyncio.to_thread(update_config_theme, "light", aldwin_home))
+    jobs.append(
+        asyncio.to_thread(update_config_last_seen_version, "9.9.9", aldwin_home)
+    )
+
+    await asyncio.gather(*jobs)
+
+    cfg = load_config(aldwin_home)
+    assert cfg.limits.model_dump() == wanted
+    assert cfg.theme == "light"
+    assert cfg.last_seen_version == "9.9.9"
+    config_path = aldwin_home / "config.yaml"
+    assert (config_path.stat().st_mode & 0o777) == 0o600
+
+
+def test_nested_config_then_secrets_lock_order_no_deadlock(aldwin_home: Path) -> None:
+    """TC-02: two writers nesting config then secrets both finish."""
+    import threading
+
+    finished: list[int] = []
+
+    def nested(idx: int) -> None:
+        for _ in range(20):
+            with config_locked(aldwin_home), secrets_locked(aldwin_home):
+                pass
+        finished.append(idx)
+
+    threads = [threading.Thread(target=nested, args=(i,)) for i in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert sorted(finished) == [0, 1]
+
+
+def test_no_production_helper_nests_secrets_before_config() -> None:
+    """TC-02: no code takes the config lock while holding the secrets lock."""
+    import ast
+
+    src = Path(__file__).resolve().parent.parent / "src" / "aldwin"
+    import aldwin.core.settings as settings_module
+
+    config_writers = {"config_locked"} | {
+        name
+        for name in dir(settings_module)
+        if name.startswith("update_config_") or name == "ensure_run_command_env_allow"
+    }
+    offenders: list[str] = []
+    for path in src.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.With):
+                continue
+            holds_secrets = any(
+                isinstance(item.context_expr, ast.Call)
+                and getattr(item.context_expr.func, "id", "") == "secrets_locked"
+                for item in node.items
+            )
+            if not holds_secrets:
+                continue
+            for inner in ast.walk(node):
+                if isinstance(inner, ast.Call):
+                    name = getattr(inner.func, "id", getattr(inner.func, "attr", ""))
+                    if name in config_writers:
+                        offenders.append(f"{path.name}:{inner.lineno}")
+    assert offenders == []
+
+
+def test_update_config_limits_single_rewrite_multi_key(
+    aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TC-04: several limits change in one locked write."""
+    import aldwin.core.settings as settings_module
+
+    writes: list[Path] = []
+    real = settings_module.atomic_write
+
+    def counting(path: Path, data: str, mode: int) -> None:
+        writes.append(path)
+        real(path, data, mode=mode)
+
+    monkeypatch.setattr(settings_module, "atomic_write", counting)
+
+    result = update_config_limits(
+        {"max_steps": 30, "web_searches": 8, "notes_days": 3}, aldwin_home
+    )
+
+    assert writes == [aldwin_home / "config.yaml"]
+    assert (result.max_steps, result.web_searches, result.notes_days) == (30, 8, 3)
+    assert load_config(aldwin_home).limits == result
+
+
+def test_config_locked_creates_lock_file_mode_0600(tmp_path: Path) -> None:
+    """TC-05: the lock lives beside config.yaml and only the owner can read it."""
+    home = tmp_path / "home"
+    with config_locked(home):
+        lock = home / "config.yaml.lock"
+        assert lock.exists()
+    assert (lock.stat().st_mode & 0o777) == 0o600
+
+
+def test_config_secrets_fingerprint_changes_on_config(aldwin_home: Path) -> None:
+    """TC-06: rewriting config.yaml changes the fingerprint."""
+    before = config_secrets_fingerprint(aldwin_home)
+    update_config_limits({"max_steps": 99}, aldwin_home)
+    assert config_secrets_fingerprint(aldwin_home)[:2] != before[:2]
+
+
+def test_config_secrets_fingerprint_changes_on_secrets(aldwin_home: Path) -> None:
+    """TC-07: saving secrets.yaml changes the fingerprint."""
+    before = config_secrets_fingerprint(aldwin_home)
+    save_secrets(SecretsConfig(openai_api_key=SecretStr("sk-new-value")), aldwin_home)
+    after = config_secrets_fingerprint(aldwin_home)
+    assert after[2:] != before[2:]
+    assert after[:2] == before[:2]
+
+
+def test_config_secrets_fingerprint_ignores_lock_files(aldwin_home: Path) -> None:
+    """TC-08: taking or touching the lock files is not a settings change."""
+    before = config_secrets_fingerprint(aldwin_home)
+    with config_locked(aldwin_home), secrets_locked(aldwin_home):
+        (aldwin_home / "config.yaml.lock").write_text("x", encoding="utf-8")
+        (aldwin_home / "secrets.yaml.lock").write_text("x", encoding="utf-8")
+    assert config_secrets_fingerprint(aldwin_home) == before
+
+
+def test_config_secrets_fingerprint_missing_files_are_zeros(tmp_path: Path) -> None:
+    """TC-09: a missing file counts as zeros for its pair."""
+    assert config_secrets_fingerprint(tmp_path) == (0, 0, 0, 0)
+    (tmp_path / "config.yaml").write_text("model: gpt-4o\n", encoding="utf-8")
+    fingerprint = config_secrets_fingerprint(tmp_path)
+    assert fingerprint[0] > 0 and fingerprint[1] > 0
+    assert fingerprint[2:] == (0, 0)
+
+
+def test_config_secrets_fingerprint_tuple_shape(aldwin_home: Path) -> None:
+    """TC-10: four integers: config mtime and size, then secrets."""
+    fingerprint = config_secrets_fingerprint(aldwin_home)
+    assert len(fingerprint) == 4
+    assert all(isinstance(part, int) for part in fingerprint)
+
+
+def test_update_config_writers_use_config_locked(
+    aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TC-11: every config.yaml writer takes the config lock."""
+    from contextlib import contextmanager
+
+    import aldwin.core.settings as settings_module
+    from aldwin.core.settings import (
+        ProviderConfig,
+        ensure_run_command_env_allow,
+        update_config_provider,
+        update_config_searxng_url,
+    )
+
+    taken: list[Path] = []
+    real = settings_module.config_locked
+
+    @contextmanager
+    def recording(home: Path) -> Iterator[None]:
+        taken.append(home)
+        with real(home):
+            yield
+
+    monkeypatch.setattr(settings_module, "config_locked", recording)
+    writers = [
+        lambda: update_config_model("gpt-4o-mini", aldwin_home),
+        lambda: update_config_theme("light", aldwin_home),
+        lambda: update_config_last_seen_version("1.2.3", aldwin_home),
+        lambda: update_config_search_provider("auto", aldwin_home),
+        lambda: update_config_searxng_url("https://search.example", aldwin_home),
+        lambda: update_config_limits({"max_steps": 12}, aldwin_home),
+        lambda: ensure_run_command_env_allow(aldwin_home),
+        lambda: update_config_provider(
+            "office",
+            ProviderConfig(
+                shape="openai_chat", base_url="http://127.0.0.1:8000/v1", local=True
+            ),
+            aldwin_home,
+        ),
+    ]
+    for index, write in enumerate(writers, start=1):
+        write()
+        assert len(taken) == index, f"writer {index} did not take the lock"
+
+
+def test_update_config_limits_partial_merge(aldwin_home: Path) -> None:
+    """TC-13: keys not in the update keep their values."""
+    update_config_limits({"notes_days": 4}, aldwin_home)
+    update_config_limits({"max_steps": 25}, aldwin_home)
+
+    limits = load_config(aldwin_home).limits
+    assert limits.notes_days == 4
+    assert limits.max_steps == 25
+    assert limits.context_exchanges == LimitsConfig().context_exchanges
+
+
+def test_update_config_limits_empty_dict_noop(aldwin_home: Path) -> None:
+    """TC-14: an empty update leaves the file and limits unchanged."""
+    config_path = aldwin_home / "config.yaml"
+    before = config_path.read_text(encoding="utf-8")
+
+    fingerprint = config_secrets_fingerprint(aldwin_home)
+
+    result = update_config_limits({}, aldwin_home)
+    update_config_limits({"max_steps": result.max_steps}, aldwin_home)
+
+    assert config_path.read_text(encoding="utf-8") == before
+    assert config_secrets_fingerprint(aldwin_home) == fingerprint
+    assert result == load_config(aldwin_home).limits
+
+
+@pytest.mark.parametrize(
+    ("updates", "field"),
+    [
+        ({"max_steps": 0}, "limits.max_steps"),
+        ({"notes_days": "seven"}, "limits.notes_days"),
+        ({"connector_tools": 2}, "limits.connector_tools"),
+        ({"max_stepz": 5}, "limits.max_stepz"),
+    ],
+)
+def test_update_config_limits_invalid_raises_config_error(
+    aldwin_home: Path, updates: dict[str, object], field: str
+) -> None:
+    """TC-15: a bad or unknown limit names the field and writes nothing."""
+    config_path = aldwin_home / "config.yaml"
+    before = config_path.read_text(encoding="utf-8")
+
+    with pytest.raises(ConfigError) as exc:
+        update_config_limits(updates, aldwin_home)
+
+    assert exc.value.field == field
+    assert config_path.read_text(encoding="utf-8") == before
+
+
+def test_update_config_limits_preserves_surrounding_comments(aldwin_home: Path) -> None:
+    """TC-16: comments around and inside the limits block survive."""
+    config_path = aldwin_home / "config.yaml"
+    before = config_path.read_text(encoding="utf-8")
+    comments = [line for line in before.splitlines() if line.lstrip().startswith("#")]
+
+    update_config_limits({"max_steps": 40, "connector_tools": 60}, aldwin_home)
+
+    after = config_path.read_text(encoding="utf-8")
+    for comment in comments:
+        assert comment in after.splitlines()
+    assert "  max_steps: 40" in after.splitlines()
+    assert "  connector_tools: 60" in after.splitlines()
+    assert after.index("connector_tools") < after.index("# Web search backend")
+    assert load_config(aldwin_home).limits.connector_tools == 60
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "model: gpt-4o\n",
+        "model: gpt-4o\nlimits: {}\ntheme: dark\n",
+        "limits:\n",
+        "model: gpt-4o\nlimits:\n  web_searches: 5",
+    ],
+)
+def test_update_config_limits_writes_a_missing_or_flow_block(
+    tmp_path: Path, source: str
+) -> None:
+    """A file with no block, an empty flow block or a bare header still updates."""
+    (tmp_path / "config.yaml").write_text(source, encoding="utf-8")
+
+    update_config_limits({"max_steps": 33, "notes_days": 2}, tmp_path)
+
+    cfg = load_config(tmp_path)
+    assert (cfg.limits.max_steps, cfg.limits.notes_days) == (33, 2)
+    assert cfg.model == "gpt-4o"
+
+
+def test_config_writers_keep_file_mode_0600(aldwin_home: Path) -> None:
+    """TC-24: writes under the lock still leave config.yaml at 0600."""
+    config_path = aldwin_home / "config.yaml"
+    update_config_limits({"max_steps": 18}, aldwin_home)
+    assert (config_path.stat().st_mode & 0o777) == 0o600
+    update_config_theme("light", aldwin_home)
+    assert (config_path.stat().st_mode & 0o777) == 0o600
+
+
+def test_sequential_config_then_secrets_writes_succeed(aldwin_home: Path) -> None:
+    """TC-25: a config write then a secrets write, each locked alone, both land."""
+    update_config_limits({"max_steps": 19}, aldwin_home)
+    save_secrets(SecretsConfig(openai_api_key=SecretStr("sk-seq-value")), aldwin_home)
+
+    assert load_config(aldwin_home).limits.max_steps == 19
+    secrets = load_secrets(aldwin_home)
+    assert secrets.openai_api_key is not None
+    assert secrets.openai_api_key.get_secret_value() == "sk-seq-value"
+
+
+def test_privacy_md_lists_config_yaml_lock() -> None:
+    """TC-26: the home folder layout in the privacy doc mentions the lock files."""
+    doc = (Path(__file__).resolve().parent.parent / "docs" / "privacy.md").read_text(
+        encoding="utf-8"
+    )
+    assert "*.yaml.lock" in doc
+    assert "config.yaml and secrets.yaml" in doc
+
+
+def test_update_config_limits_keeps_a_column_zero_comment_inside_the_block(
+    tmp_path: Path,
+) -> None:
+    """A comment at column zero inside limits does not split the block."""
+    (tmp_path / "config.yaml").write_text(
+        "limits:\n  max_steps: 15\n# note\n  web_searches: 5\n\n# Next\n"
+        "run_command:\n  env_allow: []\n",
+        encoding="utf-8",
+    )
+
+    update_config_limits({"web_searches": 9, "notes_days": 2}, tmp_path)
+
+    text = (tmp_path / "config.yaml").read_text(encoding="utf-8")
+    assert text.count("web_searches") == 1
+    assert "# note" in text
+    assert text.index("notes_days") < text.index("# Next")
+    limits = load_config(tmp_path).limits
+    assert (limits.web_searches, limits.notes_days) == (9, 2)

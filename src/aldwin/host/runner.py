@@ -79,6 +79,7 @@ from aldwin.core.policy import (
 from aldwin.core.providers.registry import parse_model_ref
 from aldwin.core.settings import (
     ConfigError,
+    config_secrets_fingerprint,
     load_config,
     load_secrets,
     update_config_model,
@@ -732,6 +733,7 @@ class AldwinHost:
         self._host_flags: dict[str, bool] = {"skills_dirty": False}
         self._pending_turn_notices: list[str] = []
         self._skills_fingerprint: tuple[tuple[str, int, int], ...] = ()
+        self._config_secrets_fingerprint: tuple[int, int, int, int] = (0, 0, 0, 0)
         self._skill_catalogue: list[LoadedSkill] = []
 
         self._session_context = SessionContext(
@@ -908,8 +910,8 @@ class AldwinHost:
         ]
         return SkillsEvent(re=re_id, items=items)
 
-    def _rebuild_agent_for_skills(self) -> None:
-        """Rebuild Agent and migrate Memory after skill changes."""
+    def _rebuild_agent(self) -> None:
+        """Rebuild Agent from disk settings and skills, keeping the conversation."""
         raw = self._agent_session.memory.dump_json()
         self._agent = self._build_and_attach_agent(self._model)
         self._attach_session(restore_session(self._agent, raw))
@@ -921,11 +923,29 @@ class AldwinHost:
         current = skills_fingerprint(self._home)
         if current == self._skills_fingerprint:
             return False
-        self._rebuild_agent_for_skills()
+        self._rebuild_agent()
+        return True
+
+    def _maybe_reload_config_from_disk(self) -> bool:
+        """Rebuild if ``config.yaml`` or ``secrets.yaml`` changed since the last build.
+
+        Another door or an editor may have changed limits, providers or keys.
+        The active model stays as it is: switching it is the user's choice in
+        this conversation, not a side effect of another door's default.
+        Raises ``ConfigError`` when the changed file is invalid.
+        """
+        if config_secrets_fingerprint(self._home) == self._config_secrets_fingerprint:
+            return False
+        self._config = load_config(self._home)
+        self._secrets = load_secrets(self._home)
+        self._rebuild_agent()
         return True
 
     def _build_and_attach_agent(self, model_name: str) -> Agent:
         """Build an `Agent` and attach the host's retry and session callbacks."""
+        # Taken before the build reads the files, so a write during it is seen
+        # as a change on the next turn rather than missed.
+        fingerprint = config_secrets_fingerprint(self._home)
         if self._agent_builder is not None:
             agent = self._agent_builder(model_name, self.ask)
         else:
@@ -939,6 +959,7 @@ class AldwinHost:
         retry = getattr(agent, "retry", None)
         if retry is not None and retry.on_retry is None:
             agent.retry = replace(retry, on_retry=self.on_retry)
+        self._config_secrets_fingerprint = fingerprint
         return agent
 
     async def on_retry(
@@ -2154,6 +2175,11 @@ class AldwinHost:
     async def _run_turn(self, scope: RequestScope, req: TurnRequest) -> None:
         """Execute a turn and map Agentling events to protocol events."""
         async with scope:
+            try:
+                self._maybe_reload_config_from_disk()
+            except ConfigError as exc:
+                await scope.error("invalid_request", str(exc))
+                return
             self._active_turn_id = req.id
             self._active_turn_scope = scope
             self._circuit_breaker_tripped = False
@@ -2458,7 +2484,7 @@ class AldwinHost:
                 # Rebuild after the turn loop (never mid-tool) and emit
                 # notice/skills before `done` so the door still receives them.
                 if self._host_flags.get("skills_dirty"):
-                    self._rebuild_agent_for_skills()
+                    self._rebuild_agent()
                     await scope.emit(NoticeEvent(re=req.id, message="skills reloaded"))
                     await scope.emit(self._skills_event(req.id))
                 if final_finish_reason == "length":

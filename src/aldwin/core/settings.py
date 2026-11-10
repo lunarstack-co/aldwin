@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from importlib.resources import files
@@ -627,6 +627,51 @@ def load_config(home: Path | None = None) -> AldwinConfig:
     return cfg
 
 
+@contextmanager
+def _file_locked(home: Path, filename: str) -> Iterator[None]:
+    """Hold an exclusive ``flock`` on ``<home>/<filename>.lock`` (mode ``0600``)."""
+    import fcntl
+
+    home.mkdir(parents=True, exist_ok=True, mode=DIR_MODE)
+    fd = os.open(home / f"{filename}.lock", os.O_RDWR | os.O_CREAT, FILE_MODE)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+@contextmanager
+def config_locked(home: Path) -> Iterator[None]:
+    """Hold an exclusive lock for a read-modify-write of ``config.yaml``.
+
+    Every process writing ``config.yaml`` takes this lock, so two doors never
+    interleave a read and a write. To hold both locks at once, take this one
+    first and ``secrets_locked`` inside it, never the reverse, or two writers
+    can deadlock.
+    """
+    with _file_locked(home, CONFIG_FILENAME):
+        yield
+
+
+def config_secrets_fingerprint(home: Path) -> tuple[int, int, int, int]:
+    """Return ``mtime_ns`` and size of ``config.yaml`` then ``secrets.yaml``.
+
+    A cheap check for "another process may have changed settings". A missing
+    file counts as ``(0, 0)``; lock files are ignored.
+    """
+    out: list[int] = []
+    for name in (CONFIG_FILENAME, SECRETS_FILENAME):
+        try:
+            stat = (home / name).stat()
+        except FileNotFoundError:
+            out.extend((0, 0))
+            continue
+        out.extend((stat.st_mtime_ns, stat.st_size))
+    return (out[0], out[1], out[2], out[3])
+
+
 def _read_config_source(config_path: Path) -> str:
     """Return existing ``config.yaml`` text or the packaged default."""
     if config_path.exists():
@@ -663,13 +708,14 @@ def update_config_model(model: str, home: Path | None = None) -> None:
             expected="a non-empty string",
         )
 
-    existing_cfg = load_config(root) if config_path.exists() else AldwinConfig()
     from aldwin.core.providers.registry import validate_model_ref
 
-    validate_model_ref(cleaned, existing_cfg, file=config_path)
-
-    updated = _set_yaml_scalar_key(_read_config_source(config_path), "model", cleaned)
-    atomic_write(config_path, updated, mode=FILE_MODE)
+    with config_locked(root):
+        existing_cfg = load_config(root) if config_path.exists() else AldwinConfig()
+        validate_model_ref(cleaned, existing_cfg, file=config_path)
+        source = _read_config_source(config_path)
+        updated = _set_yaml_scalar_key(source, "model", cleaned)
+        atomic_write(config_path, updated, mode=FILE_MODE)
 
 
 def _set_search_key_in_source(source: str, key: str, value: str | None) -> str:
@@ -734,10 +780,11 @@ def update_config_search_provider(provider: str, home: Path | None = None) -> No
             expected=_EXPECTED_FIELD_TYPES["search.provider"],
             detail=str(exc.errors()[0].get("msg", "")),
         ) from None
-    updated = _set_search_key_in_source(
-        _read_config_source(config_path), "provider", validated
-    )
-    atomic_write(config_path, updated, mode=FILE_MODE)
+    with config_locked(root):
+        updated = _set_search_key_in_source(
+            _read_config_source(config_path), "provider", validated
+        )
+        atomic_write(config_path, updated, mode=FILE_MODE)
 
 
 def update_config_searxng_url(url: str | None, home: Path | None = None) -> None:
@@ -745,10 +792,11 @@ def update_config_searxng_url(url: str | None, home: Path | None = None) -> None
     root = (home if home is not None else home_dir()).expanduser().resolve()
     config_path = root / CONFIG_FILENAME
     cleaned = url.strip() if url is not None else None
-    updated = _set_search_key_in_source(
-        _read_config_source(config_path), "searxng_url", cleaned or None
-    )
-    atomic_write(config_path, updated, mode=FILE_MODE)
+    with config_locked(root):
+        updated = _set_search_key_in_source(
+            _read_config_source(config_path), "searxng_url", cleaned or None
+        )
+        atomic_write(config_path, updated, mode=FILE_MODE)
 
 
 def update_config_theme(theme: str, home: Path | None = None) -> None:
@@ -764,8 +812,10 @@ def update_config_theme(theme: str, home: Path | None = None) -> None:
             expected=_EXPECTED_FIELD_TYPES["theme"],
             detail=str(exc.errors()[0].get("msg", "")),
         ) from None
-    updated = _set_yaml_scalar_key(_read_config_source(config_path), "theme", validated)
-    atomic_write(config_path, updated, mode=FILE_MODE)
+    with config_locked(root):
+        source = _read_config_source(config_path)
+        updated = _set_yaml_scalar_key(source, "theme", validated)
+        atomic_write(config_path, updated, mode=FILE_MODE)
 
 
 _RUN_COMMAND_ENV_ALLOW_BLOCK: Final[str] = (
@@ -785,13 +835,14 @@ def ensure_run_command_env_allow(home: Path | None = None) -> None:
     """
     root = (home if home is not None else home_dir()).expanduser().resolve()
     config_path = root / CONFIG_FILENAME
-    source = _read_config_source(config_path)
-    if re.search(r"(?m)^run_command\s*:", source):
-        return
-    sep = "" if source.endswith("\n") or not source else "\n"
-    atomic_write(
-        config_path, f"{source}{sep}{_RUN_COMMAND_ENV_ALLOW_BLOCK}", mode=FILE_MODE
-    )
+    with config_locked(root):
+        source = _read_config_source(config_path)
+        if re.search(r"(?m)^run_command\s*:", source):
+            return
+        sep = "" if source.endswith("\n") or not source else "\n"
+        atomic_write(
+            config_path, f"{source}{sep}{_RUN_COMMAND_ENV_ALLOW_BLOCK}", mode=FILE_MODE
+        )
 
 
 def update_config_last_seen_version(version: str, home: Path | None = None) -> None:
@@ -805,10 +856,11 @@ def update_config_last_seen_version(version: str, home: Path | None = None) -> N
             field="last_seen_version",
             expected="a non-empty version string",
         )
-    updated = _set_yaml_scalar_key(
-        _read_config_source(config_path), "last_seen_version", cleaned
-    )
-    atomic_write(config_path, updated, mode=FILE_MODE)
+    with config_locked(root):
+        updated = _set_yaml_scalar_key(
+            _read_config_source(config_path), "last_seen_version", cleaned
+        )
+        atomic_write(config_path, updated, mode=FILE_MODE)
 
 
 def update_config_provider(
@@ -826,14 +878,6 @@ def update_config_provider(
             field="providers",
             expected="a non-empty provider name",
         )
-    source = _read_config_source(config_path)
-    parsed = yaml.safe_load(source)
-    if not isinstance(parsed, dict):
-        parsed = {}
-    providers = parsed.setdefault("providers", {})
-    if not isinstance(providers, dict):
-        providers = {}
-        parsed["providers"] = providers
     prov_dict: dict[str, Any] = {}
     if provider.shape is not None:
         prov_dict["shape"] = provider.shape
@@ -845,8 +889,105 @@ def update_config_provider(
         prov_dict["local"] = provider.local
     if provider.secret is not None:
         prov_dict["secret"] = provider.secret
-    providers[cleaned_name] = prov_dict
-    atomic_write(config_path, yaml.safe_dump(parsed, sort_keys=False), mode=FILE_MODE)
+    with config_locked(root):
+        parsed = yaml.safe_load(_read_config_source(config_path))
+        if not isinstance(parsed, dict):
+            parsed = {}
+        providers = parsed.setdefault("providers", {})
+        if not isinstance(providers, dict):
+            providers = {}
+            parsed["providers"] = providers
+        providers[cleaned_name] = prov_dict
+        serialized = yaml.safe_dump(parsed, sort_keys=False)
+        atomic_write(config_path, serialized, mode=FILE_MODE)
+
+
+def _set_limits_in_source(source: str, values: Mapping[str, int]) -> str:
+    """Set ``limits.<key>`` values in YAML text, keeping every comment.
+
+    Keys already in the block are replaced in place; missing keys are added at
+    the end of the block, and a missing block is appended to the file.
+    """
+    if not values:
+        return source
+    lines = source.splitlines(keepends=True)
+    header = next(
+        (i for i, line in enumerate(lines) if re.match(r"^limits\s*:", line)), None
+    )
+    if header is None:
+        sep = "" if source.endswith("\n") or not source else "\n"
+        body = "".join(f"  {k}: {v}\n" for k, v in values.items())
+        return f"{source}{sep}limits:\n{body}"
+
+    # A flow value such as `limits: {}` becomes a block of its own.
+    lines[header] = "limits:\n"
+    # Comments do not close a YAML block, even at column zero; a key does.
+    end = header + 1
+    while end < len(lines) and (
+        not lines[end].strip()
+        or lines[end][0].isspace()
+        or lines[end].lstrip().startswith("#")
+    ):
+        end += 1
+    while end > header + 1 and (
+        not lines[end - 1].strip() or lines[end - 1].lstrip().startswith("#")
+    ):
+        end -= 1
+
+    pending = dict(values)
+    for i in range(header + 1, end):
+        match = re.match(r"^([ \t]+)([A-Za-z_][A-Za-z0-9_]*)\s*:", lines[i])
+        if match and match.group(2) in pending:
+            indent, key = match.group(1), match.group(2)
+            lines[i] = f"{indent}{key}: {pending.pop(key)}\n"
+    added = [f"  {k}: {v}\n" for k, v in pending.items()]
+    if end > 0 and not lines[end - 1].endswith("\n"):
+        lines[end - 1] += "\n"
+    return "".join(lines[:end] + added + lines[end:])
+
+
+def update_config_limits(
+    updates: Mapping[str, Any], home: Path | None = None
+) -> LimitsConfig:
+    """Merge ``updates`` into ``limits`` in ``config.yaml`` as one locked rewrite.
+
+    Every value is validated before anything is written; an unknown key or a
+    bad value raises ``ConfigError`` naming ``limits.<key>`` and leaves the
+    file untouched. Comments are kept. Returns the resulting limits.
+    """
+    root = (home if home is not None else home_dir()).expanduser().resolve()
+    config_path = root / CONFIG_FILENAME
+    known = set(LimitsConfig.model_fields)
+    for key in updates:
+        if key not in known:
+            raise ConfigError(
+                file=config_path,
+                field=f"limits.{key}",
+                expected="one of " + ", ".join(sorted(known)),
+            )
+
+    with config_locked(root):
+        current = load_config(root).limits if config_path.exists() else LimitsConfig()
+        try:
+            merged = LimitsConfig.model_validate(
+                {**current.model_dump(), **dict(updates)}
+            )
+        except ValidationError as exc:
+            field_name, expected = _describe_error_location(
+                ("limits", *exc.errors()[0].get("loc", ()))
+            )
+            raise ConfigError(
+                file=config_path,
+                field=field_name,
+                expected=expected or "a valid value",
+            ) from None
+        values = {key: getattr(merged, key) for key in updates}
+        source = _read_config_source(config_path)
+        updated = _set_limits_in_source(source, values)
+        # An unchanged file keeps its mtime, so other hosts don't rebuild for nothing.
+        if updated != source or not config_path.exists():
+            atomic_write(config_path, updated, mode=FILE_MODE)
+    return merged
 
 
 def load_secrets(home: Path | None = None) -> SecretsConfig:
@@ -906,21 +1047,12 @@ def load_secrets(home: Path | None = None) -> SecretsConfig:
 
 @contextmanager
 def secrets_locked(home: Path) -> Iterator[None]:
-    """Hold an exclusive lock for a read-modify-write of ``secrets.yaml``."""
-    import fcntl
+    """Hold an exclusive lock for a read-modify-write of ``secrets.yaml``.
 
-    home.mkdir(parents=True, exist_ok=True, mode=DIR_MODE)
-    fd = os.open(
-        home / f"{SECRETS_FILENAME}.lock",
-        os.O_RDWR | os.O_CREAT,
-        FILE_MODE,
-    )
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+    When both are needed, take ``config_locked`` first and this one inside it.
+    """
+    with _file_locked(home, SECRETS_FILENAME):
         yield
-    finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        os.close(fd)
 
 
 def save_secrets(secrets: SecretsConfig, home: Path | None = None) -> Path:

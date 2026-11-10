@@ -1062,7 +1062,7 @@ async def test_context_window_trim_notice_in_turn(
         initial_model="ollama/qwen3:8b",
     )
     holder.append(host)
-    host._rebuild_agent_for_skills()
+    host._rebuild_agent()
     await host.start()
     client = AldwinClient(transport.connect())
 

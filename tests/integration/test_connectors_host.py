@@ -202,7 +202,7 @@ async def test_tools_survive_model_new_skills_and_restore(
 
     await rig.client.set_model(host.model)
     assert findable(host) and _loaded(host) == {"mcp__fixture__read_thing"}
-    host._rebuild_agent_for_skills()
+    host._rebuild_agent()
     assert findable(host) and _loaded(host) == {"mcp__fixture__read_thing"}
     await rig.client.new_conversation()
     assert findable(host) and _loaded(host) == set()
