@@ -11,6 +11,8 @@ import typer
 from aldwin import __version__, format_version_string
 
 if TYPE_CHECKING:
+    from rich.console import Console
+
     from aldwin.client import BootstrapResult
 
 app = typer.Typer(
@@ -56,6 +58,7 @@ async def _launch_interactive_session(
     from aldwin.client import get_onboarding_status
 
     console = create_console(plain=result.plain, theme=result.theme)
+    _warn_if_web_running(result, console)
     had_env_key = get_onboarding_status(result.home).openai_source == "env"
     skip_welcome = False
     if needs_onboarding(result):
@@ -74,6 +77,24 @@ async def _launch_interactive_session(
         debug=debug,
         skip_welcome=skip_welcome,
         console=console,
+    )
+
+
+def _warn_if_web_running(result: BootstrapResult, console: Console) -> None:
+    from aldwin.web.auth import origin_for
+    from aldwin.web.lock import running_web
+
+    record = running_web(result.home)
+    if record is None:
+        return
+    where = origin_for(str(record.get("host", "127.0.0.1")), record.get("port", 0))
+    console.print(
+        f"aldwin web is also running at {where}. "
+        "A conversation answers in one window at a time.",
+        style="muted",
+        markup=False,
+        highlight=False,
+        soft_wrap=True,
     )
 
 
@@ -184,6 +205,41 @@ def setup(
     ok = asyncio.run(run_setup(result, console))
     if not ok:
         raise typer.Exit(code=1)
+
+
+@app.command()
+def web(
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        help="Loopback address to listen on: 127.0.0.1, localhost or ::1.",
+    ),
+    port: int | None = typer.Option(
+        None,
+        "--port",
+        min=1,
+        max=65535,
+        help="Port to listen on. Defaults to 7841, or any free port if it is busy.",
+    ),
+    no_open: bool = typer.Option(
+        False,
+        "--no-open",
+        help="Print the link without opening a browser.",
+    ),
+    workspace: str | None = typer.Option(
+        None,
+        "--workspace",
+        help="Set the workspace root directory for this session.",
+    ),
+) -> None:
+    """Open Aldwin in your browser, served from this computer only."""
+    from aldwin.web.cli import run_web
+
+    exit_code = run_web(
+        host=host, port=port, open_browser=not no_open, workspace=workspace
+    )
+    if exit_code != 0:
+        raise typer.Exit(code=exit_code)
 
 
 @app.command()

@@ -6,6 +6,7 @@
 |---|---|
 | `aldwin` | Open the interactive chat and resume the latest conversation |
 | `aldwin setup` | Configure or update API keys and the default model |
+| `aldwin web [--host 127.0.0.1] [--port PORT] [--no-open] [--workspace PATH]` | Open Aldwin in your browser. Listens on this computer only, on port 7841 or a free port if that is busy, and prints a one-time link |
 | `aldwin skills` | List default and user skills from the terminal (same catalogue as `/skills`) |
 | `aldwin connectors list [--json]` | List connectors (connected apps over MCP) |
 | `aldwin connectors add <name> --url <url> [--token-env VAR]` | Check an MCP server and save it as a connector |

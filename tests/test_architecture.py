@@ -138,6 +138,21 @@ def test_mcp_guard_catches_planted_import(tmp_path: Path) -> None:
     assert violations == [f"{host / 'runner.py'}: forbidden import 'mcp'"]
 
 
+def test_startup_never_loads_web_server_modules() -> None:
+    """The terminal never loads FastAPI, Starlette or uvicorn; `aldwin web` does."""
+    probe = (
+        "import sys, aldwin.cli.main, aldwin.client, aldwin.web.lock\n"
+        "heavy = ('fastapi', 'starlette', 'uvicorn', 'aldwin.web.app',\n"
+        "         'aldwin.web.server', 'aldwin.web.cli')\n"
+        "print(sorted(m for m in sys.modules\n"
+        "             if any(m == h or m.startswith(h + '.') for h in heavy)))\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+    )
+    assert result.stdout.strip() == "[]"
+
+
 def test_startup_never_loads_mcp_or_sign_in() -> None:
     """Sign-in code and the `mcp` SDK load only when a connector needs them."""
     probe = (
