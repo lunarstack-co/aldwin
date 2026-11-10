@@ -26,6 +26,20 @@ from aldwin.host import AldwinHost, AskFn, InProcessTransport
 from aldwin.protocol import ApprovalAnswer as ProtocolApprovalAnswer
 from aldwin.protocol import ApprovalEvent, Event
 
+
+# Runs before xdist reads `xdist_group` to assign workers.
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Keep `loopback` tests on one worker when tests run in parallel.
+
+    Sign-in tests bind the fixed OAuth callback ports, so two workers running
+    them at once would collide.
+    """
+    for item in items:
+        if item.get_closest_marker("loopback"):
+            item.add_marker(pytest.mark.xdist_group("loopback"))
+
+
 _ORIG_SOCKET_CONNECT = socket.socket.connect
 _ORIG_SOCKET_CONNECT_EX = socket.socket.connect_ex
 _ORIG_CREATE_CONNECTION = socket.create_connection

@@ -4,6 +4,9 @@ Aldwin separates its **brain** (`aldwin.core`) from its **doors** (`aldwin.cli`,
 
 - **The one rule:** a door never imports `aldwin.core` or `agentling`. It talks to the host exclusively through `AldwinClient` and `aldwin.protocol`.
 - **Transport:** in `0.0.1`, client and host exchange messages in-process over `InProcessTransport` (`asyncio.Queue` pair with JSON validation). From `0.1` onward, the daemon uses newline-delimited JSON over `~/.aldwin/aldwin.sock` with the exact same messages.
+- **Host transport contract:** the host talks to every door through `HostTransport` (`aldwin.host.transport`). Two properties keep a dropped connection apart from a shutdown:
+  - `closed` is permanent. It becomes true only when the host shuts the transport down, and only then does `receive_request()` return `None`. A transport must never return `None` because a peer disconnected: the host would stop serving and deny every pending approval.
+  - `attached` reports whether a peer is connected right now. A door whose peer can drop and come back, such as a browser tab, sets `attached` to false on disconnect and back to true on reconnect, without closing the transport. Approvals already waiting stay open and can be answered after reconnecting, and the door may send `hello` again. A new approval asked while no peer is attached is denied with `no_approver`. For the in-process CLI transport, `attached` is simply "not closed".
 
 ---
 

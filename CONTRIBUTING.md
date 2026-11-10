@@ -44,8 +44,10 @@ CI runs these on macOS and Linux against every supported Python version. Run the
 uv run ruff check src tests
 uv run ruff format --check src tests
 uv run mypy src tests
-uv run pytest --cov=aldwin --cov-fail-under=90
+uv run pytest -n auto --cov=aldwin --cov-fail-under=90
 ```
+
+`-n auto` spreads the tests over every CPU core. Leave it off when you want to step through a single test with a debugger.
 
 Use `uv run ruff format src tests` to fix formatting and `uv run ruff check --fix src tests` to fix import order.
 

@@ -115,13 +115,14 @@ from aldwin.host.connectors import (
     ConnectorManager,
     ImportReport,
 )
-from aldwin.host.in_process import InProcessTransport, WorkspaceSummary
+from aldwin.host.in_process import WorkspaceSummary
 from aldwin.host.sessions import (
     MAX_PREVIEW_CHARS,
     SessionStore,
     StoredSession,
     shorten_one_line,
 )
+from aldwin.host.transport import HostTransport
 from aldwin.protocol import (
     HOST_EVENT_RE,
     MIN_SUPPORTED_VERSION,
@@ -661,7 +662,7 @@ class AldwinHost:
 
     def __init__(
         self,
-        transport: InProcessTransport,
+        transport: HostTransport,
         session_store: SessionStore | None = None,
         agent_builder: AgentBuilder | None = None,
         *,
@@ -991,10 +992,20 @@ class AldwinHost:
             await asyncio.gather(self._serve_task, return_exceptions=True)
         self._approval_log.close()
 
+    def _approval_door_connected(self) -> bool:
+        """Return whether a welcomed door is attached and can answer now.
+
+        Gates new approvals and host-stream events. A detached door fails new
+        approvals closed. Approvals already pending keep waiting, so a door
+        that reattaches can still answer them; a reconnect grace period will
+        extend this to approvals asked while detached.
+        """
+        return self._transport.attached and self._welcomed
+
     async def ask_policy(self, request: ApprovalRequest) -> PolicyApprovalAnswer:
         """Injected into `PolicyWrappedTool` to request approval."""
         re_id = self._active_turn_id or "req_turn"
-        connected = not self._transport.closed and self._welcomed
+        connected = self._approval_door_connected()
         try:
             return await self._approvals.ask_request(
                 re=re_id,
@@ -1014,7 +1025,7 @@ class AldwinHost:
         if isinstance(summary_or_request, ApprovalRequest):
             return await self.ask_policy(summary_or_request)
         re_id = self._active_turn_id or "req_turn"
-        connected = not self._transport.closed and self._welcomed
+        connected = self._approval_door_connected()
         try:
             return await self._approvals.ask(
                 re=re_id,
@@ -1267,7 +1278,7 @@ class AldwinHost:
                     re=req.id,
                     request=request,
                     door_version=self._negotiated_version,
-                    door_connected=not self._transport.closed and self._welcomed,
+                    door_connected=self._approval_door_connected(),
                 )
 
             try:
@@ -1374,7 +1385,7 @@ class AldwinHost:
 
     async def _emit_connector_event(self, event: ConnectorEvent) -> None:
         """Send a connector change on the running turn, or on the host stream."""
-        if self._transport.closed or not self._welcomed or self._negotiated_version < 2:
+        if not self._approval_door_connected() or self._negotiated_version < 2:
             return
         scope = self._active_turn_scope
         in_turn = (

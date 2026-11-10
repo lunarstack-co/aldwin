@@ -121,7 +121,7 @@ def test_sigterm_during_approval_starts_nothing(
         proc.wait(timeout=6)
         assert not connectors_path(aldwin_home).exists()
         running = subprocess.run(
-            ["pgrep", "-f", "mcp_stdio_server.py"],
+            ["pgrep", "-f", f"mcp_stdio_server.py --tag={aldwin_home}"],
             capture_output=True,
             text=True,
             timeout=30,

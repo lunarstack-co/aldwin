@@ -47,6 +47,7 @@ from aldwin.host.in_process import (
     update_available_nudge,
     verify_active_openai_key,
 )
+from aldwin.host.transport import HostTransport
 
 if TYPE_CHECKING:
     from aldwin.host.runner import (
@@ -108,6 +109,7 @@ __all__ = [
     "BootstrapResult",
     "ClientBootstrapError",
     "ClientTransport",
+    "HostTransport",
     "InProcessTransport",
     "InvalidSkillSummary",
     "KeyCheckResult",

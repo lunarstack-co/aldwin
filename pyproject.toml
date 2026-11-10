@@ -82,7 +82,7 @@ only-include = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-m 'not live and not perf and not e2e'"
+addopts = "-m 'not live and not perf and not e2e' --dist loadgroup"
 markers = [
     "live: calls real services: OpenAI, Tavily and the catalogue's MCP servers (run by hand)",
     "e2e: drives the installed aldwin binary via pexpect against OpenAI",
@@ -134,4 +134,5 @@ dev = [
     "mammoth>=1.8,<2",
     "python-pptx>=1.0,<2",
     "openpyxl>=3.1,<4",
+    "pytest-xdist>=3.8,<4",
 ]

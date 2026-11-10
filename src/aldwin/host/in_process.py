@@ -664,6 +664,11 @@ class InProcessTransport:
         """Return `True` if this transport has been closed."""
         return self._closed
 
+    @property
+    def attached(self) -> bool:
+        """Return `True` while open: the in-process peer cannot detach and return."""
+        return not self._closed
+
     def set_new_conversation_handler(self, handler: NewConversationHandler) -> None:
         """Register the host callback invoked when a client starts a new chat."""
         self._on_new_conversation = handler
