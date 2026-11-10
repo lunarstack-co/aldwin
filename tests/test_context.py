@@ -216,6 +216,9 @@ def test_system_message_environment_block_updates_across_midnight(
     assert "date: 2026-10-22 (Thursday)" not in after_midnight
 
 
+# A wall-clock budget: it runs in the dedicated perf step, not beside other
+# workers under coverage, where timings are noisy.
+@pytest.mark.perf
 def test_build_context_performance_under_5ms_for_200_messages(
     aldwin_home: Path,
 ) -> None:

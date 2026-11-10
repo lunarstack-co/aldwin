@@ -98,7 +98,7 @@ async def test_create_skill_approve_rebuilds_and_keeps_memory(
     assert isinstance(events[-1], DoneEvent)
 
     mem_before = host._agent_session.memory.dump_json()
-    host._rebuild_agent_for_skills()
+    host._rebuild_agent()
     assert host._agent_session.memory.dump_json() == mem_before
 
 
