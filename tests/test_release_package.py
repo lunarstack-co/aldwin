@@ -241,10 +241,13 @@ def test_wheel_ships_web_export_but_not_the_web_project(
         index_html = zf.read("aldwin/web/static/index.html").decode("utf-8")
 
     assert 'data-testid="aldwin-stub"' in index_html
+    assert "aldwin/web/app.py" in web_entries
     for entry in web_entries:
-        assert entry == "aldwin/web/__init__.py" or entry.startswith(
-            "aldwin/web/static/"
-        ), f"Unexpected web file {entry!r} in wheel"
+        name = entry.removeprefix("aldwin/web/")
+        is_module = name.endswith(".py") and "/" not in name
+        assert is_module or name.startswith("static/"), (
+            f"Unexpected web file {entry!r} in wheel"
+        )
         for marker in ("node_modules", "package.json", ".next/", "cypress"):
             assert marker not in entry, f"{entry!r} leaked into wheel"
 

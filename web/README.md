@@ -2,7 +2,7 @@
 
 The browser interface for Aldwin: a Next.js App Router app written in TypeScript and styled with the Aldwin docs design system.
 
-It is built as a static export. `npm run build` writes the export to `web/out/`, then copies it into `src/aldwin/web/static/`, where it ships inside the Python package. The `aldwin web` command will serve those files from the installed package, so people who install Aldwin never need Node.
+It is built as a static export. `npm run build` writes the export to `web/out/`, then copies it into `src/aldwin/web/static/`, where it ships inside the Python package. The `aldwin web` command serves those files from the installed package, so people who install Aldwin never need Node.
 
 ## Requirements
 
@@ -31,7 +31,7 @@ CI runs `lint`, `typecheck`, `build` and the Cypress smoke test in the `web` job
 
 ## Developing against a running Aldwin
 
-In production one Python process serves both the UI and the API. During development, run the Next dev server for hot reload and point it at a local `aldwin web`. The dev server forwards `/v1/*` to `http://127.0.0.1:7841`. That forwarding exists only in `npm run dev`; a static export cannot rewrite requests.
+In production one Python process serves both the UI and the API. During development, run the Next dev server for hot reload and point it at a local `aldwin web`. The dev server forwards `/v1/*` to `http://127.0.0.1:7841`. `aldwin web` moves to another free port when 7841 is busy, so keep 7841 free while developing. That forwarding exists only in `npm run dev`; a static export cannot rewrite requests.
 
 A static export also rules out route handlers, middleware, server actions and image optimisation. Anything that needs a server belongs in the Python API.
 

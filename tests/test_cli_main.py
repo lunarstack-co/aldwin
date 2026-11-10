@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from importlib import metadata
 from pathlib import Path
 
@@ -357,3 +358,62 @@ def test_cli_workspace_option_rejects_invalid_paths_with_exit_2(
     res_home = runner.invoke(app, ["--workspace", str(aldwin_home)])
     assert res_home.exit_code == 2
     assert "workspace not allowed:" in res_home.output
+
+
+def test_web_help_lists_its_options() -> None:
+    """TC-24: `aldwin web --help` works and names every option."""
+    res = runner.invoke(app, ["web", "--help"])
+    assert res.exit_code == 0
+    plain_output = re.sub(r"\x1b\[[0-9;]*m", "", res.output)
+    for option in ("--host", "--port", "--no-open", "--workspace"):
+        assert option in plain_output
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "8.8.8.8", "::", "example.com"])
+def test_web_refuses_non_loopback_host(aldwin_home: Path, host: str) -> None:
+    """TC-04: a host other computers can reach is refused before binding."""
+    res = runner.invoke(app, ["web", "--host", host, "--no-open"])
+    assert res.exit_code == 2
+    assert "only listens on this computer" in res.output
+    assert not (aldwin_home / "state" / "web.lock").exists()
+
+
+@pytest.mark.loopback
+def test_web_reports_a_busy_explicit_port(aldwin_home: Path) -> None:
+    """A busy `--port` fails with exit 1 instead of moving to another port."""
+    import socket
+
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        port = busy.getsockname()[1]
+        res = runner.invoke(app, ["web", "--port", str(port), "--no-open"])
+    assert res.exit_code == 1
+    assert f"Could not listen on 127.0.0.1 port {port}" in res.output
+    assert not (aldwin_home / "state" / "web.lock").exists()
+
+
+def test_chat_warns_when_web_is_running(aldwin_home: Path) -> None:
+    """TC-27: the terminal notes a live `aldwin web` and keeps going."""
+    from io import StringIO
+
+    from aldwin.cli.theme import create_console
+    from aldwin.client import bootstrap
+    from aldwin.web.lock import WebProcessLock
+
+    boot = bootstrap(plain=True)
+    buffer = StringIO()
+    console = create_console(plain=True, width=200, file=buffer)
+
+    cli_main._warn_if_web_running(boot, console)
+    assert buffer.getvalue() == ""
+
+    lock = WebProcessLock(aldwin_home)
+    assert lock.try_acquire(host="127.0.0.1", port=7841)
+    try:
+        cli_main._warn_if_web_running(boot, console)
+    finally:
+        lock.release()
+    output = buffer.getvalue()
+    assert "aldwin web is also running at http://127.0.0.1:7841" in output
+    assert output.count("\n") == 1
