@@ -115,12 +115,14 @@ from aldwin.host.connectors import (
     ConnectorManager,
     ImportReport,
 )
+from aldwin.host.conversation_lock import ConversationLock
 from aldwin.host.in_process import WorkspaceSummary
 from aldwin.host.sessions import (
     MAX_PREVIEW_CHARS,
     SessionMetaSummary,
     SessionStore,
     StoredSession,
+    session_file_fingerprint,
     session_has_turns,
     shorten_one_line,
 )
@@ -193,6 +195,7 @@ from aldwin.protocol import (
     SkillsShowRequest,
     SkillsUsedEvent,
     StatusEvent,
+    StatusRequest,
     StopRequest,
     TextEvent,
     TodoGetRequest,
@@ -216,6 +219,13 @@ PASTED_SECRET_NOTICE: Final[str] = (
 CIRCUIT_BREAKER_NOTICE: Final[str] = (
     "Stopped after 3 declined actions. Tell Aldwin what you'd like instead."
 )
+CONVERSATION_BUSY_MESSAGE: Final[str] = (
+    "Another Aldwin window is answering in this conversation. "
+    "Wait for it to finish, then try again."
+)
+# Lets a reloading browser tab come back and answer waiting approvals.
+APPROVAL_RECONNECT_GRACE_S: Final[float] = 60.0
+ATTACH_POLL_S: Final[float] = 0.25
 
 AskFn = Callable[[str, str], Awaitable[bool]]
 AgentBuilder = Callable[..., Agent]
@@ -734,6 +744,12 @@ class AldwinHost:
         self._pending_turn_notices: list[str] = []
         self._skills_fingerprint: tuple[tuple[str, int, int], ...] = ()
         self._config_secrets_fingerprint: tuple[int, int, int, int] = (0, 0, 0, 0)
+        self._session_fingerprint = session_file_fingerprint(self._stored_session.path)
+        self._grace_deadline: float | None = None
+        self._attach_watch: asyncio.Task[None] | None = None
+        self._attached_at_turn_start = False
+        self._turn_stream: list[str] = []
+        self._turn_tools: dict[str, str] = {}
         self._skill_catalogue: list[LoadedSkill] = []
 
         self._session_context = SessionContext(
@@ -803,6 +819,7 @@ class AldwinHost:
             todo=self._todo,
             touch=touch,
         )
+        self._session_fingerprint = session_file_fingerprint(self._stored_session.path)
 
     def _on_circuit_breaker(self) -> None:
         """Interrupt `AgentSession` after 3 declined actions in one turn."""
@@ -972,18 +989,14 @@ class AldwinHost:
         """Emit a non-terminal `StatusEvent` when the model retries."""
         scope = self._active_turn_scope
         if scope is not None and not scope.terminated:
-            await scope.emit(
-                StatusEvent(
-                    re=scope.req_id,
-                    message=retry_status_message(
-                        exc,
-                        attempt=attempt,
-                        max_retries=max_retries,
-                        delay_s=delay_s,
-                        model=self._model,
-                    ),
-                )
+            message = retry_status_message(
+                exc,
+                attempt=attempt,
+                max_retries=max_retries,
+                delay_s=delay_s,
+                model=self._model,
             )
+            await scope.emit(self._turn_status_event(scope.req_id, message))
 
     @property
     def model(self) -> str:
@@ -1006,6 +1019,9 @@ class AldwinHost:
     async def stop_host(self) -> None:
         """Cancel any active turn, close the transport, and stop the dispatch loop."""
         self._approvals.disconnect_all()
+        if self._attach_watch is not None:
+            self._attach_watch.cancel()
+            await asyncio.gather(self._attach_watch, return_exceptions=True)
         flows = list(self._connector_tasks.values())
         for task in flows:
             task.cancel()
@@ -1021,19 +1037,68 @@ class AldwinHost:
         self._approval_log.close()
 
     def _approval_door_connected(self) -> bool:
-        """Return whether a welcomed door is attached and can answer now.
+        """Return whether a door can answer approvals; starts and ends the grace."""
+        if not self._welcomed or self._transport.closed:
+            return False
+        if self._transport.attached:
+            self._grace_deadline = None
+            return True
+        if self._grace_deadline is None:
+            busy = self._turn_in_flight() and self._attached_at_turn_start
+            if not (busy or self._approvals.has_pending):
+                return False
+            self._grace_deadline = time.monotonic() + APPROVAL_RECONNECT_GRACE_S
+        return time.monotonic() < self._grace_deadline
 
-        Gates new approvals and host-stream events. A detached door fails new
-        approvals closed. Approvals already pending keep waiting, so a door
-        that reattaches can still answer them; a reconnect grace period will
-        extend this to approvals asked while detached.
-        """
-        return self._transport.attached and self._welcomed
+    def _ensure_attach_watch(self) -> None:
+        """Start the attachment watch if it is not already running."""
+        if self._attach_watch is None or self._attach_watch.done():
+            self._attach_watch = asyncio.create_task(self._watch_attachment())
+
+    async def _watch_attachment(self) -> None:
+        """Deny waiting approvals once a dropped door's grace runs out."""
+        # The transport has no detach callback, so poll while there is work.
+        while True:
+            await asyncio.sleep(ATTACH_POLL_S)
+            if not (self._turn_in_flight() or self._approvals.has_pending):
+                if not self._transport.attached:
+                    self._grace_deadline = None
+                return
+            if not self._approval_door_connected() and self._approvals.has_pending:
+                self._approvals.disconnect_all()
+
+    def _reload_session_if_changed(self) -> bool:
+        """Load the session file if another process saved it; False if unreadable."""
+        path = self._stored_session.path
+        fingerprint = session_file_fingerprint(path)
+        if fingerprint in (self._session_fingerprint, (0, 0)):
+            return True
+        reloaded = self._session_store.load_file(path)
+        if reloaded is None:
+            return False
+        reloaded.meta.model = self._model
+        self._stored_session = reloaded
+        self._todo = list(reloaded.todo or [])
+        self._attach_session(restore_session(self._agent, reloaded.memory.dump_json()))
+        self._session_fingerprint = fingerprint
+        return True
+
+    def _turn_status_event(self, re_id: str, message: str = "") -> StatusEvent:
+        """Build a `status` event carrying the current turn's progress."""
+        tools = list(self._turn_tools.values())
+        return StatusEvent(
+            re=re_id,
+            message=message,
+            turn_streamed_chunks=len(self._turn_stream),
+            active_tool=tools[-1] if tools else None,
+            partial_text="".join(self._turn_stream) or None,
+        )
 
     async def ask_policy(self, request: ApprovalRequest) -> PolicyApprovalAnswer:
         """Injected into `PolicyWrappedTool` to request approval."""
         re_id = self._active_turn_id or "req_turn"
         connected = self._approval_door_connected()
+        self._ensure_attach_watch()
         try:
             return await self._approvals.ask_request(
                 re=re_id,
@@ -1054,6 +1119,7 @@ class AldwinHost:
             return await self.ask_policy(summary_or_request)
         re_id = self._active_turn_id or "req_turn"
         connected = self._approval_door_connected()
+        self._ensure_attach_watch()
         try:
             return await self._approvals.ask(
                 re=re_id,
@@ -1111,6 +1177,7 @@ class AldwinHost:
         # Later turns run on the host's model, so the conversation records it.
         stored.meta.model = self._model
         self._stored_session = stored
+        self._session_fingerprint = session_file_fingerprint(stored.path)
         self._session_context.session_id = stored.meta.id
         self._connectors.reset_loaded()
         self._attach_session(restore_session(self._agent, stored.memory.dump_json()))
@@ -1288,6 +1355,9 @@ class AldwinHost:
             elif isinstance(req, TodoGetRequest):
                 await scope.emit(self._todo_event(req.id))
                 await scope.done("ok")
+            elif isinstance(req, StatusRequest):
+                await scope.emit(self._turn_status_event(req.id))
+                await scope.done("ok")
             elif isinstance(
                 req,
                 ConnectorsListRequest
@@ -1395,6 +1465,7 @@ class AldwinHost:
 
             async def approve(request: ApprovalRequest) -> PolicyApprovalAnswer:
                 # Asked on this request's `re`, not the active turn's.
+                self._ensure_attach_watch()
                 return await self._approvals.ask_request(
                     re=req.id,
                     request=request,
@@ -2173,360 +2244,376 @@ class AldwinHost:
         await scope.done("ok")
 
     async def _run_turn(self, scope: RequestScope, req: TurnRequest) -> None:
-        """Execute a turn and map Agentling events to protocol events."""
+        """Run one turn while holding this conversation's lock."""
         async with scope:
             try:
                 self._maybe_reload_config_from_disk()
             except ConfigError as exc:
                 await scope.error("invalid_request", str(exc))
                 return
-            self._active_turn_id = req.id
-            self._active_turn_scope = scope
-            self._circuit_breaker_tripped = False
-            self._policy_session.reset_turn()
-            from aldwin.core.tools.web_search import reset_web_search_turn_budget
-
-            reset_web_search_turn_budget()
-            self._maybe_rebuild_skills_from_disk()
+            lock = ConversationLock(self._home, self._stored_session.meta.id)
+            if not lock.try_acquire():
+                await scope.error("busy", CONVERSATION_BUSY_MESSAGE)
+                return
+            self._grace_deadline = None
+            self._attached_at_turn_start = self._transport.attached
+            self._turn_stream.clear()
+            self._turn_tools.clear()
+            self._ensure_attach_watch()
             try:
-                await self._connectors.reconcile()
-            except Exception:
-                logger.exception("connector reconcile failed; continuing the turn")
-            for message in self._connectors.take_turn_notices():
-                await scope.emit(NoticeEvent(re=req.id, message=message))
-            await self._flush_pending_notices(req.id, scope)
-            step_text_chunks: list[str] = []
-            turn_streamed_chunks: list[str] = []
-            # Text streamed in the latest model step before tools cleared it.
-            last_step_streamed = ""
-            tool_start_times: dict[str, float] = {}
-            tool_running: dict[str, str] = {}
-            todo_call_items: dict[str, Any] = {}
-            final_status: str = "completed"
-            final_usage: Usage | None = None
-            final_finish_reason: str | None = None
+                # Under the lock, so another window's finished turn is complete.
+                if not self._reload_session_if_changed():
+                    await scope.error(
+                        "internal",
+                        f"Aldwin couldn't read the saved conversation "
+                        f"{self._stored_session.path.name}. Start a new one with "
+                        "/new; the file stays in ~/.aldwin/sessions.",
+                    )
+                    return
+                await self._run_turn_steps(scope, req)
+            finally:
+                # No await: the door may send its next request right after `done`.
+                self._grace_deadline = None
+                self._attached_at_turn_start = False
+                self._turn_stream.clear()
+                self._turn_tools.clear()
+                lock.release()
 
-            picked: list[LoadedSkill] = []
-            if self._negotiated_version >= 2:
-                picked, dropped_pairs = resolve_picked_skills(
-                    list(req.skills),
-                    self._skill_catalogue,
+    async def _run_turn_steps(self, scope: RequestScope, req: TurnRequest) -> None:
+        """Execute a turn and map Agentling events to protocol events."""
+        self._active_turn_id = req.id
+        self._active_turn_scope = scope
+        self._circuit_breaker_tripped = False
+        self._policy_session.reset_turn()
+        from aldwin.core.tools.web_search import reset_web_search_turn_budget
+
+        reset_web_search_turn_budget()
+        self._maybe_rebuild_skills_from_disk()
+        try:
+            await self._connectors.reconcile()
+        except Exception:
+            logger.exception("connector reconcile failed; continuing the turn")
+        for message in self._connectors.take_turn_notices():
+            await scope.emit(NoticeEvent(re=req.id, message=message))
+        await self._flush_pending_notices(req.id, scope)
+        step_text_chunks: list[str] = []
+        # Text streamed in the latest model step before tools cleared it.
+        last_step_streamed = ""
+        tool_start_times: dict[str, float] = {}
+        tool_running: dict[str, str] = {}
+        todo_call_items: dict[str, Any] = {}
+        final_status: str = "completed"
+        final_usage: Usage | None = None
+        final_finish_reason: str | None = None
+
+        picked: list[LoadedSkill] = []
+        if self._negotiated_version >= 2:
+            picked, dropped_pairs = resolve_picked_skills(
+                list(req.skills),
+                self._skill_catalogue,
+            )
+            dropped = [
+                DroppedSkill(name=name, reason=reason) for name, reason in dropped_pairs
+            ]
+            used_names = [entry.name for entry in picked]
+            if used_names or dropped:
+                await scope.emit(
+                    SkillsUsedEvent(
+                        re=req.id,
+                        names=used_names,
+                        dropped=dropped,
+                    )
                 )
-                dropped = [
-                    DroppedSkill(name=name, reason=reason)
-                    for name, reason in dropped_pairs
-                ]
-                used_names = [entry.name for entry in picked]
-                if used_names or dropped:
+            if picked:
+                record_skills_used(self._home, used_names)
+        # The token stops here: the model, memory and session file get `text`.
+        text = redact_pasted_secrets(req.text)
+        if text != req.text:
+            await scope.emit(NoticeEvent(re=req.id, message=PASTED_SECRET_NOTICE))
+        task_text = build_task(text, picked)
+        if self._stored_session.turns is None:
+            self._stored_session.turns = []
+        self._stored_session.turns.append(
+            {
+                "text": text,
+                "skills": [entry.name for entry in picked],
+            }
+        )
+
+        cold_load_task: asyncio.Task[None] | None = None
+        if is_local_model(self._model):
+            _, model_id_short = parse_model_ref_parts(self._model)
+
+            async def _emit_cold_load_status() -> None:
+                try:
+                    await asyncio.sleep(3.0)
                     await scope.emit(
-                        SkillsUsedEvent(
-                            re=req.id,
-                            names=used_names,
-                            dropped=dropped,
+                        self._turn_status_event(
+                            req.id, f"Loading {model_id_short} into memory…"
                         )
                     )
-                if picked:
-                    record_skills_used(self._home, used_names)
-            # The token stops here: the model, memory and session file get `text`.
-            text = redact_pasted_secrets(req.text)
-            if text != req.text:
-                await scope.emit(NoticeEvent(re=req.id, message=PASTED_SECRET_NOTICE))
-            task_text = build_task(text, picked)
-            if self._stored_session.turns is None:
-                self._stored_session.turns = []
-            self._stored_session.turns.append(
-                {
-                    "text": text,
-                    "skills": [entry.name for entry in picked],
-                }
+                except asyncio.CancelledError:
+                    pass
+
+            cold_load_task = asyncio.create_task(_emit_cold_load_status())
+
+        try:
+            stream_iter = self._agent_session.run(
+                task_text,
+                stream=True,
+                reset=False,
             )
-
-            cold_load_task: asyncio.Task[None] | None = None
-            if is_local_model(self._model):
-                _, model_id_short = parse_model_ref_parts(self._model)
-
-                async def _emit_cold_load_status() -> None:
-                    try:
-                        await asyncio.sleep(3.0)
-                        await scope.emit(
-                            StatusEvent(
-                                re=req.id,
-                                message=f"Loading {model_id_short} into memory…",
-                            )
-                        )
-                    except asyncio.CancelledError:
-                        pass
-
-                cold_load_task = asyncio.create_task(_emit_cold_load_status())
-
-            try:
-                stream_iter = self._agent_session.run(
-                    task_text,
-                    stream=True,
-                    reset=False,
-                )
-                can_trim_context = True
-                while True:
-                    try:
-                        async for ev in stream_iter:
-                            await self._flush_pending_notices(req.id, scope)
-                            if isinstance(ev, TextDelta):
-                                if (
-                                    cold_load_task is not None
-                                    and not cold_load_task.done()
-                                ):
-                                    cold_load_task.cancel()
-                                if not step_text_chunks:
-                                    self._persist_session(interrupted=True)
-                                step_text_chunks.append(ev.text)
-                                turn_streamed_chunks.append(ev.text)
-                                await scope.emit(TextEvent(re=req.id, delta=ev.text))
-                            elif isinstance(ev, AgentlingToolCallEvent):
-                                if (
-                                    cold_load_task is not None
-                                    and not cold_load_task.done()
-                                ):
-                                    cold_load_task.cancel()
-                                if step_text_chunks:
-                                    last_step_streamed = "".join(step_text_chunks)
-                                    step_text_chunks.clear()
-                                call = ev.tool_call
+            can_trim_context = True
+            while True:
+                try:
+                    async for ev in stream_iter:
+                        await self._flush_pending_notices(req.id, scope)
+                        if isinstance(ev, TextDelta):
+                            if cold_load_task is not None and not cold_load_task.done():
+                                cold_load_task.cancel()
+                            if not step_text_chunks:
                                 self._persist_session(interrupted=True)
-                                self._connectors.note_tool_used(call.name)
-                                self._policy_session.enqueue_step_call(
-                                    call.id,
+                            step_text_chunks.append(ev.text)
+                            self._turn_stream.append(ev.text)
+                            await scope.emit(TextEvent(re=req.id, delta=ev.text))
+                        elif isinstance(ev, AgentlingToolCallEvent):
+                            if cold_load_task is not None and not cold_load_task.done():
+                                cold_load_task.cancel()
+                            if step_text_chunks:
+                                last_step_streamed = "".join(step_text_chunks)
+                                step_text_chunks.clear()
+                            call = ev.tool_call
+                            self._persist_session(interrupted=True)
+                            self._connectors.note_tool_used(call.name)
+                            self._policy_session.enqueue_step_call(
+                                call.id,
+                                call.name,
+                                call.arguments,
+                            )
+                            tool_start_times[call.id] = time.monotonic()
+                            if call.name == "todo":
+                                todo_call_items[call.id] = call.arguments.get("items")
+                            running = (
+                                edit_tools.running_summary(
                                     call.name,
                                     call.arguments,
+                                    self._workspace,
                                 )
-                                tool_start_times[call.id] = time.monotonic()
-                                if call.name == "todo":
-                                    todo_call_items[call.id] = call.arguments.get(
-                                        "items"
-                                    )
-                                running = (
-                                    edit_tools.running_summary(
-                                        call.name,
-                                        call.arguments,
-                                        self._workspace,
-                                    )
-                                    or file_running_summary(
-                                        call.name,
-                                        call.arguments,
-                                        self._workspace,
-                                    )
-                                    or document_tools.running_summary(
-                                        call.name,
-                                        call.arguments,
-                                        self._workspace,
-                                    )
-                                    or download_tools.running_summary(
-                                        call.name,
-                                        call.arguments,
-                                        self._workspace,
-                                    )
-                                    or memory_running_summary(
-                                        call.name,
-                                        call.arguments,
-                                        self._workspace,
-                                    )
+                                or file_running_summary(
+                                    call.name,
+                                    call.arguments,
+                                    self._workspace,
                                 )
-                                tool_running[call.id] = running
-                                connector, tool_reason = tool_call_labels(call.name)
-                                title, remote = self._connectors.labels(call.name)
-                                await scope.emit(
-                                    ToolCallEvent(
-                                        re=req.id,
-                                        call_id=call.id,
-                                        name=call.name,
-                                        args_preview=format_args_preview(
-                                            call.arguments
-                                        ),
-                                        summary=running,
-                                        connector=connector,
-                                        connector_title=title,
-                                        remote_tool=remote,
-                                        reason=tool_reason,
-                                    )
+                                or document_tools.running_summary(
+                                    call.name,
+                                    call.arguments,
+                                    self._workspace,
                                 )
-                            elif isinstance(ev, AgentlingToolResultEvent):
-                                res = ev.result
-                                started = tool_start_times.pop(res.tool_call_id, None)
-                                explicit_ms = getattr(res.content, "duration_ms", None)
-                                if isinstance(explicit_ms, int):
-                                    duration_ms = max(0, explicit_ms)
-                                elif started is not None:
-                                    effective_start = max(
-                                        started, self._last_approval_end_time
-                                    )
-                                    duration_ms = max(
-                                        0,
-                                        int(
-                                            (time.monotonic() - effective_start) * 1000
-                                        ),
-                                    )
-                                else:
-                                    duration_ms = 0
-                                ok, summary = summarize_tool_result(
-                                    res.name,
-                                    res.content,
-                                    is_error=res.is_error,
+                                or download_tools.running_summary(
+                                    call.name,
+                                    call.arguments,
+                                    self._workspace,
                                 )
-                                running = tool_running.pop(res.tool_call_id, "")
-                                if res.name in edit_tools.EDIT_TOOL_NAMES:
-                                    summary = edit_tools.row_summary(
-                                        running, summary, ok=ok
-                                    )
-                                elif res.name in document_tools.DOCUMENT_TOOL_NAMES:
-                                    summary = document_tools.row_summary(
-                                        running, summary, ok=ok
-                                    )
-                                elif res.name in download_tools.DOWNLOAD_TOOL_NAMES:
-                                    summary = download_tools.row_summary(
-                                        running, summary, ok=ok
-                                    )
-                                else:
-                                    summary = file_row_summary(running, summary, ok=ok)
-                                preview = ""
-                                if ok:
-                                    preview = preview_lines(str(res.content))
-                                if res.name == "todo" and ok:
-                                    raw_items = todo_call_items.pop(
-                                        res.tool_call_id, None
-                                    )
-                                    try:
-                                        self._todo = validate_todo_items(raw_items)
-                                    except ToolCallError:
-                                        pass
-                                    else:
-                                        self._persist_session(interrupted=True)
-                                        await scope.emit(self._todo_event(req.id))
-                                else:
-                                    todo_call_items.pop(res.tool_call_id, None)
-                                await scope.emit(
-                                    ToolResultEvent(
-                                        re=req.id,
-                                        call_id=res.tool_call_id,
-                                        ok=ok,
-                                        summary=summary,
-                                        preview=preview,
-                                        duration_ms=duration_ms,
-                                    )
+                                or memory_running_summary(
+                                    call.name,
+                                    call.arguments,
+                                    self._workspace,
                                 )
-                            elif isinstance(ev, StepEvent):
-                                if step_text_chunks:
-                                    last_step_streamed = "".join(step_text_chunks)
-                                step_text_chunks.clear()
-                                self._policy_session.clear_step_calls()
-                                self._persist_session(interrupted=True)
-                            elif isinstance(ev, FinalEvent):
-                                final_status = ev.status
-                                final_usage = ev.usage
-                                final_finish_reason = getattr(ev, "finish_reason", None)
-                                # Plain-text endings were already streamed in this
-                                # step; final_answer tool replies were not, unless
-                                # the same text was streamed before the tool call.
-                                if ev.answer:
-                                    step_streamed = "".join(step_text_chunks).strip()
-                                    prior = last_step_streamed.strip()
-                                    already = step_streamed or prior
-                                    if ev.answer.strip() != already:
-                                        step_text_chunks.append(ev.answer)
-                                        await scope.emit(
-                                            TextEvent(re=req.id, delta=ev.answer)
-                                        )
-                        break
-                    except ModelContextLengthError:
-                        task_indices = [
-                            i
-                            for i, s in enumerate(self._agent_session.memory.steps)
-                            if isinstance(s, TaskStep)
-                        ]
-                        if len(task_indices) > 1 and can_trim_context:
-                            can_trim_context = False
-                            self._policy_session.clear_step_calls()
-                            self._agent_session.memory.steps = list(
-                                self._agent_session.memory.steps[task_indices[1] :]
                             )
-                            step_text_chunks.clear()
-                            turn_streamed_chunks.clear()
-                            last_step_streamed = ""
-                            _, model_id = parse_model_ref_parts(self._model)
+                            tool_running[call.id] = running
+                            self._turn_tools[call.id] = call.name
+                            connector, tool_reason = tool_call_labels(call.name)
+                            title, remote = self._connectors.labels(call.name)
                             await scope.emit(
-                                NoticeEvent(
+                                ToolCallEvent(
                                     re=req.id,
-                                    message=(
-                                        f"This conversation is too long for "
-                                        f"{model_id}. Aldwin trimmed older messages."
-                                    ),
+                                    call_id=call.id,
+                                    name=call.name,
+                                    args_preview=format_args_preview(call.arguments),
+                                    summary=running,
+                                    connector=connector,
+                                    connector_title=title,
+                                    remote_tool=remote,
+                                    reason=tool_reason,
                                 )
                             )
-                            stream_iter = self._agent_session.resume(stream=True)
-                            continue
-                        raise
-
-                if final_status == "interrupted":
-                    self._flush_partial_text(step_text_chunks)
-                    self._persist_session(interrupted=False)
-                    if self._circuit_breaker_tripped and self._negotiated_version >= 2:
+                        elif isinstance(ev, AgentlingToolResultEvent):
+                            res = ev.result
+                            started = tool_start_times.pop(res.tool_call_id, None)
+                            explicit_ms = getattr(res.content, "duration_ms", None)
+                            if isinstance(explicit_ms, int):
+                                duration_ms = max(0, explicit_ms)
+                            elif started is not None:
+                                effective_start = max(
+                                    started, self._last_approval_end_time
+                                )
+                                duration_ms = max(
+                                    0,
+                                    int((time.monotonic() - effective_start) * 1000),
+                                )
+                            else:
+                                duration_ms = 0
+                            ok, summary = summarize_tool_result(
+                                res.name,
+                                res.content,
+                                is_error=res.is_error,
+                            )
+                            running = tool_running.pop(res.tool_call_id, "")
+                            self._turn_tools.pop(res.tool_call_id, None)
+                            if res.name in edit_tools.EDIT_TOOL_NAMES:
+                                summary = edit_tools.row_summary(
+                                    running, summary, ok=ok
+                                )
+                            elif res.name in document_tools.DOCUMENT_TOOL_NAMES:
+                                summary = document_tools.row_summary(
+                                    running, summary, ok=ok
+                                )
+                            elif res.name in download_tools.DOWNLOAD_TOOL_NAMES:
+                                summary = download_tools.row_summary(
+                                    running, summary, ok=ok
+                                )
+                            else:
+                                summary = file_row_summary(running, summary, ok=ok)
+                            preview = ""
+                            if ok:
+                                preview = preview_lines(str(res.content))
+                            if res.name == "todo" and ok:
+                                raw_items = todo_call_items.pop(res.tool_call_id, None)
+                                try:
+                                    self._todo = validate_todo_items(raw_items)
+                                except ToolCallError:
+                                    pass
+                                else:
+                                    self._persist_session(interrupted=True)
+                                    await scope.emit(self._todo_event(req.id))
+                            else:
+                                todo_call_items.pop(res.tool_call_id, None)
+                            await scope.emit(
+                                ToolResultEvent(
+                                    re=req.id,
+                                    call_id=res.tool_call_id,
+                                    ok=ok,
+                                    summary=summary,
+                                    preview=preview,
+                                    duration_ms=duration_ms,
+                                )
+                            )
+                        elif isinstance(ev, StepEvent):
+                            if step_text_chunks:
+                                last_step_streamed = "".join(step_text_chunks)
+                            step_text_chunks.clear()
+                            self._policy_session.clear_step_calls()
+                            self._persist_session(interrupted=True)
+                        elif isinstance(ev, FinalEvent):
+                            final_status = ev.status
+                            final_usage = ev.usage
+                            final_finish_reason = getattr(ev, "finish_reason", None)
+                            # Plain-text endings were already streamed in this
+                            # step; final_answer tool replies were not, unless
+                            # the same text was streamed before the tool call.
+                            if ev.answer:
+                                step_streamed = "".join(step_text_chunks).strip()
+                                prior = last_step_streamed.strip()
+                                already = step_streamed or prior
+                                if ev.answer.strip() != already:
+                                    step_text_chunks.append(ev.answer)
+                                    self._turn_stream.append(ev.answer)
+                                    await scope.emit(
+                                        TextEvent(re=req.id, delta=ev.answer)
+                                    )
+                    break
+                except ModelContextLengthError:
+                    task_indices = [
+                        i
+                        for i, s in enumerate(self._agent_session.memory.steps)
+                        if isinstance(s, TaskStep)
+                    ]
+                    if len(task_indices) > 1 and can_trim_context:
+                        can_trim_context = False
+                        self._policy_session.clear_step_calls()
+                        self._agent_session.memory.steps = list(
+                            self._agent_session.memory.steps[task_indices[1] :]
+                        )
+                        step_text_chunks.clear()
+                        self._turn_stream.clear()
+                        last_step_streamed = ""
+                        _, model_id = parse_model_ref_parts(self._model)
                         await scope.emit(
                             NoticeEvent(
                                 re=req.id,
-                                message=CIRCUIT_BREAKER_NOTICE,
+                                message=(
+                                    f"This conversation is too long for "
+                                    f"{model_id}. Aldwin trimmed older messages."
+                                ),
                             )
                         )
-                    await scope.done("stopped", usage=_to_token_usage(final_usage))
-                    return
+                        stream_iter = self._agent_session.resume(stream=True)
+                        continue
+                    raise
 
-                reason: DoneReason = (
-                    "max_steps" if final_status == "max_steps" else "answered"
-                )
+            if final_status == "interrupted":
+                self._flush_partial_text(step_text_chunks)
                 self._persist_session(interrupted=False)
-                # Rebuild after the turn loop (never mid-tool) and emit
-                # notice/skills before `done` so the door still receives them.
-                if self._host_flags.get("skills_dirty"):
-                    self._rebuild_agent()
-                    await scope.emit(NoticeEvent(re=req.id, message="skills reloaded"))
-                    await scope.emit(self._skills_event(req.id))
-                if final_finish_reason == "length":
+                if self._circuit_breaker_tripped and self._negotiated_version >= 2:
                     await scope.emit(
                         NoticeEvent(
                             re=req.id,
-                            message=(
-                                "The answer was cut off because it reached "
-                                "the model's length limit."
-                            ),
+                            message=CIRCUIT_BREAKER_NOTICE,
                         )
                     )
-                await self._flush_pending_notices(req.id, scope)
-                await scope.done(
-                    reason,
-                    usage=_to_token_usage(final_usage),
-                    max_steps=self._agent.max_steps if reason == "max_steps" else None,
-                )
+                await scope.done("stopped", usage=_to_token_usage(final_usage))
+                return
 
-            except asyncio.CancelledError:
-                self._approvals.cancel_all()
-                self._policy_session.clear_step_calls()
-                self._flush_partial_text(step_text_chunks)
-                self._persist_session(interrupted=False)
-                if not scope.terminated:
-                    await scope.done("stopped")
-                raise
-            except Exception as exc:
-                self._approvals.cancel_all()
-                self._policy_session.clear_step_calls()
-                logger.exception("Turn %s failed", req.id)
-                self._persist_session(interrupted=True)
-                code, msg = classify_turn_error(
-                    exc, model=self._model, local=is_local_model(self._model, exc=exc)
+            reason: DoneReason = (
+                "max_steps" if final_status == "max_steps" else "answered"
+            )
+            self._persist_session(interrupted=False)
+            # Rebuild after the turn loop (never mid-tool) and emit
+            # notice/skills before `done` so the door still receives them.
+            if self._host_flags.get("skills_dirty"):
+                self._rebuild_agent()
+                await scope.emit(NoticeEvent(re=req.id, message="skills reloaded"))
+                await scope.emit(self._skills_event(req.id))
+            if final_finish_reason == "length":
+                await scope.emit(
+                    NoticeEvent(
+                        re=req.id,
+                        message=(
+                            "The answer was cut off because it reached "
+                            "the model's length limit."
+                        ),
+                    )
                 )
-                if not scope.terminated:
-                    await scope.error(code, msg)
-            finally:
-                if cold_load_task is not None and not cold_load_task.done():
-                    cold_load_task.cancel()
-                self._active_turn_id = None
-                self._active_turn_scope = None
+            await self._flush_pending_notices(req.id, scope)
+            await scope.done(
+                reason,
+                usage=_to_token_usage(final_usage),
+                max_steps=self._agent.max_steps if reason == "max_steps" else None,
+            )
+
+        except asyncio.CancelledError:
+            self._approvals.cancel_all()
+            self._policy_session.clear_step_calls()
+            self._flush_partial_text(step_text_chunks)
+            self._persist_session(interrupted=False)
+            if not scope.terminated:
+                await scope.done("stopped")
+            raise
+        except Exception as exc:
+            self._approvals.cancel_all()
+            self._policy_session.clear_step_calls()
+            logger.exception("Turn %s failed", req.id)
+            self._persist_session(interrupted=True)
+            code, msg = classify_turn_error(
+                exc, model=self._model, local=is_local_model(self._model, exc=exc)
+            )
+            if not scope.terminated:
+                await scope.error(code, msg)
+        finally:
+            if cold_load_task is not None and not cold_load_task.done():
+                cold_load_task.cancel()
+            self._active_turn_id = None
+            self._active_turn_scope = None
 
     def _flush_partial_text(self, chunks: list[str]) -> None:
         """Append partial streamed text as a `FinalStep` when stopped mid-stream."""

@@ -51,7 +51,7 @@ Every message is a Pydantic v2 model with `model_config = ConfigDict(extra="igno
 | `tool_result` | `ToolResultEvent` | `call_id: str`, `ok: bool`, `summary: str` (≤ 120 chars), `duration_ms: int` | No | Tool execution completed. |
 | `approval` | `ApprovalEvent` | `approval_id: str`, `summary: str`, `detail: str = ""` | No | Host is paused waiting for a `yes` or `no` `approve` request. |
 | `history` | `HistoryEvent` | `messages: list[HistoryItem]`, `interrupted: bool` | No | Past messages (`role: "user" \| "assistant" \| "tool"`, `text`, `at`). |
-| `status` | `StatusEvent` | `message: str` | No | Non-terminal status notice (e.g. `OpenAI is busy, retrying (2 of 3)…`). |
+| `status` | `StatusEvent` | `message: str`, `turn_streamed_chunks: int`, `active_tool: str \| None`, `partial_text: str \| None` | No | Status notice (e.g. `OpenAI is busy, retrying (2 of 3)…`) and the current turn's progress. See [Reconnecting](#reconnecting). |
 | `models` | `ModelsEvent` | `current: str`, `providers: list[ProviderModels]` | No | List of providers and models returned in response to `models.list`. |
 | `done` | `DoneEvent` | `reason: "answered" \| "stopped" \| "max_steps" \| "ok"`, `usage: TokenUsage \| None`, `max_steps: int \| None` (set when `reason="max_steps"`) | **Yes** | Request completed normally. |
 | `error` | `ErrorEvent` | `code: ErrorCode`, `message: str` | **Yes** | Request failed with a single-sentence actionable message. |
@@ -60,7 +60,7 @@ Every message is a Pydantic v2 model with `model_config = ConfigDict(extra="igno
 
 - `version_mismatch`: client's `v_min..v_max` does not include the host's `PROTOCOL_VERSION`.
 - `protocol`: a request was sent before completing the `hello` handshake.
-- `busy`: a `turn`, `set_model`, `sessions.open` or `sessions.new` was sent while another turn is already running.
+- `busy`: a `turn`, `set_model`, `sessions.open` or `sessions.new` was sent while another turn is already running, or a `turn` was sent while another Aldwin window is answering in the same conversation.
 - `unknown_approval`: `approve` referenced an `approval_id` that does not exist or already finished.
 - `unknown_model`: `set_model` requested an unsupported or blank model name.
 - `auth_failed`: the active model provider rejected the API key (`401` or `403`).
@@ -110,6 +110,26 @@ Each conversation is one file in `~/.aldwin/sessions/`, and the host has exactly
 - While a turn is running, `sessions.open` and `sessions.new` get `error(code="busy")` and the active conversation does not change. The terminal's `/new` is different: it stops the running turn first.
 - A new conversation has an empty `title`. The title comes from the first message.
 - Switching saves the conversation being left without changing its `updated_at`, so opening a conversation and leaving it does not move it up the list.
+
+---
+
+## Turns across windows
+
+The terminal and the browser door run as separate processes on one home folder. While a turn runs, its host holds an exclusive lock on `~/.aldwin/state/locks/<session id>.lock`. The lock is taken when the turn starts and released when it ends with `done` or `error`, so an open window that is idle never blocks the other one. A `turn` in a conversation another window is answering gets `error(code="busy")`.
+
+At the start of each turn, after taking the lock, the host checks whether another window saved the conversation since it last did. If so, it loads the saved file before running the turn, so the latest save always wins.
+
+## Reconnecting
+
+A door can drop and come back, for example when a browser tab reloads. If it drops during a turn it started attached, or while approvals are waiting, approvals stay open for 60 seconds. A door that reattaches and sends `hello` in that time can still answer them, and approvals asked meanwhile wait for it too. After 60 seconds, waiting approvals are denied as if no one were there to answer (`no_approver`), and the turn carries on without them.
+
+Events sent while no door is attached are not kept. To catch up, a door that reattaches sends:
+
+| `type` | Model | Fields | Description |
+|---|---|---|---|
+| `status` | `StatusRequest` | none | Reply with one `status` event, then `done`. Answered mid-turn. |
+
+The `status` event's `turn_streamed_chunks` counts the text deltas the current turn has sent, `partial_text` is that text joined, and `active_tool` names the tool running now. All are zero or empty when no turn is running. The door then asks for `history` to show the conversation so far. There is no log of past events to replay.
 
 ---
 

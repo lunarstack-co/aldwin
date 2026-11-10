@@ -46,6 +46,7 @@ from aldwin.protocol import (
     SkillsListRequest,
     SkillsUsedEvent,
     StatusEvent,
+    StatusRequest,
     StopRequest,
     TextEvent,
     TodoGetRequest,
@@ -855,3 +856,27 @@ def test_sessions_open_requires_non_empty_id() -> None:
         SessionsOpenRequest(session_id="")
     with pytest.raises(ValidationError):
         parse_request(json.dumps({"type": "sessions.open", "id": "r1"}))
+
+
+def test_status_request_and_progress_fields_round_trip() -> None:
+    """TC-27: the status pull and its progress fields survive JSON."""
+    request = StatusRequest(id="req_s")
+    assert parse_request(request.model_dump_json()) == request
+
+    event = StatusEvent(
+        re="req_s",
+        turn_streamed_chunks=3,
+        active_tool="run_command",
+        partial_text="Hello there",
+    )
+    assert parse_event(event.model_dump_json()) == event
+
+
+def test_status_event_old_shape_still_parses() -> None:
+    """TC-27: a status event with only a message gets empty progress fields."""
+    parsed = parse_event(
+        json.dumps({"type": "event", "kind": "status", "re": "r1", "message": "x"})
+    )
+    assert isinstance(parsed, StatusEvent)
+    assert (parsed.message, parsed.turn_streamed_chunks) == ("x", 0)
+    assert parsed.active_tool is None and parsed.partial_text is None
