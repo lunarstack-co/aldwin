@@ -54,9 +54,11 @@ async def _add_and_wait(home: Path, workspace: Path) -> None:
         await asyncio.Event().wait()
         return "no", None
 
+    # The tag lets the test find this run's server among parallel workers.
+    argv = [*ARGV, f"--tag={home}"]
     async with open_in_process_client(home=home, workspace=workspace) as client:
         await client.connectors_add(
-            command=shlex.join(ARGV), name="fixture", on_approval=handler
+            command=shlex.join(argv), name="fixture", on_approval=handler
         )
 
 
