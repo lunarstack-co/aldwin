@@ -133,6 +133,18 @@ The `status` event's `turn_streamed_chunks` counts the text deltas the current t
 
 ---
 
+## The browser's WebSocket
+
+`aldwin web` carries these messages over one WebSocket at `/v1/ws`, one JSON request or event per text frame. The host stamps every request from it with `channel` and `sender` `web`, whatever the page sent, and every event to it with `channel` `web`.
+
+1. The signed-in page asks `POST /v1/ws-ticket` and gets `{ticket, expires_in}`. This needs the session cookie and the same Host, Origin and `Sec-Fetch-Site` checks as other `/v1` routes. Until a host is serving, it answers 503 with `error: "host_not_ready"`.
+2. It opens `/v1/ws?ticket=<ticket>` within 30 seconds. The upgrade must carry an `Origin` that is this server's own, and the ticket works once. A missing, reused or expired ticket is refused with 401, a foreign or missing Origin with 403, and a server with no host yet with 503, all before the socket opens.
+3. It sends `hello` and carries on as any door.
+
+Only one tab is live at a time. A second tab's socket is closed with code 4409 and reason `already_attached`. Opening with `&take_over=1` instead closes the first tab's socket with 4000 `replaced` and serves the new one. A tab that closes only detaches: approvals wait as described under [Reconnecting](#reconnecting). A message that is not a valid request gets `error(code="protocol")`; a binary frame closes the socket with 1003. Stopping `aldwin web` closes the socket with 1001.
+
+---
+
 ## REST helpers in `aldwin web`
 
 The browser door also reads and writes a few documents over plain HTTP. These routes are helpers, not a second protocol: starting, opening and running a conversation, approvals, skills and models stay on the messages above. Every route needs the session cookie and the same Host, Origin and `Sec-Fetch-Site` checks as the rest of `/v1` (see [privacy](privacy.md#the-browser-window)); a signed-out request gets 401 and a request from another page gets 403.
@@ -152,6 +164,7 @@ The browser door also reads and writes a few documents over plain HTTP. These ro
 | `POST /v1/setup/models` | `{provider}`; the models that provider offers. |
 | `POST /v1/setup/save` | `{openai_api_key?, tavily_api_key?, model?}`; checks every key first and saves nothing if one fails. |
 | `POST /v1/setup/profile` | `{first_name?, occupation?, personality?, skipped?}`; writes `state/onboarding.json`. |
+| `POST /v1/ws-ticket` | A one-time ticket for the WebSocket; see above. |
 
 A malformed body gets 422 with the field and the reason, never the submitted values. These routes never start an agent, so they work before any model key exists.
 

@@ -10,6 +10,7 @@ from aldwin import __version__
 from aldwin.web.app import StaticFilesMissingError, create_app
 from aldwin.web.auth import Authenticator, is_loopback_host, origin_for
 from aldwin.web.lock import WebProcessLock
+from aldwin.web.runtime import WebHostRuntime
 from aldwin.web.server import bind_socket, serve
 
 NOT_LOOPBACK_MESSAGE = (
@@ -62,6 +63,7 @@ def run_web(
                 home=result.home,
                 home_display=result.display_home,
                 version=__version__,
+                runtime=WebHostRuntime(),
             )
         except StaticFilesMissingError as exc:
             sock.close()
