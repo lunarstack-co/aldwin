@@ -37,7 +37,6 @@ from aldwin.core.agent import (
     AnyAskFn,
     SessionContext,
     build_agent,
-    new_session,
     restore_session,
     switch_session_model,
 )
@@ -118,8 +117,10 @@ from aldwin.host.connectors import (
 from aldwin.host.in_process import WorkspaceSummary
 from aldwin.host.sessions import (
     MAX_PREVIEW_CHARS,
+    SessionMetaSummary,
     SessionStore,
     StoredSession,
+    session_has_turns,
     shorten_one_line,
 )
 from aldwin.host.transport import HostTransport
@@ -179,6 +180,11 @@ from aldwin.protocol import (
     SearchProviderItem,
     SearchProvidersEvent,
     SearchUseRequest,
+    SessionMetaItem,
+    SessionsEvent,
+    SessionsListRequest,
+    SessionsNewRequest,
+    SessionsOpenRequest,
     SetModelRequest,
     SkillBodyEvent,
     SkillsEvent,
@@ -786,13 +792,14 @@ class AldwinHost:
             total=total,
         )
 
-    def _persist_session(self, *, interrupted: bool) -> None:
+    def _persist_session(self, *, interrupted: bool, touch: bool = True) -> None:
         """Save the active session memory and todo list."""
         self._session_store.save(
             self._stored_session,
             self._agent_session.memory,
             interrupted=interrupted,
             todo=self._todo,
+            touch=touch,
         )
 
     def _on_circuit_breaker(self) -> None:
@@ -1038,20 +1045,109 @@ class AldwinHost:
             self._last_approval_end_time = time.monotonic()
 
     async def new_conversation(self) -> None:
-        """Close the current session file and start a fresh conversation."""
-        self._approvals.cancel_all()
-        if self._turn_task is not None and not self._turn_task.done():
-            self._agent_session.interrupt()
-            self._turn_task.cancel()
-            await asyncio.gather(self._turn_task, return_exceptions=True)
+        """Start a new conversation for the terminal's `/new`.
 
-        self._persist_session(interrupted=False)
+        Unlike `sessions.new`, a running turn is stopped first rather than
+        refused, because the terminal user asked for it with the turn on screen.
+        """
+        self._approvals.cancel_all()
+        task = self._turn_task
+        if task is not None and not task.done():
+            self._agent_session.interrupt()
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            self._persist_session(interrupted=False)
+        self._activate_session(self._landing_session())
+
+    def _turn_in_flight(self) -> bool:
+        return self._turn_task is not None and not self._turn_task.done()
+
+    def _landing_session(self) -> StoredSession:
+        """Return the empty conversation a new chat should use.
+
+        Reuses the active conversation or the newest saved one while it has no
+        turns, so repeated new chats never leave a trail of empty files.
+        """
+        active = self._stored_session
+        if not session_has_turns(active.turns, active.meta.title):
+            return active
+        saved = self._session_store.list_metas(include_empty=True)
+        if saved and not saved[0].has_turns:
+            latest = self._session_store.load_id(saved[0].id)
+            if latest is not None:
+                return latest
+        return self._session_store.create_new(model=self._model)
+
+    def _activate_session(self, stored: StoredSession) -> None:
+        """Make `stored` the active conversation; the caller checks it is idle."""
+        if stored.meta.id == self._stored_session.meta.id:
+            return
+        self._persist_session(
+            interrupted=self._stored_session.meta.interrupted, touch=False
+        )
         self._policy_session.reset_turn()
-        self._todo = []
-        self._stored_session = self._session_store.create_new(model=self._model)
-        self._session_context.session_id = self._stored_session.meta.id
+        self._todo = list(stored.todo or [])
+        # Later turns run on the host's model, so the conversation records it.
+        stored.meta.model = self._model
+        self._stored_session = stored
+        self._session_context.session_id = stored.meta.id
         self._connectors.reset_loaded()
-        self._attach_session(new_session(self._agent))
+        self._attach_session(restore_session(self._agent, stored.memory.dump_json()))
+
+    @staticmethod
+    def _session_item(meta: SessionMetaSummary | StoredSession) -> SessionMetaItem:
+        source = meta.meta if isinstance(meta, StoredSession) else meta
+        return SessionMetaItem(
+            id=source.id,
+            created_at=source.created_at,
+            updated_at=source.updated_at,
+            model=source.model,
+            title=source.title,
+            interrupted=source.interrupted,
+        )
+
+    async def _handle_sessions(
+        self,
+        scope: RequestScope,
+        req: SessionsListRequest | SessionsOpenRequest | SessionsNewRequest,
+    ) -> None:
+        if isinstance(req, SessionsListRequest):
+            items = [self._session_item(m) for m in self._session_store.list_metas()]
+            await scope.emit(
+                SessionsEvent(
+                    re=req.id,
+                    items=items,
+                    current=self._session_item(self._stored_session),
+                )
+            )
+            await scope.done("ok")
+            return
+
+        if self._turn_in_flight():
+            await scope.error(
+                "busy",
+                "Aldwin is still working on your last request. "
+                "Stop it before switching conversations.",
+            )
+            return
+
+        if isinstance(req, SessionsOpenRequest):
+            target = (
+                self._stored_session
+                if req.session_id == self._stored_session.meta.id
+                else self._session_store.load_id(req.session_id)
+            )
+            if target is None:
+                await scope.error("not_found", "That conversation no longer exists.")
+                return
+        else:
+            target = self._landing_session()
+
+        self._activate_session(target)
+        await scope.emit(
+            SessionsEvent(re=req.id, current=self._session_item(self._stored_session))
+        )
+        await scope.done("ok")
 
     async def _serve_loop(self) -> None:
         """Receive requests from the transport and dispatch them."""
@@ -1121,6 +1217,10 @@ class AldwinHost:
                 await self._handle_approve(scope, req)
             elif isinstance(req, HistoryRequest):
                 await self._handle_history(scope, req)
+            elif isinstance(
+                req, SessionsListRequest | SessionsOpenRequest | SessionsNewRequest
+            ):
+                await self._handle_sessions(scope, req)
             elif isinstance(req, SetModelRequest):
                 await self._handle_set_model(scope, req)
             elif isinstance(req, ModelsListRequest):

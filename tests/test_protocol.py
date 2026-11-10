@@ -34,6 +34,11 @@ from aldwin.protocol import (
     ProviderModels,
     ProviderServerRequest,
     Request,
+    SessionMetaItem,
+    SessionsEvent,
+    SessionsListRequest,
+    SessionsNewRequest,
+    SessionsOpenRequest,
     SetModelRequest,
     SkillBodyEvent,
     SkillCatalogItem,
@@ -782,3 +787,71 @@ def test_models_list_and_models_event_round_trip() -> None:
     assert isinstance(parsed_event, ModelsEvent)
     assert parsed_event.providers[0].models[0].supports_tools is True
     assert parsed_event.providers[0].models[1].supports_tools is False
+
+
+def _session_item(session_id: str) -> SessionMetaItem:
+    return SessionMetaItem(
+        id=session_id,
+        created_at="2026-11-10T09:00:00+00:00",
+        updated_at="2026-11-10T09:05:00+00:00",
+        model="openai/gpt-4o",
+        title="Plan the trip",
+    )
+
+
+def test_sessions_protocol_models_round_trip() -> None:
+    """TC-14: `sessions.*` requests and the `sessions` event survive JSON."""
+    for request in (
+        SessionsListRequest(id="req_l"),
+        SessionsOpenRequest(id="req_o", session_id="2026-11-10_abcd1234"),
+        SessionsNewRequest(id="req_n"),
+    ):
+        assert parse_request(request.model_dump_json()) == request
+        assert parse_message(request.model_dump_json()) == request
+
+    event = SessionsEvent(
+        re="req_l",
+        items=[_session_item("2026-11-10_abcd1234")],
+        current=_session_item("2026-11-10_abcd1234"),
+    )
+    assert parse_event(event.model_dump_json()) == event
+    empty = SessionsEvent(re="req_n")
+    parsed = parse_event(empty.model_dump_json())
+    assert isinstance(parsed, SessionsEvent)
+    assert parsed.items == [] and parsed.current is None
+
+
+def test_sessions_models_ignore_unknown_fields() -> None:
+    """TC-15: newer doors and hosts may add fields without breaking parsing."""
+    request = parse_request(
+        json.dumps(
+            {"type": "sessions.open", "id": "r1", "session_id": "s1", "pin": True}
+        )
+    )
+    assert isinstance(request, SessionsOpenRequest)
+    assert request.session_id == "s1"
+
+    item = _session_item("s1").model_dump()
+    item["preview"] = "later field"
+    event = parse_event(
+        json.dumps(
+            {
+                "type": "event",
+                "kind": "sessions",
+                "re": "r1",
+                "items": [item],
+                "current": item,
+                "total": 1,
+            }
+        )
+    )
+    assert isinstance(event, SessionsEvent)
+    assert event.items == [_session_item("s1")]
+
+
+def test_sessions_open_requires_non_empty_id() -> None:
+    """TC-16: opening needs a session id."""
+    with pytest.raises(ValidationError):
+        SessionsOpenRequest(session_id="")
+    with pytest.raises(ValidationError):
+        parse_request(json.dumps({"type": "sessions.open", "id": "r1"}))

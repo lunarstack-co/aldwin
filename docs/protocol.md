@@ -60,7 +60,7 @@ Every message is a Pydantic v2 model with `model_config = ConfigDict(extra="igno
 
 - `version_mismatch`: client's `v_min..v_max` does not include the host's `PROTOCOL_VERSION`.
 - `protocol`: a request was sent before completing the `hello` handshake.
-- `busy`: a `turn` or `set_model` was sent while another turn is already running.
+- `busy`: a `turn`, `set_model`, `sessions.open` or `sessions.new` was sent while another turn is already running.
 - `unknown_approval`: `approve` referenced an `approval_id` that does not exist or already finished.
 - `unknown_model`: `set_model` requested an unsupported or blank model name.
 - `auth_failed`: the active model provider rejected the API key (`401` or `403`).
@@ -80,6 +80,36 @@ Every message is a Pydantic v2 model with `model_config = ConfigDict(extra="igno
 5. **Forward compatibility (`FR-1`):** Unknown fields are ignored in both directions (`ConfigDict(extra="ignore")`).
 
 The tables above list the original `v1` messages. `v2` also has the skills and todo messages (`skills.list`, `skills.show`, `todo.get`; `skills`, `skills.used`, `skill.body`, `todo.updated`, `notice`), defined in `aldwin/protocol/messages.py`.
+
+---
+
+## Conversations
+
+Each conversation is one file in `~/.aldwin/sessions/`, and the host has exactly one active conversation at a time. These messages let any door list, open and start conversations. They were added without bumping `v` from 2.
+
+### Requests
+
+| `type` | Model | Fields | Description |
+|---|---|---|---|
+| `sessions.list` | `SessionsListRequest` | none | List saved conversations and the active one. |
+| `sessions.open` | `SessionsOpenRequest` | `session_id: str` | Make a saved conversation the active one. |
+| `sessions.new` | `SessionsNewRequest` | none | Start a conversation, reusing an empty one when there is one. |
+
+### Event
+
+| `kind` | Model | Fields | Description |
+|---|---|---|---|
+| `sessions` | `SessionsEvent` | `items: list[SessionMetaItem]`, `current: SessionMetaItem \| None` | Each item has `id`, `created_at`, `updated_at`, `model`, `title` and `interrupted`. |
+
+### Rules
+
+- `sessions.list` replies with `items`, newest first, and `current`. `items` leaves out conversations with no turns, so the active conversation may appear only in `current`. Unreadable files are skipped.
+- `sessions.open` and `sessions.new` reply with `current` only and an empty `items`. They do not send the conversation; the door asks for `history` afterwards.
+- `sessions.open` with an unknown id gets `error(code="not_found")`. Opening the active conversation succeeds and changes nothing.
+- `sessions.new` reuses the active conversation, or else the newest saved one, while it has no turns. Only when both have turns does it create a new file, so repeated new chats never leave a trail of empty files.
+- While a turn is running, `sessions.open` and `sessions.new` get `error(code="busy")` and the active conversation does not change. The terminal's `/new` is different: it stops the running turn first.
+- A new conversation has an empty `title`. The title comes from the first message.
+- Switching saves the conversation being left without changing its `updated_at`, so opening a conversation and leaving it does not move it up the list.
 
 ---
 

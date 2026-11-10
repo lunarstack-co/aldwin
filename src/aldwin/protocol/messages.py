@@ -87,6 +87,19 @@ class HistoryItem(BaseModel):
     at: str | None = None
 
 
+class SessionMetaItem(BaseModel):
+    """One saved conversation in a `sessions` event."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    created_at: str
+    updated_at: str
+    model: str
+    title: str = ""
+    interrupted: bool = False
+
+
 class TodoItem(BaseModel):
     """One task item in a `todo.updated` event."""
 
@@ -177,6 +190,25 @@ class HistoryRequest(RequestBase):
 
     type: Literal["history"] = "history"
     limit: int = Field(default=20, ge=1, le=500)
+
+
+class SessionsListRequest(RequestBase):
+    """List saved conversations that have at least one turn."""
+
+    type: Literal["sessions.list"] = "sessions.list"
+
+
+class SessionsOpenRequest(RequestBase):
+    """Make a saved conversation the active one; refused mid-turn."""
+
+    type: Literal["sessions.open"] = "sessions.open"
+    session_id: str = Field(min_length=1)
+
+
+class SessionsNewRequest(RequestBase):
+    """Start a conversation, reusing the latest one if it is still empty."""
+
+    type: Literal["sessions.new"] = "sessions.new"
 
 
 class SetModelRequest(RequestBase):
@@ -381,6 +413,9 @@ Request = Annotated[
     | StopRequest
     | ApproveRequest
     | HistoryRequest
+    | SessionsListRequest
+    | SessionsOpenRequest
+    | SessionsNewRequest
     | SetModelRequest
     | SkillsListRequest
     | SkillsShowRequest
@@ -518,6 +553,19 @@ class HistoryEvent(EventBase):
     kind: Literal["history"] = "history"
     messages: list[HistoryItem] = Field(default_factory=list)
     interrupted: bool = False
+
+
+class SessionsEvent(EventBase):
+    """Saved conversations and the active one.
+
+    `items` lists conversations with at least one turn, newest first, and is
+    empty in replies to `sessions.open` and `sessions.new`. `current` is the
+    active conversation, which may be empty and so missing from `items`.
+    """
+
+    kind: Literal["sessions"] = "sessions"
+    items: list[SessionMetaItem] = Field(default_factory=list)
+    current: SessionMetaItem | None = None
 
 
 class StatusEvent(EventBase):
@@ -740,6 +788,7 @@ Event = Annotated[
     | SkillBodyEvent
     | NoticeEvent
     | HistoryEvent
+    | SessionsEvent
     | StatusEvent
     | ModelsEvent
     | SearchProvidersEvent

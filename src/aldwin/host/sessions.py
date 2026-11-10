@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,8 @@ logger = logging.getLogger("aldwin.host.sessions")
 SESSIONS_SUBDIR: Final[str] = "sessions"
 MAX_TITLE_CHARS: Final[int] = 60
 MAX_PREVIEW_CHARS: Final[int] = 120
+# Ids are `<YYYY-MM-DD>_<hex>` file stems; anything else could escape the folder.
+_SESSION_ID_RE: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 
 
 def _utc_now_iso() -> str:
@@ -78,6 +81,34 @@ class SessionMeta:
     model: str
     title: str
     interrupted: bool
+
+
+@dataclass(frozen=True)
+class SessionMetaSummary:
+    """One session's metadata, read without loading its conversation."""
+
+    id: str
+    created_at: str
+    updated_at: str
+    model: str
+    title: str
+    interrupted: bool
+    has_turns: bool
+
+
+def session_has_turns(turns: Any, title: str) -> bool:
+    """Return whether a session holds at least one user turn.
+
+    Files written before `turns` was stored have none; a non-empty title then
+    stands in, because the title is only set from the first message.
+    """
+    if _normalise_turns_payload(turns):
+        return True
+    return bool(title)
+
+
+def _full_model_name(raw_model: str) -> str:
+    return raw_model if "/" in raw_model else f"openai/{raw_model}"
 
 
 @dataclass
@@ -165,10 +196,16 @@ class SessionStore:
         *,
         interrupted: bool,
         todo: list[dict[str, str]] | None = None,
+        touch: bool = True,
     ) -> None:
-        """Atomically persist `stored` and `memory` to `stored.path` (mode `0600`)."""
+        """Atomically persist `stored` and `memory` to `stored.path` (mode `0600`).
+
+        `touch=False` keeps `updated_at`, so saving a conversation the user is
+        only leaving does not move it to the top of the history list.
+        """
         stored.memory = memory
-        stored.meta.updated_at = _utc_now_iso()
+        if touch:
+            stored.meta.updated_at = _utc_now_iso()
         stored.meta.interrupted = interrupted
         if todo is not None:
             stored.todo = list(todo)
@@ -186,17 +223,19 @@ class SessionStore:
         serialized = json.dumps(payload, indent=2) + "\n"
         atomic_write(stored.path, serialized, mode=FILE_MODE)
 
-    def load_latest(self, default_model: str = "gpt-4o") -> StoredSession:
-        """Load the most recently updated valid session, or create a new one."""
+    def _session_files(self) -> list[Path]:
         directory = self.sessions_dir
         if not directory.exists():
-            return self.create_new(model=default_model)
-
-        candidates = [
+            return []
+        return [
             p
             for p in directory.glob("*.json")
             if p.is_file() and not p.name.startswith(".")
         ]
+
+    def load_latest(self, default_model: str = "gpt-4o") -> StoredSession:
+        """Load the most recently updated valid session, or create a new one."""
+        candidates = self._session_files()
         if not candidates:
             return self.create_new(model=default_model)
 
@@ -212,6 +251,61 @@ class SessionStore:
 
         loaded_sessions.sort(key=lambda item: (item[0], item[1]), reverse=True)
         return loaded_sessions[0][2]
+
+    def list_metas(self, *, include_empty: bool = False) -> list[SessionMetaSummary]:
+        """Return session metadata newest first, skipping unreadable files.
+
+        Only `meta` and `turns` are parsed, never the conversation, so listing
+        stays fast. Sessions with no turns are left out unless `include_empty`.
+        """
+        found: list[tuple[str, int, SessionMetaSummary]] = []
+        for path in self._session_files():
+            summary = self._try_read_meta(path)
+            if summary is None or not (include_empty or summary.has_turns):
+                continue
+            found.append((summary.updated_at, path.stat().st_mtime_ns, summary))
+        found.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        return [summary for _, _, summary in found]
+
+    def load_id(self, session_id: str) -> StoredSession | None:
+        """Load the session saved as `<session_id>.json`, or `None`.
+
+        Returns `None` for an id that is not a plain file name, a missing file,
+        a corrupt file, or a file whose stored id differs.
+        """
+        if not _SESSION_ID_RE.fullmatch(session_id):
+            return None
+        path = self.sessions_dir / f"{session_id}.json"
+        if not path.is_file():
+            return None
+        stored = self._try_load_file(path)
+        if stored is None or stored.meta.id != session_id:
+            return None
+        return stored
+
+    def _try_read_meta(self, path: Path) -> SessionMetaSummary | None:
+        try:
+            raw_obj: Any = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(raw_obj, dict):
+                raise ValueError("Root must be a JSON object.")
+            raw_meta = raw_obj.get("meta")
+            if not isinstance(raw_meta, dict) or not isinstance(
+                raw_obj.get("memory"), str
+            ):
+                raise ValueError("Missing 'meta' object or 'memory' string.")
+            title = str(raw_meta.get("title", ""))
+            return SessionMetaSummary(
+                id=str(raw_meta["id"]),
+                created_at=str(raw_meta["created_at"]),
+                updated_at=str(raw_meta["updated_at"]),
+                model=_full_model_name(str(raw_meta["model"])),
+                title=title,
+                interrupted=bool(raw_meta.get("interrupted", False)),
+                has_turns=session_has_turns(raw_obj.get("turns"), title),
+            )
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+            logger.warning("Skipping unreadable session file %s: %s", path, exc)
+            return None
 
     def load_file(self, path: Path) -> StoredSession | None:
         """Parse one session file, returning `None` if corrupt."""
@@ -235,13 +329,11 @@ class SessionStore:
             else:
                 interrupted = _is_memory_interrupted(memory)
             turns = _normalise_turns_payload(raw_obj.get("turns"))
-            raw_model = str(raw_meta["model"])
-            full_model = raw_model if "/" in raw_model else f"openai/{raw_model}"
             meta = SessionMeta(
                 id=str(raw_meta["id"]),
                 created_at=str(raw_meta["created_at"]),
                 updated_at=str(raw_meta["updated_at"]),
-                model=full_model,
+                model=_full_model_name(str(raw_meta["model"])),
                 title=str(raw_meta.get("title", ""))
                 or derive_session_title(memory, turns or None),
                 interrupted=interrupted,
