@@ -133,6 +133,30 @@ The `status` event's `turn_streamed_chunks` counts the text deltas the current t
 
 ---
 
+## REST helpers in `aldwin web`
+
+The browser door also reads and writes a few documents over plain HTTP. These routes are helpers, not a second protocol: starting, opening and running a conversation, approvals, skills and models stay on the messages above. Every route needs the session cookie and the same Host, Origin and `Sec-Fetch-Site` checks as the rest of `/v1` (see [privacy](privacy.md#the-browser-window)); a signed-out request gets 401 and a request from another page gets 403.
+
+| Route | Does |
+|---|---|
+| `GET /v1/health`, `GET /v1/home` | Version and the Aldwin home folder. |
+| `GET /v1/conversations` | Saved conversations newest first (`id`, `created_at`, `updated_at`, `model`, `title`, `interrupted`). Conversations with no turns are left out. |
+| `GET /v1/conversations/{id}` | The conversation file exactly as saved in `sessions/`, or 404. |
+| `GET /v1/settings` | `model`, `check_for_updates`, `limits`, `search` and every key masked with its source. |
+| `PATCH /v1/settings` | Changes `model`, `check_for_updates`, `limits.*` or `search.provider`/`search.searxng_url`. Any other field, keys included, is a 400 and nothing is written. |
+| `POST /v1/settings/secrets` | `{kind: "provider" \| "search", name, key, base_url?}`. Checks the key with the provider, saves it only if the check passes, and answers with the key masked. Saving a search key also makes that provider the one `web_search` uses, as `/search` does. A rejected key is a 400; a provider that cannot be reached is a 502. |
+| `GET /v1/setup/status` | Which first-run steps are done: keys (masked), model, and whether the profile step was answered or skipped. |
+| `POST /v1/setup/check-key` | Same body as `secrets`; checks the key without saving it. |
+| `POST /v1/setup/provider-key` | `{name, key, base_url?}`; checks and saves a model provider key. |
+| `POST /v1/setup/detect-local` | Local model runtimes (Ollama, LM Studio) and their models. |
+| `POST /v1/setup/models` | `{provider}`; the models that provider offers. |
+| `POST /v1/setup/save` | `{openai_api_key?, tavily_api_key?, model?}`; checks every key first and saves nothing if one fails. |
+| `POST /v1/setup/profile` | `{first_name?, occupation?, personality?, skipped?}`; writes `state/onboarding.json`. |
+
+A malformed body gets 422 with the field and the reason, never the submitted values. These routes never start an agent, so they work before any model key exists.
+
+---
+
 ## Connectors
 
 Connectors add MCP servers whose tools join the conversation: remote servers by URL, and local servers started from a command on this computer (macOS and Linux only). These messages were added without bumping `v` from 2: door and host ship in one package over the in-process transport, so they always agree. Before the daemon ships, doors must tolerate unknown event `kind`s.

@@ -28,6 +28,7 @@ from aldwin.core.settings import (
     resolve_key,
     save_secrets,
     secrets_locked,
+    update_config_check_for_updates,
     update_config_last_seen_version,
     update_config_limits,
     update_config_model,
@@ -371,6 +372,50 @@ def test_update_config_theme_and_last_seen_version(aldwin_home: Path) -> None:
     with pytest.raises(ConfigError) as exc_info2:
         update_config_last_seen_version("   ", aldwin_home)
     assert exc_info2.value.field == "last_seen_version"
+
+
+def test_update_config_check_for_updates_keeps_comments(aldwin_home: Path) -> None:
+    """The update-check switch is written as a YAML boolean, under the lock."""
+    ensure_home(aldwin_home)
+    config_path = aldwin_home / "config.yaml"
+    config_path.write_text(
+        "# my notes\nmodel: gpt-4o\ncheck_for_updates: true  # keep\n",
+        encoding="utf-8",
+    )
+    update_config_check_for_updates(False, aldwin_home)
+    text = config_path.read_text("utf-8")
+    assert "# my notes" in text
+    assert "check_for_updates: false" in text
+    assert load_config(aldwin_home).check_for_updates is False
+
+    update_config_check_for_updates(True, aldwin_home)
+    assert load_config(aldwin_home).check_for_updates is True
+
+    with pytest.raises(ConfigError) as exc_info:
+        update_config_check_for_updates("no", aldwin_home)  # type: ignore[arg-type]
+    assert exc_info.value.field == "check_for_updates"
+
+
+def test_update_config_check_for_updates_waits_for_the_config_lock(
+    aldwin_home: Path,
+) -> None:
+    """Another writer holding the config lock delays this write until it is done."""
+    import threading
+
+    ensure_home(aldwin_home)
+    done = threading.Event()
+    with config_locked(aldwin_home):
+
+        def write() -> None:
+            update_config_check_for_updates(False, aldwin_home)
+            done.set()
+
+        worker = threading.Thread(target=write)
+        worker.start()
+        assert not done.wait(0.2)
+    worker.join(timeout=5)
+    assert done.is_set()
+    assert load_config(aldwin_home).check_for_updates is False
 
 
 def test_extensible_provider_secrets_preserved_and_resolved(

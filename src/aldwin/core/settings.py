@@ -683,7 +683,7 @@ def _read_config_source(config_path: Path) -> str:
     )
 
 
-def _set_yaml_scalar_key(source: str, key: str, value: str) -> str:
+def _set_yaml_scalar_key(source: str, key: str, value: str | bool) -> str:
     """Replace or append a top-level scalar ``key: value`` while keeping comments."""
     serialized = yaml.safe_dump(value, default_style=None).strip()
     if serialized.endswith("\n..."):
@@ -859,6 +859,23 @@ def update_config_last_seen_version(version: str, home: Path | None = None) -> N
     with config_locked(root):
         updated = _set_yaml_scalar_key(
             _read_config_source(config_path), "last_seen_version", cleaned
+        )
+        atomic_write(config_path, updated, mode=FILE_MODE)
+
+
+def update_config_check_for_updates(enabled: bool, home: Path | None = None) -> None:
+    """Persist ``check_for_updates`` in ``config.yaml`` while preserving comments."""
+    root = (home if home is not None else home_dir()).expanduser().resolve()
+    config_path = root / CONFIG_FILENAME
+    if not isinstance(enabled, bool):
+        raise ConfigError(
+            file=config_path,
+            field="check_for_updates",
+            expected=_EXPECTED_FIELD_TYPES["check_for_updates"],
+        )
+    with config_locked(root):
+        updated = _set_yaml_scalar_key(
+            _read_config_source(config_path), "check_for_updates", enabled
         )
         atomic_write(config_path, updated, mode=FILE_MODE)
 

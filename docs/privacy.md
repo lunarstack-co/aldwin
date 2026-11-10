@@ -44,7 +44,7 @@ All local data lives in `~/.aldwin`. Set `ALDWIN_HOME=/path/to/dir` to use a dif
 │   ├── notes/
 │   │   └── YYYY-MM-DD.md   daily notes written by `remember`
 │   └── index.sqlite        rebuildable search index over notes and sessions
-├── state/                  migration marker, last-shown tip, recent skills for @, locks/<session id>.lock held while a turn runs, and web.lock (pid, address and start time of a running `aldwin web`)
+├── state/                  migration marker, last-shown tip, recent skills for @, locks/<session id>.lock held while a turn runs, web.lock (pid, address and start time of a running `aldwin web`), and onboarding.json (the optional first name, occupation and personality from the browser's first-run step, or a note that it was skipped)
 ├── tmp/                    trimmed tool output, cleared after 7 days
 ├── history                 prompt_toolkit input history
 └── logs/
@@ -57,6 +57,8 @@ All local data lives in `~/.aldwin`. Set `ALDWIN_HOME=/path/to/dir` to use a dif
 `aldwin web` listens on a loopback address only (`127.0.0.1`, `localhost` or `::1`), so no other computer can reach it. Each run makes a new random token and prints a link that carries it. Opening the link stores the token in an `aldwin_session` cookie (HttpOnly, SameSite=Strict) and removes it from the address bar.
 
 Anyone holding that link or cookie can use Aldwin as you, with your keys, files and conversations, until the server stops. Do not share the link. Requests from any other page are refused, including pages served by other programs on this computer.
+
+The page can save API keys, but no answer from the server ever contains one: keys come back masked (`sk-…a1b2`) with where they were found (`env`, `file` or `missing`). A key is checked with its provider before it is saved, and a key that fails the check is not written.
 
 ## Secrets pasted into chat
 

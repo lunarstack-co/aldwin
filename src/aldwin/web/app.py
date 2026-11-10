@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from fastapi import APIRouter, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.websockets import WebSocketClose
 
+import aldwin.client as client
 from aldwin.web.auth import COOKIE_NAME, TOKEN_QUERY, Authenticator
+from aldwin.web.routes.conversations import conversations_router
+from aldwin.web.routes.settings import settings_router
+from aldwin.web.routes.setup import setup_router
 
 STATIC_DIR = Path(__file__).with_name("static")
 API_PREFIX = "/v1"
@@ -57,6 +63,7 @@ class SessionGuard:
 def create_app(
     *,
     authenticator: Authenticator,
+    home: Path,
     home_display: str,
     version: str,
     static_dir: Path = STATIC_DIR,
@@ -71,6 +78,8 @@ def create_app(
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(SessionGuard, authenticator=authenticator)
+    app.add_exception_handler(RequestValidationError, _invalid_request)
+    app.add_exception_handler(client.SettingsError, _settings_refused)
 
     api = APIRouter(prefix=API_PREFIX)
 
@@ -79,9 +88,12 @@ def create_app(
         return {"ok": True, "version": version}
 
     @api.get("/home")
-    def home() -> dict[str, str]:
+    def home_info() -> dict[str, str]:
         return {"home": home_display, "version": version}
 
+    api.include_router(conversations_router(home))
+    api.include_router(settings_router(home))
+    api.include_router(setup_router(home))
     app.include_router(api)
 
     @app.get("/", include_in_schema=False)
@@ -109,3 +121,17 @@ def _is_api_path(path: str) -> bool:
 
 def _error(status: int, message: str) -> JSONResponse:
     return JSONResponse({"detail": message}, status_code=status)
+
+
+async def _invalid_request(_request: Request, exc: Exception) -> JSONResponse:
+    # FastAPI's default body echoes the input, which can hold a pasted key.
+    exc = cast(RequestValidationError, exc)
+    errors = [
+        {"loc": [str(part) for part in error.get("loc", ())], "msg": error.get("msg")}
+        for error in exc.errors()
+    ]
+    return JSONResponse({"detail": errors}, status_code=422)
+
+
+async def _settings_refused(_request: Request, exc: Exception) -> JSONResponse:
+    return _error(400, str(exc))

@@ -59,6 +59,7 @@ def run_web(
         try:
             app = create_app(
                 authenticator=authenticator,
+                home=result.home,
                 home_display=result.display_home,
                 version=__version__,
             )
