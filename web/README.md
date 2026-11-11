@@ -1,6 +1,6 @@
 # Aldwin web UI
 
-The browser interface for Aldwin: a Next.js App Router app written in TypeScript and styled with the Aldwin docs design system.
+The browser interface for Aldwin: a Next.js App Router app written in TypeScript, built from shadcn/ui primitives and assistant-ui components, and styled with the assistant-ui design system in light and dark.
 
 It is built as a static export. `npm run build` writes the export to `web/out/`, then copies it into `src/aldwin/web/static/`, where it ships inside the Python package. The `aldwin web` command serves those files from the installed package, so people who install Aldwin never need Node.
 
@@ -8,9 +8,7 @@ It is built as a static export. `npm run build` writes the export to `web/out/`,
 
 - Node 22 or later
 - npm (the lockfile is `package-lock.json`)
-- Python 3, which `npm run preview` uses to serve the export
-
-`package.json` approves Cypress's install script for one pinned version, so `npm ci` downloads the Cypress binary. After upgrading Cypress, approve the new version with `npm install-scripts approve cypress`.
+- Docker, only to run the suite in the Linux image CI uses
 
 ## Commands
 
@@ -21,14 +19,16 @@ Run these from `web/`:
 | `npm ci` | Install the exact locked dependencies |
 | `npm run dev` | Start the dev server with hot reload |
 | `npm run lint` | ESLint |
-| `npm run typecheck` | TypeScript for the app and the Cypress specs |
+| `npm run typecheck` | TypeScript for the app and the Playwright specs |
 | `npm run build` | Static export, copied into `src/aldwin/web/static/` |
-| `npm run preview` | Serve `out/` on `http://127.0.0.1:4173` |
-| `npm run test:e2e` | Serve the export and run every Cypress spec |
-| `npm run cypress:open` | Open Cypress interactively (run `npm run preview` first) |
+| `npm run preview` | Serve `out/` on `http://127.0.0.1:4173` the way `aldwin web` does |
+| `npm run test:pw` | Run the Playwright suite against the export (`test:e2e` is the same) |
+| `npm run test:pw:ui` | Open Playwright's UI mode |
+| `npm run test:pw:kit` | Check the component gallery at `/dev/kit/` on `next dev` |
+| `npm run test:pw:docker` | Run the suite in the Linux image CI uses |
 | `npm run icons` | Redraw the favicon, Apple icon and app icons from the Aldwin mark |
 
-CI runs `lint`, `typecheck`, `build` and the Cypress smoke test in the `web` job. The release workflow runs `npm run build` before building the Python package.
+CI runs `lint`, `typecheck`, `build`, the Playwright suite and the kit check in the `web` job, and uploads the report and traces when a test fails. The release workflow runs `npm run build` before building the Python package.
 
 ## Developing against a running Aldwin
 
@@ -49,57 +49,55 @@ git clean -fd src/aldwin/web/static
 
 ```
 src/
-  app/          routes only: each page.tsx stays thin and composes the pieces below
+  app/          routes only: (chat)/ holds / and /c/, which share one chat shell; onboarding/ the first run
   components/
-    atoms/      one element with its look: Button, Input, Select, Label, Chip
-    molecules/  a few atoms that work together: TextField, SelectField, ToggleChip
-    organisms/  a section with its own behaviour: ProfileStep, KeyForm, chat/ChatShell
-  layouts/      reusable page frames: AppShell, CenteredLayout, OnboardingLayout, ChatLayout
+    ui/           design-kit and shadcn primitives: Button, Input, Select, Dialog, Sheet, Callout, Steps…
+    assistant-ui/ chat pieces: registry files in elements/, plus Aldwin's tool row, work chip, plan and states
+    brand/        the Aldwin mark and lockup
+    organisms/    sections with their own behaviour: chat/ChatShell, the rail, onboarding forms
+  layouts/      page frames: AppShell, ChatLayout, OnboardingLayout, CenteredLayout
   providers/    React context providers: ThemeProvider, SetupProvider, ChatRuntimeProvider
-  hooks/        reusable hooks: useSetup, useAction, useHostReady, useChatSession
+  hooks/        reusable hooks: useChatSession, useConversationRoute, usePageTitle, useDensity…
   state/        Zustand stores: the transcript (chat-store) and the socket phase (connection-store)
-  styles/       globals.css imports tokens, theme, base, recipes and motion
-  utils/        reusable functions, one folder per topic: api/, cn/, gates/, history/, ws/, markdown/
-  data/         all text the pages show, as JSON: one file per page, layout or section
+  styles/       globals.css imports tokens, theme, base and motion
+  utils/        reusable functions, one folder per topic: api/, ws/, history/, time/, page-title/…
+  data/         all text the pages show, as JSON, named after where it appears
   constants/    fixed values that are not text: routes, ids, theme colours, timings
-  types/        shared types, such as the setup API shapes
+  types/        shared types, such as the protocol and the setup API shapes
 ```
 
-Text never sits in TSX. Each page, layout or section reads its own file in `data/` (`data/home.json`, `data/onboarding/connect.json`, `data/onboarding/key-form.json`), named after where the text appears. Placeholders such as `{step}` are filled with `fill()` from `utils/text`. Atoms and molecules take their text as props.
+Text never sits in TSX. Each page, layout or section reads its own file in `data/`. Placeholders such as `{seconds}` are filled with `fill()` from `utils/text`.
 
-Size decides the component level: a single element is an atom, a small group of atoms is a molecule, and anything with its own state or calls is an organism.
+## Components
+
+- `components/ui/` is copied from the assistant-ui design kit (`packages/ui/src/components/react/ui/base` in `assistant-ui/assistant-ui`; the commit is in `components/ui/README.md`), plus `radio-group` from shadcn's `base-nova` style and a small `Field`. They are Base UI components styled with Tailwind.
+- `components/assistant-ui/elements/` comes from the assistant-ui registry through `components.json` (`npx shadcn@latest add @assistant-ui/<name>`). Controls for things the host does not support (attachments, dictation, edit and branch, feedback, suggestions) are deleted from these copies, not hidden.
+- When re-adding a registry item, answer **no** to every overwrite prompt for `components/ui/*`, or the kit files are replaced by shadcn's own (`yes n | npx shadcn@latest add …`).
+
+The dev-only gallery at `/dev/kit/` (`app/dev/kit/page.dev.tsx`) shows every `ui/` component in both themes. The `dev.tsx` extension is registered only for `next dev`, so the page never reaches the export.
 
 ## Chat runtime
 
-The chat screen renders with `@assistant-ui/react` primitives (thread, messages, composer, action bar). `providers/chat-runtime-provider.tsx` feeds them from the Zustand chat store through `useExternalStoreRuntime`, so the Aldwin protocol in `utils/ws/` stays the only transport: sending, stopping and retrying go back through the session, and Retry always adds a new turn.
+The chat renders with `@assistant-ui/react` primitives and registry components. `providers/chat-runtime-provider.tsx` feeds them from the Zustand chat store through `useExternalStoreRuntime`, so the Aldwin protocol in `utils/ws/` stays the only transport: sending, stopping and retrying go back through the session, and Retry always adds a new turn. The runtime's thread list is fed the saved conversations; choosing one navigates.
 
-Conversations come from the host over the same socket (`sessions.list`, `sessions.open`, `sessions.new`), never from a REST route. The host hides conversations with no turns and decides where New chat lands, reusing an empty conversation rather than starting another. The rail shows the 15 most recent; See all lists every one, searchable and split into Today and Earlier, inside the same screen. Switching while an answer is still running is refused by the host with `busy`, and the page says so without stopping the answer.
+Each conversation has its own address, `/c/?id=<id>`. `hooks/use-conversation-route.ts` keeps the address bar and the host in step: the rail and See all only navigate, the hook asks the host to open what the URL names, Back and Forward work, a first turn gives a new chat its address without a new history entry, and going to `/` from a conversation starts a new chat. A refused switch (busy, deleted) puts the address back. `/` and `/c/` share the `(chat)` layout, so moving between them keeps one socket.
+
+Clean density (the default) folds a turn's tool calls into one "Working for 8s" / "Worked for 12s" chip; Detail shows each call. The rail shows the 15 most recent conversations; See all groups every one into Today, Yesterday, Previous 7 days and Older.
 
 ## Design system
 
-The tokens in `src/styles/tokens.css` are ported from the Aldwin docs site: semantic colour variables for light (`:root`) and dark (`.dark`), the type scale, radii and shadows. Tailwind's stock palette is switched off, so use the semantic classes (`bg-base`, `text-fg-secondary`, `border-border-default`). Other pieces:
+The tokens in `src/styles/tokens.css` are the assistant-ui set, copied value for value: every neutral sits on the `--tint` hue, `--live` (blue) marks only what is running, and shadows are zeroed except on floating surfaces. `src/styles/theme.css` maps them onto Tailwind's shadcn names (`bg-background`, `text-muted-foreground`, `border-border`, `rounded-thread`…). Retheming Aldwin later means editing `tokens.css`.
 
-- Fonts: Mona Sans and Mona Sans Mono, bundled locally from the official release with their OFL licence in `src/assets/fonts/mona-sans/`.
-- Theme: `next-themes` with the `class` strategy; dark by default, with light and system.
-- Buttons: `buttonClass()` in `src/components/atoms/button.tsx` (`ghost`, `outline`, `primary`).
+- Fonts: Public Sans and JetBrains Mono, bundled locally with their OFL licences in `src/assets/fonts/`.
+- Theme: `next-themes` with the `class` strategy; dark by default, with light and system, kept in the browser only.
 - Icons: `lucide-react`.
-
-There is no component library. Add primitives only when accessibility needs them.
 
 ## Tests
 
-Cypress runs against the static export with every server route stubbed, so no host or model is needed:
+Playwright runs against the static export (`playwright/serve.mjs` serves it like `aldwin web`, including 404s) with no host behind it. The `host` fixture in `playwright/fixtures/fake-host.ts` plays Aldwin: it answers the WebSocket protocol through `page.routeWebSocket` and the REST routes through `page.route`, records every frame the page sends, and lets each spec script the host (`host.stream()`, `host.toolCall()`, `host.drop()`, `host.notice()`…).
 
-- `cypress/e2e/smoke.cy.ts` checks that the export loads with the design tokens applied.
-- `cypress/e2e/onboarding-gates.cy.ts` covers the first-run gates against stubbed setup routes.
-- `cypress/e2e/chat-shell.cy.ts` covers every chat action (send, Stop, Clean and Detail, Copy, Retry, errors, hostile markdown, reconnect, Aldwin stopped, Take over, theme, new chat). `cypress/support/chat-ws-mock.ts` stands in for the WebSocket and plays the host's side; `cy.visitChat()` in `cypress/support/e2e.ts` installs it.
-- `cypress/e2e/history.cy.ts` covers the history rail, See all with search, opening conversations, New chat landing, and the busy and deleted-elsewhere replies.
-- `cypress/e2e/chat-units.cy.ts` checks the pure pieces behind the shell (the sanitiser schema, density, the chat store, the socket helpers, the reconnect machine and the history helpers) in the browser without a page.
-
+- Functional specs run on Chromium in light and dark; specs tagged `@cross` also run on Firefox, WebKit, Pixel 7 and iPhone 15.
+- `a11y.spec.ts` runs axe (WCAG 2.2 AA) on each state and walks the app by keyboard.
+- `units.spec.ts` checks the pure helpers in Node.
+- `perf.spec.ts` fails when any page in `out/` loads more than 560 KiB of gzipped JS. The limit is per page because no page loads every chunk.
 Full journeys with a real `aldwin web` behind them belong to the release smoke suite.
-
-If Cypress fails to start with `bad option: --no-sandbox`, your terminal was started by an Electron-based editor that sets `ELECTRON_RUN_AS_NODE`. Run it with that variable cleared:
-
-```bash
-env -u ELECTRON_RUN_AS_NODE npm run test:e2e
-```

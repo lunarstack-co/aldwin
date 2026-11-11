@@ -1,14 +1,18 @@
 import { HISTORY_LIMIT } from "@/constants/chat";
 import { lastUserText, useChatStore } from "@/state/chat-store";
 import { useConnectionStore } from "@/state/connection-store";
-import { PROTOCOL_VERSION, type Event, type StatusEvent } from "@/types/protocol";
+import { PROTOCOL_VERSION, type Event, type StatusEvent, type TodoUpdatedEvent } from "@/types/protocol";
 import { shouldCallSessionsNew } from "@/utils/history";
 
 import { createConnection, type ConnectionDeps } from "./connection";
 import { requestId } from "./index";
 
 type Reply = (event: Event) => void;
-type Ask = "hello" | "history" | "status" | "sessions.new" | "sessions.list";
+
+function todosOf(event: TodoUpdatedEvent) {
+  return { items: event.items, done: event.done, total: event.total };
+}
+type Ask = "hello" | "history" | "status" | "sessions.new" | "sessions.list" | "todo.get";
 
 export type ChatSession = {
   start: () => void;
@@ -16,8 +20,10 @@ export type ChatSession = {
   sendTurn: (text: string) => void;
   stop: () => void;
   retry: () => void;
-  newChat: () => void;
-  openConversation: (id: string) => void;
+  /** Starts a new chat, or keeps the empty one; `onSettled` hears whether the host agreed. */
+  newChat: (onSettled?: (started: boolean) => void) => void;
+  /** Opens a saved conversation; `onSettled` hears whether the host switched. */
+  openConversation: (id: string, onSettled?: (opened: boolean) => void) => void;
   refreshSessions: () => void;
   takeOver: () => void;
   reconnect: () => void;
@@ -58,13 +64,12 @@ export function createChatSession(
     }
   }
 
-  function handleOpen(catchUp: boolean) {
+  function handleOpen() {
+    // Requests sent on a dropped socket will never be answered.
+    replies.clear();
     ask("hello", (event) => {
       if (event.kind !== "done") return;
-      if (!catchUp) {
-        loadHistory();
-        return;
-      }
+      // A turn may be running from before this page opened, not only from before a drop.
       ask("status", (status) => {
         if (status.kind === "status") adopt(status);
         if (status.kind === "done" || status.kind === "error") loadHistory();
@@ -76,17 +81,24 @@ export function createChatSession(
     const running =
       status.turn_streamed_chunks > 0 || status.active_tool !== null || status.partial_text !== null;
     if (!running) return;
-    chat().adoptRunningTurn(status.partial_text, status.active_tool, now());
+    chat().adoptRunningTurn(status.partial_text, status.active_tool, now(), status.message);
     expectedRe = null;
   }
 
   function loadHistory() {
     ask("history", (event) => {
-      if (event.kind === "history") chat().loadHistory(event.messages);
+      if (event.kind === "history") chat().loadHistory(event.messages, event.interrupted);
       if (event.kind === "done" || event.kind === "error") {
         useConnectionStore.getState().setPhase("open", 0);
         refreshSessions();
+        refreshTodos();
       }
+    });
+  }
+
+  function refreshTodos() {
+    ask("todo.get", (event) => {
+      if (event.kind === "todo.updated") chat().setTodos(todosOf(event));
     });
   }
 
@@ -101,16 +113,18 @@ export function createChatSession(
    * `busy` while a turn runs and `not_found` for a conversation deleted
    * elsewhere, and either way this tab keeps what it is showing.
    */
-  function switchReply(onDone: () => void): Reply {
+  function switchReply(onDone: () => void, onSettled?: (opened: boolean) => void): Reply {
     return (event) => {
       if (event.kind === "done") {
         chat().setNotice(null);
         chat().setHistoryView("chat");
         onDone();
+        onSettled?.(true);
       } else if (event.kind === "error") {
         const code = event.code === "busy" || event.code === "not_found" ? event.code : "other";
         chat().setNotice({ code, message: event.message });
         refreshSessions();
+        onSettled?.(false);
       }
     };
   }
@@ -123,6 +137,15 @@ export function createChatSession(
       return;
     }
     const store = chat();
+    // These belong to the conversation, not to one turn, so they land between turns too.
+    if (event.kind === "notice") {
+      store.pushToast(event.message);
+      return;
+    }
+    if (event.kind === "todo.updated") {
+      store.setTodos(todosOf(event));
+      return;
+    }
     if (store.activeId === null) return;
     if (expectedRe !== null && event.re !== expectedRe) return;
     switch (event.kind) {
@@ -135,14 +158,26 @@ export function createChatSession(
       case "tool_result":
         store.addToolResult(event);
         break;
+      case "status":
+        store.setTurnStatus(event.message, event.active_tool);
+        break;
       case "done":
-        store.finishTurn(event.reason, now());
+        store.finishTurn(event.reason, now(), { usage: event.usage, maxSteps: event.max_steps });
         expectedRe = null;
         // The first turn gives the conversation its title.
         refreshSessions();
         break;
       case "error":
-        store.failTurn(event.message, now());
+        if (event.code === "busy" && store.activeId === event.re) {
+          // The host is still running an earlier turn this page did not know about: follow that one instead.
+          store.refuseTurn(event.re);
+          store.pushToast(event.message);
+          store.adoptRunningTurn(null, null, now());
+          expectedRe = null;
+          loadHistory();
+          break;
+        }
+        store.failTurn(event.message, now(), event.code);
         expectedRe = null;
         break;
       default:
@@ -171,9 +206,10 @@ export function createChatSession(
       const text = lastUserText(chat().turns);
       if (text !== null) sendTurn(text);
     },
-    newChat: () => {
+    newChat: (onSettled) => {
       if (!shouldCallSessionsNew(chat().turns.length)) {
         chat().setHistoryView("chat");
+        onSettled?.(true);
         return;
       }
       ask(
@@ -181,16 +217,17 @@ export function createChatSession(
         switchReply(() => {
           chat().clearTranscript();
           refreshSessions();
-        }),
+        }, onSettled),
       );
     },
-    openConversation: (id) => {
+    openConversation: (id, onSettled) => {
       if (id === chat().currentSessionId) {
         chat().setHistoryView("chat");
+        onSettled?.(true);
         return;
       }
       const reqId = requestId("sessions_open");
-      replies.set(reqId, switchReply(loadHistory));
+      replies.set(reqId, switchReply(loadHistory, onSettled));
       connection.send({ type: "sessions.open", id: reqId, session_id: id });
     },
     refreshSessions,

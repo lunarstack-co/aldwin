@@ -1,0 +1,1 @@
+Copied from assistant-ui/assistant-ui at 437b410726e283798ff3b61b0f4209129225e2fa (packages/ui/src/components/react/ui/base). Local edits: the `cn` import path, and in `callout.tsx` a 12px label (the design guide's minimum) with a darker error label, which the kit's 11px `text-destructive` label fails WCAG AA contrast on its tinted panel.

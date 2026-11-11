@@ -10,7 +10,7 @@ export function UserMessage() {
     <MessagePrimitive.Root className="flex justify-end" data-testid="user-message">
       <div
         aria-label={copy.you}
-        className="max-w-[80%] whitespace-pre-wrap rounded-overlay bg-sunken px-4 py-2.5 text-md text-fg"
+        className="bg-muted text-foreground max-w-[80%] rounded-thread px-4 py-2.5 text-base whitespace-pre-wrap break-words"
       >
         <MessagePrimitive.Parts />
       </div>

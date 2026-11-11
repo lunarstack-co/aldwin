@@ -12,3 +12,12 @@ export const MARK_EYES = [
 
 export const EYE_WIDTH = 24;
 export const EYE_HEIGHT = 48;
+
+/** Closed eyes, for a blink and the wink's right eye: wider and flat. */
+export const MARK_EYES_CLOSED = [
+  { x: 80, y: 106, width: 32, height: 14 },
+  { x: 144, y: 106, width: 32, height: 14 },
+] as const;
+
+/** Happy eyes: two "^" strokes. */
+export const MARK_EYES_HAPPY = ["80,124 96,104 112,124", "144,124 160,104 176,124"] as const;

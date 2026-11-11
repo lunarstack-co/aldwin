@@ -1,0 +1,12 @@
+{
+  "label": "Plan",
+  "progress": "{done}/{total}",
+  "show": "Show the plan",
+  "hide": "Hide the plan",
+  "status": {
+    "pending": "To do",
+    "in_progress": "In progress",
+    "done": "Done",
+    "dropped": "Dropped"
+  }
+}

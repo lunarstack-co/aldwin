@@ -10,35 +10,39 @@ import { ThemeProvider } from "@/providers/theme-provider";
 
 import "@/styles/globals.css";
 
-// The official Mona Sans release (OFL, licence beside the files), bundled so
-// the local UI never fetches fonts from the network.
-const monaSans = localFont({
-  src: "../assets/fonts/mona-sans/MonaSansVF.woff2",
-  variable: "--font-mona",
-  weight: "200 900",
+// Official OFL releases bundled beside their licences, so the local UI never
+// fetches fonts from the network.
+const publicSans = localFont({
+  src: "../assets/fonts/public-sans/PublicSansVF-latin.woff2",
+  variable: "--font-public-sans",
+  weight: "100 900",
   display: "swap",
 });
 
-const monaSansMono = localFont({
-  src: "../assets/fonts/mona-sans/MonaSansMonoVF.woff2",
-  variable: "--font-mona-mono",
-  weight: "200 900",
+const jetBrainsMono = localFont({
+  src: "../assets/fonts/jetbrains-mono/JetBrainsMonoVF-latin.woff2",
+  variable: "--font-jetbrains-mono",
+  weight: "100 800",
   display: "swap",
   preload: false,
 });
 
 // A page on this computer only: named for the tab and the home screen, never indexed.
 export const metadata: Metadata = {
-  title: copy.title,
+  title: { default: copy.title, template: `%s · ${copy.title}` },
   description: copy.description,
   applicationName: copy.title,
   robots: { index: false, follow: false },
+  formatDetection: { telephone: false },
 };
 
 export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: THEME_COLORS.dark },
     { media: "(prefers-color-scheme: light)", color: THEME_COLORS.light },
+    { media: "(prefers-color-scheme: dark)", color: THEME_COLORS.dark },
   ],
 };
 
@@ -49,9 +53,9 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${monaSans.variable} ${monaSansMono.variable} h-full antialiased`}
+      className={`${publicSans.variable} ${jetBrainsMono.variable} h-full`}
     >
-      <body className="flex h-full flex-col bg-base font-sans text-fg">
+      <body className="flex h-full flex-col">
         <ThemeProvider>
           <AppShell>
             <SetupProvider>{children}</SetupProvider>

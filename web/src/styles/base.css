@@ -1,41 +1,60 @@
-/* Element rules and small recipes sit in layers so utilities on the same
-   element win. */
+/* The base layer from the assistant-ui source, plus the reading defaults Aldwin had. */
 @layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
   html {
+    @apply overscroll-none;
     scroll-behavior: smooth;
-    scroll-padding-top: 5rem;
   }
 
   body {
-    background-color: var(--bg-base);
-    color: var(--fg);
-    font-family: var(--font-sans);
+    @apply bg-background text-foreground font-sans;
     font-size: 14px;
     line-height: 1.5;
+    font-optical-sizing: auto;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  ::selection {
-    background: var(--selection);
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 550;
+    letter-spacing: var(--tracking-section);
   }
 
-  :focus-visible:not([data-focus-ring="none"]) {
-    outline: 2px solid var(--focus);
-    outline-offset: 2px;
-    box-shadow: none;
+  h1 {
+    font-weight: var(--font-weight-hero);
+    letter-spacing: var(--tracking-hero);
   }
 
-  kbd {
-    padding: 3px 5px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 10px;
-    color: var(--fg);
-    vertical-align: middle;
-    background: var(--bg-sunken);
-    border: 1px solid var(--bg-neutral-muted);
-    border-radius: var(--radius-control);
-    box-shadow: inset 0 -1px 0 var(--bg-neutral-muted);
+  code:not(pre code) {
+    font-size: 0.9em;
+  }
+
+  pre,
+  code {
+    font-variant-ligatures: none;
+  }
+}
+
+/* Styling ::-webkit-scrollbar would turn overlay scrollbars into classic ones,
+   so the quiet look comes from the standard properties instead. */
+@layer components {
+  * {
+    scrollbar-width: thin;
+  }
+
+  @media (hover: hover) {
+    * {
+      scrollbar-color: transparent transparent;
+    }
+
+    *:hover {
+      scrollbar-color: color-mix(in srgb, var(--muted-foreground) 35%, transparent) transparent;
+    }
   }
 }

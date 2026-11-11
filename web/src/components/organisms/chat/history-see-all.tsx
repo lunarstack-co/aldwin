@@ -1,102 +1,123 @@
 "use client";
 
 import { ArrowLeft, Search } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
-import { Button } from "@/components/atoms/button";
-import { Input } from "@/components/atoms/input";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Kbd } from "@/components/ui/kbd";
 import copy from "@/data/chat/history-see-all.json";
 import railCopy from "@/data/chat/rail.json";
 import type { SessionMeta } from "@/types/protocol";
+import { isTyping } from "@/utils/dom";
 import { filterSessions, groupSessions } from "@/utils/history";
 import { fill } from "@/utils/text";
 
-import { HistoryRailList } from "./history-rail-list";
+import { HistoryList } from "./history-list";
 
-/** Every saved conversation, searchable, split into today and earlier. */
+export const SEARCH_DEBOUNCE_MS = 150;
+
+/** Every saved conversation, searchable, grouped by the day it was last used. */
 export function HistorySeeAll({
   sessions,
-  currentId,
   disabled,
-  onOpen,
   onBack,
 }: {
   sessions: SessionMeta[];
-  currentId: string | null;
   disabled: boolean;
-  onOpen: (id: string) => void;
   onBack: () => void;
 }) {
+  const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
   // Fixed when the view opens, so a row does not jump groups while it is read.
   const [now] = useState(() => new Date());
   const titleId = useId();
   const searchId = useId();
+  const search = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const id = setTimeout(() => setQuery(input), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(id);
+  }, [input]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") onBack();
+      else if (event.key === "/" && !isTyping(event.target)) {
+        event.preventDefault();
+        search.current?.focus();
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack]);
 
-  const matches = filterSessions(sessions, query, railCopy.untitled);
-  const groups = groupSessions(matches, now);
+  const matches = new Set(filterSessions(sessions, query, railCopy.untitled));
+  const groups = groupSessions(
+    sessions.filter((s) => matches.has(s)),
+    now,
+  );
   const sections = [
     { id: "today", label: copy.today, items: groups.today },
-    { id: "earlier", label: copy.earlier, items: groups.earlier },
+    { id: "yesterday", label: copy.yesterday, items: groups.yesterday },
+    { id: "previous7", label: copy.previous7, items: groups.previous7 },
+    { id: "older", label: copy.older, items: groups.older },
   ].filter((section) => section.items.length > 0);
 
   return (
-    <section
-      aria-labelledby={titleId}
-      data-testid="history-see-all"
-      className="flex min-h-0 flex-1 flex-col"
-    >
-      <header className="flex items-center gap-2 border-b border-border-subtle px-4 py-2 sm:px-6">
-        <Button icon onClick={onBack} aria-label={copy.back} title={copy.back} data-testid="see-all-back">
-          <ArrowLeft aria-hidden className="size-4" />
+    <section aria-labelledby={titleId} data-testid="history-see-all" className="flex min-h-0 flex-1 flex-col">
+      <header className="flex items-center gap-2 border-b px-4 py-2 sm:px-6">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onBack}
+          aria-label={copy.back}
+          title={copy.back}
+          data-testid="see-all-back"
+          className="max-md:size-10"
+        >
+          <ArrowLeft aria-hidden />
         </Button>
-        <h1 id={titleId} className="text-ui font-medium">
+        <h1 id={titleId} className="text-sm font-medium">
           {copy.title}
         </h1>
       </header>
-      <div className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col gap-4 px-4 py-6 sm:px-6">
+      <div className="mx-auto flex min-h-0 w-full max-w-(--thread-max-width) flex-1 flex-col gap-4 px-4 py-6 sm:px-6">
         <div className="relative">
           <label htmlFor={searchId} className="sr-only">
             {copy.searchLabel}
           </label>
-          <Search aria-hidden className="pointer-events-none absolute left-2.5 top-2 size-4 text-fg-tertiary" />
+          <Search aria-hidden className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
           <Input
+            ref={search}
             id={searchId}
             type="search"
             autoFocus
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
             placeholder={copy.searchPlaceholder}
             data-testid="history-search"
-            className="pl-8"
+            className="pr-10 pl-8 max-md:h-10"
           />
+          <Kbd className="absolute top-1/2 right-2 -translate-y-1/2" title={copy.searchShortcut}>
+            /
+          </Kbd>
         </div>
         <p role="status" className="sr-only">
-          {fill(copy.resultCount, { count: matches.length })}
+          {fill(copy.resultCount, { count: matches.size })}
         </p>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {sections.length === 0 ? (
-            <p className="px-2 py-1.5 text-ui text-fg-tertiary" data-testid="history-empty">
+            <p className="text-muted-foreground px-2 py-1.5 text-sm" data-testid="history-empty">
               {sessions.length === 0 ? copy.empty : fill(copy.noMatch, { query: query.trim() })}
             </p>
           ) : (
             sections.map((section) => (
               <div key={section.id} className="mb-4 flex flex-col gap-1" data-testid={`history-group-${section.id}`}>
-                <h2 className="eyebrow px-2 uppercase tracking-wide">{section.label}</h2>
-                <HistoryRailList
-                  sessions={section.items}
-                  currentId={currentId}
+                <h2 className="text-muted-foreground px-2 text-xs font-medium">{section.label}</h2>
+                <HistoryList
+                  ids={section.items.map((s) => s.id)}
                   disabled={disabled}
-                  onOpen={onOpen}
-                  untitled={railCopy.untitled}
                   testId="see-all-row"
                 />
               </div>

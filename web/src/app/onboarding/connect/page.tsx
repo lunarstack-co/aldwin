@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 
-import { FormAlert, FormStatus } from "@/components/atoms/form-message";
-import { StepHeader } from "@/components/molecules/step-header";
 import { ConnectPathPicker } from "@/components/organisms/connect/connect-path-picker";
 import { KeyForm } from "@/components/organisms/connect/key-form";
 import { LocalFinder } from "@/components/organisms/connect/local-finder";
 import { ModelPicker } from "@/components/organisms/connect/model-picker";
 import { ServerForm } from "@/components/organisms/connect/server-form";
+import { FormAlert, FormStatus } from "@/components/organisms/form-message";
+import { StepHeader } from "@/components/organisms/step-header";
 import type { ConnectPath } from "@/constants/connect";
 import copy from "@/data/onboarding/connect.json";
 import { useAction } from "@/hooks/use-action";

@@ -6,7 +6,5 @@
   "model": "Model: {model}",
   "send": "Send",
   "stop": "Stop",
-  "working": "Working for {seconds}s…",
-  "stopping": "Stopping…",
   "hint": "Enter to send, Shift+Enter for a new line"
 }

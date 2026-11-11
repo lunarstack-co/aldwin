@@ -45,6 +45,6 @@ web/.next/
 web/out/
 web/next-env.d.ts
 web/**/*.tsbuildinfo
-web/cypress/screenshots/
-web/cypress/videos/
-web/cypress/downloads/
+web/playwright-report/
+web/test-results/
+web/playwright/.cache/

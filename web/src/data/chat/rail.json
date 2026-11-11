@@ -5,5 +5,10 @@
   "noHistory": "No conversations yet",
   "untitled": "Untitled chat",
   "seeAll": "See all",
-  "settings": "Settings"
+  "settings": "Settings",
+  "search": "Search",
+  "openMenu": "Open conversations",
+  "collapse": "Hide sidebar",
+  "expand": "Show sidebar",
+  "interrupted": "Interrupted"
 }

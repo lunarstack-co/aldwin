@@ -1,32 +1,38 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, type ReactNode } from "react";
 
-import { DensityToggle } from "@/components/molecules/density-toggle";
-import densityCopy from "@/data/chat/density-toggle.json";
+import { ConnectionState } from "@/components/assistant-ui/connection-state";
 import railCopy from "@/data/chat/rail.json";
 import copy from "@/data/chat/shell.json";
 import { useChatSession } from "@/hooks/use-chat-session";
-import { useDensity } from "@/hooks/use-density";
+import { useConversationRoute } from "@/hooks/use-conversation-route";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { useSetup } from "@/hooks/use-setup";
 import { ChatLayout } from "@/layouts/chat-layout";
 import { ChatRuntimeProvider } from "@/providers/chat-runtime-provider";
 import { useChatStore } from "@/state/chat-store";
 import { useConnectionStore } from "@/state/connection-store";
+import { TITLE_CHARS } from "@/utils/page-title";
 import { shorten } from "@/utils/text";
 
 import { HistorySeeAll } from "./history-see-all";
 import { Rail } from "./rail";
-import { ReconnectBanner } from "./reconnect-banner";
-import { SessionNoticeBanner } from "./session-notice-banner";
+import { InterruptedNotice, SessionNoticeBanner } from "./session-notice-banner";
 import { StoppedScreen } from "./stopped-screen";
 import { TakeOverDialog } from "./take-over-dialog";
 import { Thread } from "./thread";
+import { ViewMenu } from "./view-menu";
 
-const TITLE_CHARS = 60;
+/** Keeps the address bar and the tab title in step with the conversation. */
+function RouteSync({ session }: { session: ReturnType<typeof useChatSession> }) {
+  useConversationRoute(session);
+  usePageTitle();
+  return null;
+}
 
-/** The chat screen: rail, stage, and the socket behind them. */
-export function ChatShell() {
+/** The chat screen: rail, stage, and the socket behind them. It lives across `/` and `/c/`. */
+export function ChatShell({ children }: { children?: ReactNode }) {
   const { status } = useSetup();
   const session = useChatSession();
   const turns = useChatStore((s) => s.turns);
@@ -35,7 +41,6 @@ export function ChatShell() {
   const view = useChatStore((s) => s.historyView);
   const setView = useChatStore((s) => s.setHistoryView);
   const phase = useConnectionStore((s) => s.phase);
-  const [density, setDensity] = useDensity();
 
   const open = phase === "open";
   const current = sessions.find((s) => s.id === currentId);
@@ -59,47 +64,51 @@ export function ChatShell() {
 
   return (
     <ChatRuntimeProvider session={session}>
+      <RouteSync session={session} />
+      {children}
       <ChatLayout
         railLabel={copy.railLabel}
         stageLabel={copy.stageLabel}
-        rail={
+        header={
+          <>
+            {title !== null && view === "chat" ? (
+              <h1 className="me-auto min-w-0 truncate text-sm font-medium" data-testid="conversation-title">
+                {title}
+              </h1>
+            ) : null}
+            <ViewMenu />
+          </>
+        }
+        rail={(close) => (
           <Rail
             sessions={sessions}
             currentId={currentId}
-            name={status.profile.first_name}
             disabled={!open}
-            onNewChat={session.newChat}
             newChatDisabled={!open || (turns.length === 0 && view === "chat")}
-            onOpen={session.openConversation}
-            onSeeAll={showSeeAll}
+            onSeeAll={() => {
+              close();
+              showSeeAll();
+            }}
+            onSearch={() => {
+              close();
+              showSeeAll();
+            }}
             seeAllOpen={view === "see-all"}
+            onNavigate={close}
           />
-        }
+        )}
       >
         {phase === "stopped" ? (
           <StoppedScreen />
         ) : (
           <>
-            <ReconnectBanner onRetry={session.reconnect} />
+            <ConnectionState onRetry={session.reconnect} />
             <SessionNoticeBanner />
+            {view === "chat" ? <InterruptedNotice /> : null}
             {view === "see-all" ? (
-              <HistorySeeAll
-                sessions={sessions}
-                currentId={currentId}
-                disabled={!open}
-                onOpen={session.openConversation}
-                onBack={backToChat}
-              />
+              <HistorySeeAll sessions={sessions} disabled={!open} onBack={backToChat} />
             ) : (
-              <>
-                {title !== null ? (
-                  <header className="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-2 sm:px-6">
-                    <h1 className="truncate text-ui font-medium">{title}</h1>
-                    <DensityToggle value={density} onChange={setDensity} labels={densityCopy} />
-                  </header>
-                ) : null}
-                <Thread model={status.model} disabled={!open} />
-              </>
+              <Thread model={status.model} disabled={!open} />
             )}
             {phase === "taken" ? <TakeOverDialog onTakeOver={session.takeOver} /> : null}
           </>
@@ -108,3 +117,4 @@ export function ChatShell() {
     </ChatRuntimeProvider>
   );
 }
+

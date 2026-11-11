@@ -1,17 +1,17 @@
 "use client";
 
-import { useState } from "react";
-
-import { TextField } from "@/components/molecules/text-field";
 import { ProfileStep } from "@/components/organisms/profile-step";
+import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { ROUTES } from "@/constants/routes";
 import copy from "@/data/onboarding/occupation.json";
 import { useSetup } from "@/hooks/use-setup";
+import { useProfileAnswer } from "@/state/onboarding-store";
 import { saveProfile } from "@/utils/api";
 
 export default function OccupationPage() {
   const { status } = useSetup();
-  const [occupation, setOccupation] = useState(status.profile.occupation);
+  const [occupation, setOccupation] = useProfileAnswer("occupation", status.profile.occupation);
   return (
     <ProfileStep
       step={2}
@@ -19,17 +19,19 @@ export default function OccupationPage() {
       lede={copy.lede}
       back={ROUTES.name}
       next={ROUTES.personality}
-      onContinue={() => saveProfile({ occupation })}
+      onContinue={() => saveProfile({ occupation: occupation })}
     >
-      <TextField
-        id="occupation"
-        label={copy.label}
-        autoComplete="organization-title"
-        maxLength={200}
-        value={occupation}
-        onChange={(event) => setOccupation(event.target.value)}
-        autoFocus
-      />
+      <Field id="occupation" label={copy.label}>
+        <Input
+          id="occupation"
+          autoComplete="organization-title"
+          maxLength={200}
+          value={occupation}
+          onChange={(event) => setOccupation(event.target.value)}
+          autoFocus
+          className="max-md:h-10"
+        />
+      </Field>
     </ProfileStep>
   );
 }
