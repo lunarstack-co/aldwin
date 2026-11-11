@@ -44,13 +44,37 @@ git restore --staged --worktree src/aldwin/web/static
 git clean -fd src/aldwin/web/static
 ```
 
+## Source layout
+
+```
+src/
+  app/          routes only: each page.tsx stays thin and composes the pieces below
+  components/
+    atoms/      one element with its look: Button, Input, Select, Label, Chip
+    molecules/  a few atoms that work together: TextField, SelectField, ToggleChip
+    organisms/  a section with its own behaviour: ProfileStep, KeyForm, ModelPicker
+  layouts/      reusable page frames: AppShell, CenteredLayout, OnboardingLayout
+  providers/    React context providers: ThemeProvider, SetupProvider
+  hooks/        reusable hooks: useSetup, useAction, useHostReady
+  state/        client stores, added with the first store that needs one
+  styles/       globals.css imports tokens, theme, base, recipes and motion
+  utils/        reusable functions, one folder per topic: api/, cn/, gates/
+  data/         all text the pages show, as JSON: one file per page, layout or section
+  constants/    fixed values that are not text: routes, ids, theme colours, timings
+  types/        shared types, such as the setup API shapes
+```
+
+Text never sits in TSX. Each page, layout or section reads its own file in `data/` (`data/home.json`, `data/onboarding/connect.json`, `data/onboarding/key-form.json`), named after where the text appears. Placeholders such as `{step}` are filled with `fill()` from `utils/text`. Atoms and molecules take their text as props.
+
+Size decides the component level: a single element is an atom, a small group of atoms is a molecule, and anything with its own state or calls is an organism.
+
 ## Design system
 
-The tokens in `src/app/globals.css` are ported from the Aldwin docs site: semantic colour variables for light (`:root`) and dark (`.dark`), the type scale, radii and shadows. Tailwind's stock palette is switched off, so use the semantic classes (`bg-base`, `text-fg-secondary`, `border-border-default`). Other pieces:
+The tokens in `src/styles/tokens.css` are ported from the Aldwin docs site: semantic colour variables for light (`:root`) and dark (`.dark`), the type scale, radii and shadows. Tailwind's stock palette is switched off, so use the semantic classes (`bg-base`, `text-fg-secondary`, `border-border-default`). Other pieces:
 
 - Fonts: Mona Sans and Mona Sans Mono, bundled locally from the official release with their OFL licence in `src/assets/fonts/mona-sans/`.
 - Theme: `next-themes` with the `class` strategy; dark by default, with light and system.
-- Buttons: `buttonClass()` in `src/components/ui/button.tsx` (`ghost`, `outline`, `primary`).
+- Buttons: `buttonClass()` in `src/components/atoms/button.tsx` (`ghost`, `outline`, `primary`).
 - Icons: `lucide-react`.
 
 There is no component library. Add primitives only when accessibility needs them.

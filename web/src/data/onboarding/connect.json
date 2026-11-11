@@ -1,0 +1,19 @@
+{
+  "eyebrow": "Connect a model",
+  "title": "How should Aldwin think?",
+  "lede": "Aldwin needs a model before it can start. Keys are checked before they are saved, and are never shown again.",
+  "pathsLabel": "Ways to connect",
+  "paths": {
+    "key": "Paste an API key",
+    "local": "Free, on this computer",
+    "server": "Another server"
+  },
+  "localModel": "{model} ({runtime})",
+  "messages": {
+    "starting": "Starting Aldwin…",
+    "notStarted": "Your model is set up, but Aldwin did not start. Check the terminal running `aldwin web`.",
+    "noModels": "No models came back from that provider. Check the account, then try again.",
+    "noLocalModels": "No models found. Start Ollama or LM Studio with a model, then look again.",
+    "stillNoKey": "That model still has no working key. Add one, then try again."
+  }
+}

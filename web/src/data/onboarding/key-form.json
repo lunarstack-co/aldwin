@@ -1,0 +1,6 @@
+{
+  "provider": "Provider",
+  "apiKey": "API key",
+  "submit": "Check and save",
+  "fallbackProvider": { "name": "openai", "title": "OpenAI" }
+}

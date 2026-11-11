@@ -70,12 +70,15 @@ def test_web_package_scripts_and_lockfile() -> None:
 
 def test_web_ds_tokens_and_theme_hooks() -> None:
     """TC-07: docs DS tokens, class theme, button recipe and local Mona Sans."""
-    css = (WEB / "src" / "app" / "globals.css").read_text(encoding="utf-8")
+    styles = WEB / "src" / "styles"
+    css = "".join(p.read_text(encoding="utf-8") for p in sorted(styles.glob("*.css")))
     for token in (":root {", ".dark {", "@theme inline", "--bg-base: #0d1117;"):
         assert token in css
-    provider = (WEB / "src" / "components" / "theme-provider.tsx").read_text("utf-8")
+    entry = (styles / "globals.css").read_text(encoding="utf-8")
+    assert entry.index('@import "tailwindcss"') < entry.index('@import "./tokens.css"')
+    provider = (WEB / "src" / "providers" / "theme-provider.tsx").read_text("utf-8")
     assert 'attribute="class"' in provider
-    button = (WEB / "src" / "components" / "ui" / "button.tsx").read_text("utf-8")
+    button = (WEB / "src" / "components" / "atoms" / "button.tsx").read_text("utf-8")
     assert "export function buttonClass" in button
 
     fonts = WEB / "src" / "assets" / "fonts" / "mona-sans"
@@ -88,13 +91,83 @@ def test_web_ds_tokens_and_theme_hooks() -> None:
         assert not any(name.startswith(banned) for name in deps), banned
 
 
-def test_stub_page_is_minimal() -> None:
-    """TC-08: the scaffold page is brand only, with no app screens yet."""
+def test_home_page_waits_on_the_gates_and_has_no_chat_yet() -> None:
+    """TC-36: the home page shows that the gates are clear, not a chat screen."""
     page = (WEB / "src" / "app" / "page.tsx").read_text(encoding="utf-8")
-    assert 'data-testid="aldwin-stub"' in page
-    assert "Aldwin" in page
-    for later in ("onboarding", "ChatShell", "/v1/"):
-        assert later not in page
+    assert 'data-testid="aldwin-gates-clear"' in page
+    assert "ChatShell" not in page
+    layout = (WEB / "src" / "app" / "layout.tsx").read_text(encoding="utf-8")
+    assert "<SetupProvider>" in layout
+
+
+def test_gates_are_plain_pages_without_a_sign_in_layer() -> None:
+    """TC-23, TC-24: no middleware, sign-in page, auth library or wizard store."""
+    assert not (WEB / "src" / "middleware.ts").exists()
+    assert not (WEB / "middleware.ts").exists()
+    assert not list((WEB / "src" / "app").rglob("signin"))
+    deps = {**_package_json()["dependencies"], **_package_json()["devDependencies"]}
+    for banned in ("next-auth", "@auth/", "zustand"):
+        assert not any(name.startswith(banned) for name in deps), banned
+    pages = WEB / "src" / "app" / "onboarding"
+    for step in ("name", "occupation", "personality", "connect"):
+        assert (pages / step / "page.tsx").is_file(), step
+
+
+def test_web_source_follows_the_folder_layout() -> None:
+    """Components sit in atomic levels and shared code in its own top folder."""
+    src = WEB / "src"
+    levels = ("components/atoms", "components/molecules", "components/organisms")
+    shared = (
+        "layouts",
+        "providers",
+        "styles",
+        "hooks",
+        "utils",
+        "data",
+        "constants",
+        "types",
+    )
+    for folder in (*levels, *shared):
+        assert (src / folder).is_dir(), folder
+    for gone in ("lib", "components/ui", "app/globals.css"):
+        assert not (src / gone).exists(), gone
+    for path in (src / "utils").glob("*"):
+        assert path.is_dir(), f"utils/{path.name} should be a folder"
+
+
+def _strings(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [s for item in value.values() for s in _strings(item)]
+    if isinstance(value, list):
+        return [s for item in value for s in _strings(item)]
+    return []
+
+
+def test_page_text_lives_in_data_files_not_in_tsx() -> None:
+    """Every sentence in data/ is read from there, never repeated in the source."""
+    src = WEB / "src"
+    copy = [
+        text
+        for path in (src / "data").rglob("*.json")
+        for text in _strings(json.loads(path.read_text(encoding="utf-8")))
+        if " " in text
+    ]
+    assert copy, "data/ holds no text"
+    code = "".join(
+        path.read_text(encoding="utf-8")
+        for pattern in ("*.ts", "*.tsx")
+        for path in src.rglob(pattern)
+    )
+    lines = {line.strip() for line in code.splitlines()}
+
+    def written(text: str) -> bool:
+        quoted = any(f"{q}{text}{q}" in code for q in ('"', "'", "`"))
+        return quoted or f">{text}<" in code or text in lines
+
+    leaked = [text for text in copy if written(text)]
+    assert not leaked, f"text written in source instead of data/: {leaked}"
 
 
 def test_web_uses_cypress_not_playwright() -> None:

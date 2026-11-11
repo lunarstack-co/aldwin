@@ -1,0 +1,13 @@
+{
+  "title": "How should Aldwin answer?",
+  "lede": "Pick any that fit. You can change this later in persona.md.",
+  "finish": "Finish",
+  "groupLabel": "Answer styles",
+  "styles": {
+    "concise": "Concise",
+    "detailed": "Detailed",
+    "friendly": "Friendly",
+    "direct": "Direct, no fluff",
+    "teaching": "Teaching"
+  }
+}

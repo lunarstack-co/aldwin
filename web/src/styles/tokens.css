@@ -1,0 +1,97 @@
+/* Colour, shadow and selection tokens for light (:root) and dark (.dark). */
+
+:root {
+  --bg-base: #ffffff;
+  --bg-raised: #ffffff;
+  --bg-sunken: #f6f8fa;
+  --bg-code: #f6f8fa;
+  --bg-neutral-muted: #818b981f;
+
+  --border-subtle: #d1d9e0b3;
+  --border-default: #d1d9e0;
+
+  --fg: #1f2328;
+  --fg-secondary: #59636e;
+  --fg-tertiary: #59636e;
+  --fg-inverse: #ffffff;
+
+  --accent: #0969da;
+  --accent-hover: #0969da;
+  --accent-fg: #ffffff;
+  --accent-subtle: #ddf4ff;
+  --focus: #0969da;
+
+  --success: #1a7f37;
+  --warning: #9a6700;
+  --danger: #d1242f;
+  --done: #8250df;
+
+  --control-bg: #f6f8fa;
+  --control-bg-hover: #eff2f5;
+  --control-bg-active: #e6eaef;
+  --control-fg: #25292e;
+  --button-primary-bg: #1f883d;
+  --button-primary-bg-hover: #1c8139;
+
+  --code-fg: #1f2328;
+  --code-muted: #59636e;
+  --code-title: #59636e;
+  --code-border: #d1d9e0b3;
+
+  --selection: #0969da33;
+  --underline-active: #fd8c73;
+  --header-bg: #f6f8fa;
+
+  /* Framing rules and grid lines for brand surfaces. */
+  --brand-frame: #d1d9e0b3;
+  --brand-grid: #1f23280d;
+  --shadow-popover: 0 0 0 1px #d1d9e040, 0 6px 12px -3px #25292e0a, 0 6px 18px 0 #25292e1f;
+  --shadow-dialog: 0 0 0 1px #d1d9e000, 0 40px 80px 0 #25292e3d;
+}
+
+.dark {
+  --bg-base: #0d1117;
+  --bg-raised: #151b23;
+  --bg-sunken: #151b23;
+  --bg-code: #151b23;
+  --bg-neutral-muted: #656c7633;
+
+  --border-subtle: #3d444db3;
+  --border-default: #3d444d;
+
+  --fg: #f0f6fc;
+  --fg-secondary: #9198a1;
+  --fg-tertiary: #9198a1;
+  --fg-inverse: #ffffff;
+
+  --accent: #4493f8;
+  --accent-hover: #4493f8;
+  --accent-fg: #ffffff;
+  --accent-subtle: #388bfd1a;
+  --focus: #1f6feb;
+
+  --success: #3fb950;
+  --warning: #d29922;
+  --danger: #f85149;
+  --done: #ab7df8;
+
+  --control-bg: #212830;
+  --control-bg-hover: #262c36;
+  --control-bg-active: #2a313c;
+  --control-fg: #f0f6fc;
+  --button-primary-bg: #238636;
+  --button-primary-bg-hover: #29903b;
+
+  --code-fg: #f0f6fc;
+  --code-muted: #9198a1;
+  --code-title: #9198a1;
+  --code-border: #3d444db3;
+
+  --selection: #1f6febb3;
+  --underline-active: #f78166;
+  --header-bg: #010409;
+  --brand-frame: #3d444db3;
+  --brand-grid: #f0f6fc0d;
+  --shadow-popover: 0 0 0 1px #3d444d, 0 6px 12px -3px #01040966, 0 6px 18px 0 #01040966;
+  --shadow-dialog: 0 0 0 1px #3d444d, 0 24px 48px 0 #010409;
+}
