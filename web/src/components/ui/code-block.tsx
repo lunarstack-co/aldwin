@@ -27,6 +27,8 @@ export interface CodeBlockProps extends Omit<
   copyText?: string;
   /** Called after the copy button writes the clipboard. */
   onCopied?: () => void;
+  /** Accessible name of the copy button; the caller supplies it so the text stays in data/. */
+  copyLabel: string;
   /** Numbers the lines when the `pre` does not carry `data-line-numbers` itself. */
   lineNumbers?: boolean;
   maxCollapsedLines?: number | undefined;
@@ -35,9 +37,11 @@ export interface CodeBlockProps extends Omit<
 function CopyButton({
   getText,
   onCopied,
+  label,
   className,
 }: {
   getText: () => string;
+  label: string;
   onCopied?: (() => void) | undefined;
   className?: string;
 }) {
@@ -59,7 +63,7 @@ function CopyButton({
   return (
     <button
       type="button"
-      aria-label="Copy code"
+      aria-label={label}
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(getText());
@@ -101,6 +105,7 @@ export function CodeBlock({
   viewportClassName,
   copyText,
   onCopied,
+  copyLabel,
   lineNumbers,
   maxCollapsedLines,
   className,
@@ -180,12 +185,13 @@ export function CodeBlock({
           <span className="text-muted-foreground min-w-0 truncate font-mono text-[11px] font-medium tracking-wide">
             {title}
           </span>
-          <CopyButton getText={getText} onCopied={onCopied} />
+          <CopyButton getText={getText} onCopied={onCopied} label={copyLabel} />
         </figcaption>
       ) : (
         <CopyButton
           getText={getText}
           onCopied={onCopied}
+          label={copyLabel}
           className="bg-background/80 absolute top-2 right-2 z-10 opacity-0 backdrop-blur-sm transition-opacity group-hover/code:opacity-100 focus-visible:opacity-100 [@media(pointer:coarse)]:opacity-100"
         />
       )}

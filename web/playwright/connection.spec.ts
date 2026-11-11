@@ -136,6 +136,8 @@ test("interrupted history shows a callout", async ({ page, host }) => {
 test("nothing opens while disconnected", async ({ page, host }) => {
   host.sessions = [{ id: "a", created_at: "", updated_at: "2026-11-11T09:00:00Z", model: "m", title: "Alpha", interrupted: false }];
   await openChat(page);
+  // The list arrives after the socket opens; drop only once it is on screen.
+  await expect(page.getByTestId("history-row").first()).toBeVisible();
   host.ticketFailures = { remaining: 100, status: 502 };
   await host.drop();
   await expect(page.getByTestId(ids.status)).toHaveAttribute("data-phase", "reconnecting");

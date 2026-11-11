@@ -100,9 +100,14 @@ test("scrolling up shows the jump button", async ({ page, host }) => {
   await openChat(page);
   await send(page, "long");
   await expect(page.getByTestId("message-actions")).toBeVisible();
-  await page.getByTestId("transcript").evaluate((el) => el.scrollTo({ top: 0 }));
+  // The answer renders in the background; wait for all of it so the page stops growing.
+  await expect(page.getByTestId("assistant-message").locator("p")).toHaveCount(80);
   const jump = page.getByRole("button", { name: "Scroll to the newest message" });
-  await expect(jump).toBeVisible();
+  // The thread may still be settling at the bottom; scroll up until it stays there.
+  await expect(async () => {
+    await page.getByTestId("transcript").evaluate((el) => el.scrollTo({ top: 0 }));
+    await expect(jump).toBeVisible({ timeout: 500 });
+  }).toPass();
   await jump.click();
   await expect
     .poll(() => page.getByTestId("transcript").evaluate((el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 4))

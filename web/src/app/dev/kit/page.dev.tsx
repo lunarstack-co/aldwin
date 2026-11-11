@@ -21,6 +21,7 @@ import { Step, Steps } from "@/components/ui/steps";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import markdownCopy from "@/data/chat/markdown.json";
 import copy from "@/data/dev/kit.json";
 
 function Item({ name, children }: { name: string; children: ReactNode }) {
@@ -66,7 +67,7 @@ function Gallery() {
       <Item name="separator"><Separator /></Item>
       <Item name="dot-matrix"><DotMatrix state="loading" /><DotMatrix state="success" /></Item>
       <Item name="steps"><Steps><Step>{s.step}</Step><Step>{s.step}</Step></Steps></Item>
-      <Item name="code-block"><CodeBlock title="ts" copyText={s.code}><pre><code>{s.code}</code></pre></CodeBlock></Item>
+      <Item name="code-block"><CodeBlock title="ts" copyText={s.code} copyLabel={markdownCopy.copyCode}><pre><code>{s.code}</code></pre></CodeBlock></Item>
       <Item name="collapsible">
         <Collapsible defaultOpen>
           <CollapsibleTrigger>{s.option}</CollapsibleTrigger>

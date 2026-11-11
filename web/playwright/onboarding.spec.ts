@@ -181,8 +181,11 @@ for (const path of ["/", "/onboarding/name/"]) {
 
 test("loading then chat when the gates clear", async ({ page, host }) => {
   host.status = { ...host.status, keys_ok: true, host_ready: true, profile_done: true };
+  // Hold the answer until the placeholder has been seen, so a slow machine cannot skip past it.
+  let answer: () => void = () => {};
+  const held = new Promise<void>((resolve) => (answer = resolve));
   host.rest.set("GET /v1/setup/status", async (route) => {
-    await new Promise((r) => setTimeout(r, 800));
+    await held;
     await route.fulfill({ json: host.status });
   });
   await page.goto("/");
@@ -190,5 +193,6 @@ test("loading then chat when the gates clear", async ({ page, host }) => {
   await expect(loading).toHaveAttribute("role", "status");
   await expect(loading).toHaveAttribute("data-shape", "chat");
   await expect(loading.locator("[data-brand-mark]")).toHaveCSS("width", "32px");
+  answer();
   await expect(page.getByTestId("aldwin-gates-clear")).toBeVisible();
 });
