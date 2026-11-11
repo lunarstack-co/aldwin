@@ -1,4 +1,5 @@
-/* Colour, shadow and selection tokens for light (:root) and dark (.dark). */
+/* Colour, shadow and selection tokens for light (:root) and dark (.dark).
+   The accent is the brand teal; success, warning and danger keep their own hues. */
 
 :root {
   --bg-base: #ffffff;
@@ -15,11 +16,11 @@
   --fg-tertiary: #59636e;
   --fg-inverse: #ffffff;
 
-  --accent: #0969da;
-  --accent-hover: #0969da;
+  --accent: #0f7f75;
+  --accent-hover: #0b6b62;
   --accent-fg: #ffffff;
-  --accent-subtle: #ddf4ff;
-  --focus: #0969da;
+  --accent-subtle: #d9f3ef;
+  --focus: #0f7f75;
 
   --success: #1a7f37;
   --warning: #9a6700;
@@ -30,15 +31,15 @@
   --control-bg-hover: #eff2f5;
   --control-bg-active: #e6eaef;
   --control-fg: #25292e;
-  --button-primary-bg: #1f883d;
-  --button-primary-bg-hover: #1c8139;
+  --button-primary-bg: #0f7f75;
+  --button-primary-bg-hover: #0b6b62;
 
   --code-fg: #1f2328;
   --code-muted: #59636e;
   --code-title: #59636e;
   --code-border: #d1d9e0b3;
 
-  --selection: #0969da33;
+  --selection: #0f7f7533;
   --underline-active: #fd8c73;
   --header-bg: #f6f8fa;
 
@@ -64,11 +65,11 @@
   --fg-tertiary: #9198a1;
   --fg-inverse: #ffffff;
 
-  --accent: #4493f8;
-  --accent-hover: #4493f8;
-  --accent-fg: #ffffff;
-  --accent-subtle: #388bfd1a;
-  --focus: #1f6feb;
+  --accent: #38bdb0;
+  --accent-hover: #5ccbc0;
+  --accent-fg: #0e1716;
+  --accent-subtle: #38bdb01f;
+  --focus: #38bdb0;
 
   --success: #3fb950;
   --warning: #d29922;
@@ -79,15 +80,15 @@
   --control-bg-hover: #262c36;
   --control-bg-active: #2a313c;
   --control-fg: #f0f6fc;
-  --button-primary-bg: #238636;
-  --button-primary-bg-hover: #29903b;
+  --button-primary-bg: #38bdb0;
+  --button-primary-bg-hover: #5ccbc0;
 
   --code-fg: #f0f6fc;
   --code-muted: #9198a1;
   --code-title: #9198a1;
   --code-border: #3d444db3;
 
-  --selection: #1f6febb3;
+  --selection: #38bdb04d;
   --underline-active: #f78166;
   --header-bg: #010409;
   --brand-frame: #3d444db3;

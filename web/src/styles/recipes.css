@@ -35,3 +35,52 @@
     white-space: nowrap;
   }
 }
+
+/* Markdown in an assistant answer: the reading column, nothing bubbled. */
+@layer components {
+  .prose-chat > :first-child { margin-top: 0; }
+  .prose-chat > :last-child { margin-bottom: 0; }
+  .prose-chat p, .prose-chat ul, .prose-chat ol, .prose-chat blockquote, .prose-chat pre, .prose-chat table {
+    margin: 0 0 12px;
+  }
+  .prose-chat h1, .prose-chat h2, .prose-chat h3, .prose-chat h4 {
+    margin: 20px 0 8px;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+  .prose-chat h1 { font-size: 24px; }
+  .prose-chat h2 { font-size: 20px; }
+  .prose-chat h3, .prose-chat h4 { font-size: 16px; }
+  .prose-chat ul { padding-left: 24px; list-style: disc; }
+  .prose-chat ol { padding-left: 24px; list-style: decimal; }
+  .prose-chat li + li { margin-top: 4px; }
+  .prose-chat a { color: var(--accent); text-decoration: underline; }
+  .prose-chat code {
+    font-family: var(--font-mono);
+    font-size: var(--text-code);
+    background: var(--bg-code);
+    border: 1px solid var(--code-border);
+    border-radius: var(--radius-control);
+    padding: 1px 5px;
+  }
+  .prose-chat pre {
+    overflow-x: auto;
+    padding: 12px;
+    background: var(--bg-code);
+    border: 1px solid var(--code-border);
+    border-radius: var(--radius-panel);
+  }
+  .prose-chat pre code { padding: 0; border: 0; background: none; }
+  .prose-chat blockquote {
+    padding-left: 12px;
+    border-left: 3px solid var(--border-default);
+    color: var(--fg-secondary);
+  }
+  .prose-chat table { border-collapse: collapse; }
+  .prose-chat th, .prose-chat td {
+    padding: 4px 10px;
+    border: 1px solid var(--border-default);
+    text-align: left;
+  }
+  .prose-chat hr { margin: 16px 0; border: 0; border-top: 1px solid var(--border-subtle); }
+}

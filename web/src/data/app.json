@@ -1,6 +1,7 @@
 {
   "title": "Aldwin",
-  "description": "Your personal assistant, running on this computer.",
+  "description": "An open-source personal assistant that runs on your own computer, built on agentling.",
   "skipLink": "Skip to content",
-  "brand": "Aldwin"
+  "brand": "Aldwin",
+  "loading": "Loading…"
 }

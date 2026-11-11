@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useEffect, useState, type ReactNode } from "react";
 
+import { Mark } from "@/components/atoms/mark";
 import copy from "@/data/app.json";
 import { useGateRedirect } from "@/hooks/use-gate-redirect";
 import { CenteredLayout } from "@/layouts/centered-layout";
@@ -48,7 +49,17 @@ export function SetupProvider({ children }: { children: ReactNode }) {
     );
   }
   if (status === null || target !== null) {
-    return <div aria-busy="true" className="flex-1" data-testid="aldwin-gates-loading" />;
+    return (
+      <div
+        role="status"
+        aria-busy="true"
+        data-testid="aldwin-gates-loading"
+        className="flex flex-1 flex-col items-center justify-center gap-3"
+      >
+        <Mark className="size-10" />
+        <p className="text-ui text-fg-secondary">{copy.loading}</p>
+      </div>
+    );
   }
   return <SetupContext.Provider value={{ status, refresh }}>{children}</SetupContext.Provider>;
 }

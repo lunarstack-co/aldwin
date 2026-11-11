@@ -91,22 +91,24 @@ def test_web_ds_tokens_and_theme_hooks() -> None:
         assert not any(name.startswith(banned) for name in deps), banned
 
 
-def test_home_page_waits_on_the_gates_and_has_no_chat_yet() -> None:
-    """TC-36: the home page shows that the gates are clear, not a chat screen."""
+def test_home_page_mounts_the_chat_shell_behind_the_gates() -> None:
+    """TC-01, TC-20: the home page is the chat shell, behind the gates."""
     page = (WEB / "src" / "app" / "page.tsx").read_text(encoding="utf-8")
     assert 'data-testid="aldwin-gates-clear"' in page
-    assert "ChatShell" not in page
+    assert "<ChatShell />" in page
     layout = (WEB / "src" / "app" / "layout.tsx").read_text(encoding="utf-8")
     assert "<SetupProvider>" in layout
+    chat_layout = (WEB / "src" / "layouts" / "chat-layout.tsx").read_text("utf-8")
+    assert 'data-testid="aldwin-chat-shell"' in chat_layout
 
 
 def test_gates_are_plain_pages_without_a_sign_in_layer() -> None:
-    """TC-23, TC-24: no middleware, sign-in page, auth library or wizard store."""
+    """TC-23, TC-24: no middleware, sign-in page or auth library."""
     assert not (WEB / "src" / "middleware.ts").exists()
     assert not (WEB / "middleware.ts").exists()
     assert not list((WEB / "src" / "app").rglob("signin"))
     deps = {**_package_json()["dependencies"], **_package_json()["devDependencies"]}
-    for banned in ("next-auth", "@auth/", "zustand"):
+    for banned in ("next-auth", "@auth/"):
         assert not any(name.startswith(banned) for name in deps), banned
     pages = WEB / "src" / "app" / "onboarding"
     for step in ("name", "occupation", "personality", "connect"):

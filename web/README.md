@@ -24,8 +24,9 @@ Run these from `web/`:
 | `npm run typecheck` | TypeScript for the app and the Cypress specs |
 | `npm run build` | Static export, copied into `src/aldwin/web/static/` |
 | `npm run preview` | Serve `out/` on `http://127.0.0.1:4173` |
-| `npm run test:e2e` | Serve the export and run the Cypress smoke test |
+| `npm run test:e2e` | Serve the export and run every Cypress spec |
 | `npm run cypress:open` | Open Cypress interactively (run `npm run preview` first) |
+| `npm run icons` | Redraw the favicon, Apple icon and app icons from the Aldwin mark |
 
 CI runs `lint`, `typecheck`, `build` and the Cypress smoke test in the `web` job. The release workflow runs `npm run build` before building the Python package.
 
@@ -52,13 +53,13 @@ src/
   components/
     atoms/      one element with its look: Button, Input, Select, Label, Chip
     molecules/  a few atoms that work together: TextField, SelectField, ToggleChip
-    organisms/  a section with its own behaviour: ProfileStep, KeyForm, ModelPicker
-  layouts/      reusable page frames: AppShell, CenteredLayout, OnboardingLayout
-  providers/    React context providers: ThemeProvider, SetupProvider
-  hooks/        reusable hooks: useSetup, useAction, useHostReady
-  state/        client stores, added with the first store that needs one
+    organisms/  a section with its own behaviour: ProfileStep, KeyForm, chat/ChatShell
+  layouts/      reusable page frames: AppShell, CenteredLayout, OnboardingLayout, ChatLayout
+  providers/    React context providers: ThemeProvider, SetupProvider, ChatRuntimeProvider
+  hooks/        reusable hooks: useSetup, useAction, useHostReady, useChatSession
+  state/        Zustand stores: the transcript (chat-store) and the socket phase (connection-store)
   styles/       globals.css imports tokens, theme, base, recipes and motion
-  utils/        reusable functions, one folder per topic: api/, cn/, gates/
+  utils/        reusable functions, one folder per topic: api/, cn/, gates/, ws/, markdown/
   data/         all text the pages show, as JSON: one file per page, layout or section
   constants/    fixed values that are not text: routes, ids, theme colours, timings
   types/        shared types, such as the setup API shapes
@@ -67,6 +68,10 @@ src/
 Text never sits in TSX. Each page, layout or section reads its own file in `data/` (`data/home.json`, `data/onboarding/connect.json`, `data/onboarding/key-form.json`), named after where the text appears. Placeholders such as `{step}` are filled with `fill()` from `utils/text`. Atoms and molecules take their text as props.
 
 Size decides the component level: a single element is an atom, a small group of atoms is a molecule, and anything with its own state or calls is an organism.
+
+## Chat runtime
+
+The chat screen renders with `@assistant-ui/react` primitives (thread, messages, composer, action bar). `providers/chat-runtime-provider.tsx` feeds them from the Zustand chat store through `useExternalStoreRuntime`, so the Aldwin protocol in `utils/ws/` stays the only transport: sending, stopping and retrying go back through the session, and Retry always adds a new turn.
 
 ## Design system
 
@@ -81,7 +86,14 @@ There is no component library. Add primitives only when accessibility needs them
 
 ## Tests
 
-`cypress/e2e/smoke.cy.ts` only checks that the export loads with the design tokens applied. Full journey coverage (onboarding, streaming, history, the `@` menu) is added with those screens before the 0.0.6 release.
+Cypress runs against the static export with every server route stubbed, so no host or model is needed:
+
+- `cypress/e2e/smoke.cy.ts` checks that the export loads with the design tokens applied.
+- `cypress/e2e/onboarding-gates.cy.ts` covers the first-run gates against stubbed setup routes.
+- `cypress/e2e/chat-shell.cy.ts` covers every chat action (send, Stop, Clean and Detail, Copy, Retry, errors, hostile markdown, reconnect, Aldwin stopped, Take over, theme, new chat). `cypress/support/chat-ws-mock.ts` stands in for the WebSocket and plays the host's side; `cy.visitChat()` in `cypress/support/e2e.ts` installs it.
+- `cypress/e2e/chat-units.cy.ts` checks the pure pieces behind the shell (the sanitiser schema, density, the chat store, the socket helpers and the reconnect machine) in the browser without a page.
+
+Full journeys with a real `aldwin web` behind them belong to the release smoke suite.
 
 If Cypress fails to start with `bad option: --no-sandbox`, your terminal was started by an Electron-based editor that sets `ELECTRON_RUN_AS_NODE`. Run it with that variable cleared:
 

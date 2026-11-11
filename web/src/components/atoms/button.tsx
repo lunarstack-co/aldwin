@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, Ref } from "react";
 
 import { cn } from "@/utils/cn";
 
@@ -41,6 +41,7 @@ export function Button({
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
   icon?: boolean;
+  ref?: Ref<HTMLButtonElement>;
 }) {
   return (
     <button

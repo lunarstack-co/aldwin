@@ -1,0 +1,11 @@
+{
+  "running": "Running",
+  "ok": "Done",
+  "failed": "Failed",
+  "ms": "{ms} ms",
+  "arguments": "Arguments",
+  "result": "Result",
+  "noDetail": "No details were kept for this call.",
+  "show": "Show details",
+  "hide": "Hide details"
+}

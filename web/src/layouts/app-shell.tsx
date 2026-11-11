@@ -12,7 +12,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       >
         {copy.skipLink}
       </a>
-      <main id="main" className="flex flex-1 flex-col">
+      <main id="main" className="flex min-h-0 flex-1 flex-col">
         {children}
       </main>
     </>

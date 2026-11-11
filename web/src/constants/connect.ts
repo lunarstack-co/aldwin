@@ -1,4 +1,4 @@
-export const CONNECT_PATH_IDS = ["key", "local", "server"] as const;
+export const CONNECT_PATH_IDS = ['key', 'local', 'server'] as const;
 
 export type ConnectPath = (typeof CONNECT_PATH_IDS)[number];
 

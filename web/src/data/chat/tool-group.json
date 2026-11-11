@@ -1,0 +1,9 @@
+{
+  "working": "Working for {seconds}s",
+  "done": "{count} tool calls in {seconds}s",
+  "doneOne": "1 tool call in {seconds}s",
+  "fromHistory": "{count} tool calls",
+  "fromHistoryOne": "1 tool call",
+  "show": "Show the tool calls",
+  "hide": "Hide the tool calls"
+}
