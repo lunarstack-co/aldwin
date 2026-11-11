@@ -1,4 +1,4 @@
-import { MockSocket, type Refusal } from "./chat-ws-mock";
+import { MockSocket, type HistoryRow, type Refusal, type SessionSeed } from "./chat-ws-mock";
 
 export type ChatVisitOptions = {
   status?: Partial<GatesStatus>;
@@ -7,6 +7,10 @@ export type ChatVisitOptions = {
   refuseWith?: Refusal;
   /** Answer the ticket route as a server with no host yet. */
   hostNotReady?: boolean;
+  /** Saved conversations and the open one, as `sessions.list` reports them. */
+  sessions?: SessionSeed;
+  /** What `history` answers with for the open conversation. */
+  history?: HistoryRow[];
 };
 
 export type GatesStatus = {
@@ -49,6 +53,8 @@ declare global {
 Cypress.Commands.add("visitChat", (options: ChatVisitOptions = {}) => {
   MockSocket.reset();
   MockSocket.refuseWith = options.refuseWith ?? null;
+  if (options.sessions) MockSocket.seed(options.sessions);
+  if (options.history) MockSocket.history = options.history;
   cy.intercept("GET", "/v1/setup/status", { ...CLEAR, ...options.status }).as("status");
   if (options.hostNotReady) {
     cy.intercept("POST", "/v1/ws-ticket", {

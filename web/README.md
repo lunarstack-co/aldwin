@@ -59,7 +59,7 @@ src/
   hooks/        reusable hooks: useSetup, useAction, useHostReady, useChatSession
   state/        Zustand stores: the transcript (chat-store) and the socket phase (connection-store)
   styles/       globals.css imports tokens, theme, base, recipes and motion
-  utils/        reusable functions, one folder per topic: api/, cn/, gates/, ws/, markdown/
+  utils/        reusable functions, one folder per topic: api/, cn/, gates/, history/, ws/, markdown/
   data/         all text the pages show, as JSON: one file per page, layout or section
   constants/    fixed values that are not text: routes, ids, theme colours, timings
   types/        shared types, such as the setup API shapes
@@ -72,6 +72,8 @@ Size decides the component level: a single element is an atom, a small group of 
 ## Chat runtime
 
 The chat screen renders with `@assistant-ui/react` primitives (thread, messages, composer, action bar). `providers/chat-runtime-provider.tsx` feeds them from the Zustand chat store through `useExternalStoreRuntime`, so the Aldwin protocol in `utils/ws/` stays the only transport: sending, stopping and retrying go back through the session, and Retry always adds a new turn.
+
+Conversations come from the host over the same socket (`sessions.list`, `sessions.open`, `sessions.new`), never from a REST route. The host hides conversations with no turns and decides where New chat lands, reusing an empty conversation rather than starting another. The rail shows the 15 most recent; See all lists every one, searchable and split into Today and Earlier, inside the same screen. Switching while an answer is still running is refused by the host with `busy`, and the page says so without stopping the answer.
 
 ## Design system
 
@@ -91,7 +93,8 @@ Cypress runs against the static export with every server route stubbed, so no ho
 - `cypress/e2e/smoke.cy.ts` checks that the export loads with the design tokens applied.
 - `cypress/e2e/onboarding-gates.cy.ts` covers the first-run gates against stubbed setup routes.
 - `cypress/e2e/chat-shell.cy.ts` covers every chat action (send, Stop, Clean and Detail, Copy, Retry, errors, hostile markdown, reconnect, Aldwin stopped, Take over, theme, new chat). `cypress/support/chat-ws-mock.ts` stands in for the WebSocket and plays the host's side; `cy.visitChat()` in `cypress/support/e2e.ts` installs it.
-- `cypress/e2e/chat-units.cy.ts` checks the pure pieces behind the shell (the sanitiser schema, density, the chat store, the socket helpers and the reconnect machine) in the browser without a page.
+- `cypress/e2e/history.cy.ts` covers the history rail, See all with search, opening conversations, New chat landing, and the busy and deleted-elsewhere replies.
+- `cypress/e2e/chat-units.cy.ts` checks the pure pieces behind the shell (the sanitiser schema, density, the chat store, the socket helpers, the reconnect machine and the history helpers) in the browser without a page.
 
 Full journeys with a real `aldwin web` behind them belong to the release smoke suite.
 

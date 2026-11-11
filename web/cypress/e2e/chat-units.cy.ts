@@ -1,7 +1,9 @@
 // The pure pieces behind the chat shell, run in the browser without a page.
 import { lastUserText, useChatStore } from "@/state/chat-store";
+import type { SessionMeta } from "@/types/protocol";
 import { ApiError } from "@/utils/api";
 import { DEFAULT_DENSITY, readDensity, writeDensity } from "@/utils/density";
+import { displayTitle, filterSessions, groupSessions, shouldCallSessionsNew } from "@/utils/history";
 import { LINK_REL, allowsProtocol, allowsTag } from "@/utils/markdown";
 import { assistantMessageId, turnIdOf, turnsToMessages, userMessageId } from "@/utils/thread-messages";
 import { outcomeOfClose, retryDelay, socketUrl } from "@/utils/ws";
@@ -223,5 +225,51 @@ describe("connection", () => {
     expect(phases).to.deep.equal(["connecting", "not_ready"]);
     expect(sockets).to.have.length(0);
     connection.dispose();
+  });
+});
+
+describe("history helpers", () => {
+  const UNTITLED = "Untitled chat";
+  // Local times, so the calendar-day split holds in any time zone.
+  const now = new Date(2026, 10, 11, 15, 0);
+  const at = (day: number, hour: number) => new Date(2026, 10, day, hour, 0).toISOString();
+  const meta = (id: string, title: string, updated: string): SessionMeta => ({
+    id,
+    title,
+    created_at: updated,
+    updated_at: updated,
+    model: "openai/gpt-4o",
+    interrupted: false,
+  });
+  const sessions = [
+    meta("a", "Trip to Lisbon", at(11, 9)),
+    meta("b", "", at(11, 0)),
+    meta("c", "lisbon budget", at(10, 23)),
+    meta("d", "Tax notes", at(2, 12)),
+  ];
+
+  it("names an untitled conversation and keeps a real title", () => {
+    expect(displayTitle(sessions[1], UNTITLED)).to.equal(UNTITLED);
+    expect(displayTitle(meta("x", "   ", at(11, 1)), UNTITLED)).to.equal(UNTITLED);
+    expect(displayTitle(sessions[0], UNTITLED)).to.equal("Trip to Lisbon");
+  });
+
+  it("filters by title ignoring case, and returns everything for a blank query", () => {
+    expect(filterSessions(sessions, "LISBON", UNTITLED).map((s) => s.id)).to.deep.equal(["a", "c"]);
+    expect(filterSessions(sessions, "untitled", UNTITLED).map((s) => s.id)).to.deep.equal(["b"]);
+    expect(filterSessions(sessions, "", UNTITLED)).to.equal(sessions);
+    expect(filterSessions(sessions, "  ", UNTITLED)).to.equal(sessions);
+    expect(filterSessions(sessions, "nothing like it", UNTITLED)).to.deep.equal([]);
+  });
+
+  it("splits today from earlier by the local calendar day, keeping the order", () => {
+    const groups = groupSessions(sessions, now);
+    expect(groups.today.map((s) => s.id)).to.deep.equal(["a", "b"]);
+    expect(groups.earlier.map((s) => s.id)).to.deep.equal(["c", "d"]);
+  });
+
+  it("asks the host for a new chat only when the current one has turns", () => {
+    expect(shouldCallSessionsNew(0)).to.equal(false);
+    expect(shouldCallSessionsNew(1)).to.equal(true);
   });
 });

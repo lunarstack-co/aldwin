@@ -2,6 +2,7 @@ import { HISTORY_LIMIT } from "@/constants/chat";
 import { lastUserText, useChatStore } from "@/state/chat-store";
 import { useConnectionStore } from "@/state/connection-store";
 import { PROTOCOL_VERSION, type Event, type StatusEvent } from "@/types/protocol";
+import { shouldCallSessionsNew } from "@/utils/history";
 
 import { createConnection, type ConnectionDeps } from "./connection";
 import { requestId } from "./index";
@@ -17,6 +18,7 @@ export type ChatSession = {
   retry: () => void;
   newChat: () => void;
   openConversation: (id: string) => void;
+  refreshSessions: () => void;
   takeOver: () => void;
   reconnect: () => void;
 };
@@ -94,6 +96,25 @@ export function createChatSession(
     });
   }
 
+  /**
+   * The reply to an open or a new chat. The host owns the decision: it says
+   * `busy` while a turn runs and `not_found` for a conversation deleted
+   * elsewhere, and either way this tab keeps what it is showing.
+   */
+  function switchReply(onDone: () => void): Reply {
+    return (event) => {
+      if (event.kind === "done") {
+        chat().setNotice(null);
+        chat().setHistoryView("chat");
+        onDone();
+      } else if (event.kind === "error") {
+        const code = event.code === "busy" || event.code === "not_found" ? event.code : "other";
+        chat().setNotice({ code, message: event.message });
+        refreshSessions();
+      }
+    };
+  }
+
   function handleEvent(event: Event) {
     const reply = replies.get(event.re);
     if (reply) {
@@ -151,24 +172,28 @@ export function createChatSession(
       if (text !== null) sendTurn(text);
     },
     newChat: () => {
-      if (chat().turns.length === 0) return;
-      ask("sessions.new", (event) => {
-        if (event.kind !== "done") return;
-        chat().clearTranscript();
-        refreshSessions();
-      });
+      if (!shouldCallSessionsNew(chat().turns.length)) {
+        chat().setHistoryView("chat");
+        return;
+      }
+      ask(
+        "sessions.new",
+        switchReply(() => {
+          chat().clearTranscript();
+          refreshSessions();
+        }),
+      );
     },
     openConversation: (id) => {
-      const store = chat();
-      if (store.activeId !== null || id === store.currentSessionId) return;
+      if (id === chat().currentSessionId) {
+        chat().setHistoryView("chat");
+        return;
+      }
       const reqId = requestId("sessions_open");
-      replies.set(reqId, (event) => {
-        if (event.kind === "done") loadHistory();
-        // A conversation deleted from another window drops out of the rail.
-        if (event.kind === "error") refreshSessions();
-      });
+      replies.set(reqId, switchReply(loadHistory));
       connection.send({ type: "sessions.open", id: reqId, session_id: id });
     },
+    refreshSessions,
     takeOver: connection.takeOver,
     reconnect: connection.retry,
   };
