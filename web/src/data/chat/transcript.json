@@ -1,0 +1,8 @@
+{
+  "label": "Conversation",
+  "you": "You",
+  "answer": "Answer",
+  "stopped": "Stopped before the answer was finished.",
+  "maxSteps": "Stopped after reaching the step limit for one turn.",
+  "scrollToBottom": "Scroll to the newest message"
+}

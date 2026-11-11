@@ -1,0 +1,7 @@
+{
+  "connecting": "Connecting…",
+  "reconnecting": "Connection lost. Reconnecting (try {attempt} of {limit})…",
+  "catchingUp": "Reconnected. Catching up…",
+  "notReady": "Not ready yet. Finish setup, then try again.",
+  "retry": "Try again"
+}

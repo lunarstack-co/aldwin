@@ -9,6 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "postbuild": "node scripts/copy-export.mjs",
+    "icons": "node scripts/generate-icons.mjs",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit && tsc --noEmit -p cypress",
     "preview": "python3 -m http.server 4173 --bind 127.0.0.1 --directory out",
@@ -17,13 +18,18 @@
     "test:e2e": "start-server-and-test preview http://127.0.0.1:4173 cypress:run"
   },
   "dependencies": {
+    "@assistant-ui/react": "^0.15.35",
     "clsx": "^2.1.1",
     "lucide-react": "^1.23.0",
     "next": "16.4.6",
     "next-themes": "^0.4.6",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "tailwind-merge": "^3.6.0"
+    "react-markdown": "^10.1.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-gfm": "^4.0.1",
+    "tailwind-merge": "^3.6.0",
+    "zustand": "^5.1.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

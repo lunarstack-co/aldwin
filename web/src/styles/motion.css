@@ -8,3 +8,28 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* The dot under text still arriving; it rests visible, so reduced motion shows a still dot. */
+@keyframes indicator-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.stream-caret {
+  display: block;
+  width: 0.6em;
+  height: 0.6em;
+  margin-top: 6px;
+  border-radius: 9999px;
+  background: var(--fg-secondary);
+  animation: indicator-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes chip-pulse {
+  0%, 100% { border-color: var(--border-default); }
+  50% { border-color: var(--accent); }
+}
+
+.work-chip-live {
+  animation: chip-pulse 1.6s ease-in-out infinite;
+}

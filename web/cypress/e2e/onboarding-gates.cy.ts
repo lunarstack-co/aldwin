@@ -107,6 +107,6 @@ describe("onboarding gates", () => {
     statusSequence({ ...fresh, keys_ok: true, host_ready: true, profile_done: true });
     cy.visit("/onboarding/connect/");
     cy.location("pathname").should("eq", "/");
-    cy.get('[data-testid="aldwin-gates-clear"]').should("contain.text", "ready");
+    cy.get('[data-testid="aldwin-gates-clear"]').should("be.visible").and("contain.text", "Ask Aldwin anything");
   });
 });
