@@ -1,0 +1,11 @@
+{
+  "title": "All conversations",
+  "back": "Back to chat",
+  "searchLabel": "Search history",
+  "searchPlaceholder": "Search history…",
+  "today": "Today",
+  "earlier": "Earlier",
+  "empty": "No conversations yet. Send a message and it will show up here.",
+  "noMatch": "No conversations match \"{query}\".",
+  "resultCount": "{count} conversations"
+}

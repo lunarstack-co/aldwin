@@ -19,6 +19,12 @@ export type ToolRow = {
 
 export type TurnStatus = "streaming" | "stopping" | "answered" | "stopped" | "max_steps" | "error";
 
+/** What the stage shows: the conversation, or every saved one with search. */
+export type HistoryView = "chat" | "see-all";
+
+/** Why the host refused to switch conversations; `message` is the host's own sentence. */
+export type SessionNotice = { code: "busy" | "not_found" | "other"; message: string };
+
 export type Turn = {
   id: string;
   userText: string;
@@ -36,6 +42,10 @@ type ChatState = {
   /** Saved conversations with at least one turn, newest first, and the open one. */
   sessions: SessionMeta[];
   currentSessionId: string | null;
+  historyView: HistoryView;
+  notice: SessionNotice | null;
+  setHistoryView: (view: HistoryView) => void;
+  setNotice: (notice: SessionNotice | null) => void;
   setSessions: (items: SessionMeta[], current: SessionMeta | null) => void;
   startTurn: (id: string, text: string, now: number) => void;
   appendText: (delta: string) => void;
@@ -97,11 +107,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
   activeId: null,
   sessions: [],
   currentSessionId: null,
+  historyView: "chat",
+  notice: null,
+
+  setHistoryView: (view) => set({ historyView: view }),
+  setNotice: (notice) => set({ notice }),
 
   setSessions: (items, current) => set({ sessions: items, currentSessionId: current?.id ?? null }),
 
   startTurn: (id, text, now) =>
-    set((state) => ({ turns: [...state.turns, newTurn(id, text, now, "streaming")], activeId: id })),
+    set((state) => ({
+      turns: [...state.turns, newTurn(id, text, now, "streaming")],
+      activeId: id,
+      notice: null,
+    })),
 
   appendText: (delta) =>
     set((state) => updateActive(state, (t) => ({ ...t, answer: t.answer + delta }))),
@@ -142,12 +161,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => ({
       ...updateActive(state, (t) => ({ ...t, status: DONE_STATUS[reason], endedAt: now })),
       activeId: null,
+      notice: null,
     })),
 
   failTurn: (message, now) =>
     set((state) => ({
       ...updateActive(state, (t) => ({ ...t, status: "error", error: message, endedAt: now })),
       activeId: null,
+      notice: null,
     })),
 
   loadHistory: (items) => {
@@ -185,7 +206,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return { turns: [...state.turns, turn], activeId: id };
     }),
 
-  clearTranscript: () => set({ turns: [], activeId: null }),
+  clearTranscript: () => set({ turns: [], activeId: null, notice: null }),
 }));
 
 /** The text Retry sends again as a new turn: the last thing the user asked. */

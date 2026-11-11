@@ -45,10 +45,16 @@ jobs:
         run: uv run mypy src tests
 
       - name: Install ripgrep
+        env:
+          RIPGREP_VERSION: "15.2.0"
+          RIPGREP_DEB_SHA256: "5af93eebe4c352474632cf1d28523b0e98bcd4e2f115a249a713b8d8c7d1d01c"
         run: |
           if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-            sudo apt-get update
-            sudo apt-get install -y ripgrep
+            # From the release on GitHub, not apt: the Ubuntu mirrors are not always reachable from the runners.
+            deb="ripgrep_${RIPGREP_VERSION}-1_amd64.deb"
+            curl -fsSL -o "$deb" "https://github.com/BurntSushi/ripgrep/releases/download/${RIPGREP_VERSION}/${deb}"
+            echo "${RIPGREP_DEB_SHA256}  ${deb}" | sha256sum -c -
+            sudo dpkg -i "$deb"
           elif [ "${{ matrix.os }}" = "macos-latest" ]; then
             brew install ripgrep
           fi
@@ -91,7 +97,15 @@ jobs:
         run: uv sync
 
       - name: Install ripgrep
-        run: sudo apt-get update && sudo apt-get install -y ripgrep
+        env:
+          RIPGREP_VERSION: "15.2.0"
+          RIPGREP_DEB_SHA256: "5af93eebe4c352474632cf1d28523b0e98bcd4e2f115a249a713b8d8c7d1d01c"
+        run: |
+          # From the release on GitHub, not apt: the Ubuntu mirrors are not always reachable from the runners.
+          deb="ripgrep_${RIPGREP_VERSION}-1_amd64.deb"
+          curl -fsSL -o "$deb" "https://github.com/BurntSushi/ripgrep/releases/download/${RIPGREP_VERSION}/${deb}"
+          echo "${RIPGREP_DEB_SHA256}  ${deb}" | sha256sum -c -
+          sudo dpkg -i "$deb"
 
       - name: Security + policy suite
         run: uv run pytest tests/security -q --tb=short

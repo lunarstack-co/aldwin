@@ -53,7 +53,10 @@ describe("chat shell", () => {
     cy.get('[data-testid="composer-send"]').should("have.css", "background-color", "rgb(56, 189, 176)");
     cy.get("@ticket.all").should("have.length", 1);
     cy.socket().then((socket) => {
-      expect(socket.sent.map((f) => f.type)).to.deep.equal(["hello", "history", "sessions.list"]);
+      const sentTypes = socket.sent.map((f) => f.type);
+      expect(sentTypes.slice(0, 3)).to.deep.equal(["hello", "history", "sessions.list"]);
+      // Focusing the window refreshes the list; nothing else is sent unasked.
+      expect(sentTypes.slice(3).every((type) => type === "sessions.list")).to.equal(true);
       expect(socket.url).to.match(/^ws:\/\/127\.0\.0\.1:4173\/v1\/ws\?ticket=t-1$/);
     });
     cy.get("head title").should("have.text", "Aldwin");
@@ -111,7 +114,8 @@ describe("chat shell", () => {
     cy.get('[data-testid="assistant-message"]').should("have.attr", "aria-busy", "true").and("not.have.attr", "aria-live");
     cy.get('[data-testid="assistant-message"]').should("contain.text", "Hello");
     cy.get('[data-testid="composer"] [role="status"]').should("have.attr", "aria-live", "polite");
-    cy.get('[data-testid="new-chat"]').should("be.disabled");
+    // The host decides whether a switch mid-answer is allowed; it answers busy.
+    cy.get('[data-testid="new-chat"]').should("be.enabled");
     cy.socket().then((socket) => {
       const turn = sent(socket, "turn")[0];
       expect(turn.text).to.equal("hi there");
@@ -368,14 +372,17 @@ describe("chat shell", () => {
     cy.get('[data-testid="empty-home"]').should("be.visible");
   });
 
-  it("leaves @, See all and Settings inert until their screens exist", () => {
+  it("leaves @ and Settings inert until their screens exist, and See all opens in place", () => {
     cy.visitChat();
     phase("open");
-    for (const id of ["composer-skills", "see-all", "settings"]) {
+    for (const id of ["composer-skills", "settings"]) {
       cy.get(`[data-testid="${id}"]`).should("be.disabled").click({ force: true });
     }
     cy.location("pathname").should("eq", "/");
     cy.get('[role="listbox"], [role="menu"], [role="dialog"]').should("not.exist");
+    cy.get('[data-testid="see-all"]').should("be.enabled").click();
+    cy.get('[data-testid="history-see-all"]').should("be.visible");
+    cy.location("pathname").should("eq", "/");
     cy.get(SHELL).should("be.visible");
   });
 

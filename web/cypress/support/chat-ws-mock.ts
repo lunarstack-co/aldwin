@@ -19,6 +19,10 @@ export type StatusReply = {
   partial_text: string | null;
 };
 export type Refusal = { code: number; reason: string };
+/** What `sessions.list` answers with: zero-turn conversations never appear in `items`. */
+export type SessionSeed = { items: SessionRow[]; current: SessionRow | null };
+
+const BUSY = "Aldwin is still working on your last request. Stop it before switching conversations.";
 
 const CLOSED = 3;
 const OPEN = 1;
@@ -32,6 +36,8 @@ export class MockSocket {
   static status: StatusReply = { turn_streamed_chunks: 0, active_tool: null, partial_text: null };
   /** When set, every new socket is closed with this code instead of opening. */
   static refuseWith: Refusal | null = null;
+  /** When set, the next `sessions.open` fails with this error instead of switching. */
+  static openError: { code: string; message: string } | null = null;
   /** Runs when a turn arrives, so a spec can stream an answer. */
   static onTurn: ((socket: MockSocket, frame: Frame) => void) | null = null;
 
@@ -42,7 +48,14 @@ export class MockSocket {
     MockSocket.currentSession = null;
     MockSocket.status = { turn_streamed_chunks: 0, active_tool: null, partial_text: null };
     MockSocket.refuseWith = null;
+    MockSocket.openError = null;
     MockSocket.onTurn = null;
+  }
+
+  /** Seed the saved conversations and the open one, the way the host lists them. */
+  static seed(seed: SessionSeed): void {
+    MockSocket.sessions = seed.items;
+    MockSocket.currentSession = seed.current;
   }
 
   static last(): MockSocket {
@@ -104,13 +117,22 @@ export class MockSocket {
     return this.sent.filter((frame) => frame.type === type);
   }
 
+  private refuseWhileBusy(frame: Frame): boolean {
+    if (this.activeTurn === null) return false;
+    this.emit({ re: frame.id, kind: "error", code: "busy", message: BUSY });
+    return true;
+  }
+
   private reply(frame: Frame): void {
     switch (frame.type) {
       case "hello":
         this.emit({ re: frame.id, kind: "done", reason: "ok" });
         break;
       case "sessions.new":
+        if (this.refuseWhileBusy(frame)) break;
+        // The host's landing rule: an empty conversation, never listed until it has a turn.
         MockSocket.currentSession = null;
+        this.emit({ re: frame.id, kind: "sessions", items: [], current: null });
         this.emit({ re: frame.id, kind: "done", reason: "ok" });
         break;
       case "sessions.list":
@@ -123,9 +145,16 @@ export class MockSocket {
         this.emit({ re: frame.id, kind: "done", reason: "ok" });
         break;
       case "sessions.open": {
+        if (this.refuseWhileBusy(frame)) break;
+        if (MockSocket.openError) {
+          this.emit({ re: frame.id, kind: "error", ...MockSocket.openError });
+          MockSocket.openError = null;
+          break;
+        }
         const found = MockSocket.sessions.find((row) => row.id === frame.session_id);
         if (found) {
           MockSocket.currentSession = found;
+          this.emit({ re: frame.id, kind: "sessions", items: [], current: found });
           this.emit({ re: frame.id, kind: "done", reason: "ok" });
         } else {
           this.emit({ re: frame.id, kind: "error", code: "not_found", message: "That conversation no longer exists." });
