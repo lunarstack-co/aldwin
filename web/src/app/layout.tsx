@@ -27,9 +27,12 @@ const monaSansMono = localFont({
   preload: false,
 });
 
+// A page on this computer only: named for the tab and the home screen, never indexed.
 export const metadata: Metadata = {
   title: copy.title,
   description: copy.description,
+  applicationName: copy.title,
+  robots: { index: false, follow: false },
 };
 
 export const viewport: Viewport = {
@@ -48,7 +51,7 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${monaSans.variable} ${monaSansMono.variable} h-full antialiased`}
     >
-      <body className="flex min-h-full flex-col bg-base font-sans text-fg">
+      <body className="flex h-full flex-col bg-base font-sans text-fg">
         <ThemeProvider>
           <AppShell>
             <SetupProvider>{children}</SetupProvider>
