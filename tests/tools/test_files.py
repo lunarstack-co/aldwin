@@ -1061,12 +1061,18 @@ def test_tc48_format_size() -> None:
 
 
 def test_tc49_ci_installs_ripgrep() -> None:
-    """CI installs ripgrep on Ubuntu and macOS before pytest."""
+    """CI installs ripgrep on Ubuntu and macOS before pytest.
+
+    Ubuntu takes the checked release package from GitHub rather than apt,
+    because the Ubuntu mirrors are not always reachable from the runners.
+    """
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     install_at = text.index("Install ripgrep")
     pytest_at = text.index("uv run pytest")
     assert install_at < pytest_at
-    assert "apt-get" in text
+    assert "github.com/BurntSushi/ripgrep/releases/download" in text
+    assert "sha256sum -c" in text
+    assert "apt-get install" not in text
     assert "ubuntu-latest" in text
     assert "brew" in text
     assert "macos-latest" in text
