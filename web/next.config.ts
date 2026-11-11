@@ -11,6 +11,9 @@ export default function config(phase: string): NextConfig {
     turbopack: { root: __dirname },
     // Keep `next dev` from writing an AGENTS.md into the repo.
     agentRules: false,
+    // Each page exports as <route>/index.html, which the Python static files
+    // server finds without a .html extension.
+    trailingSlash: true,
   };
   if (phase !== PHASE_DEVELOPMENT_SERVER) {
     return { ...shared, output: "export" };

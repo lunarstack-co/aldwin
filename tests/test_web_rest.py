@@ -139,9 +139,9 @@ def test_inventory_covers_every_rest_route(tmp_path: Path) -> None:
     served = set()
     for router in (
         conversations_router(tmp_path),
-        settings_router(tmp_path),
-        setup_router(tmp_path),
-        ws_router(WebHostRuntime(), Authenticator.mint("127.0.0.1", PORT)),
+        settings_router(tmp_path, WebHostRuntime(home=tmp_path)),
+        setup_router(tmp_path, WebHostRuntime(home=tmp_path)),
+        ws_router(WebHostRuntime(home=tmp_path), Authenticator.mint("127.0.0.1", PORT)),
     ):
         for route in router.routes:
             if isinstance(route, APIWebSocketRoute):
@@ -677,19 +677,23 @@ def test_setup_save_failing_key_write_leaves_the_model(
 def test_profile_is_saved_and_marks_the_step_done(
     api: TestClient, aldwin_home: Path
 ) -> None:
-    """TC-25: the profile step writes state/onboarding.json, mode 0600."""
+    """TC-25: answers are drafts until the finish, in state/onboarding.json (0600)."""
     response = api.post(
         "/v1/setup/profile",
-        json={"first_name": " Ada ", "occupation": "Engineer", "personality": None},
+        json={"first_name": " Ada ", "occupation": "Engineer"},
     )
     assert response.status_code == 200
+    assert response.json()["profile_done"] is False
     path = aldwin_home / "state" / "onboarding.json"
     saved = json.loads(path.read_text("utf-8"))
     assert saved["first_name"] == "Ada" and saved["occupation"] == "Engineer"
-    assert "personality" not in saved and saved["skipped"] is False
+    assert saved["complete"] is False and saved["skipped"] is False
     assert (path.stat().st_mode & 0o777) == 0o600
-    status = api.get("/v1/setup/status").json()
+
+    done = api.post("/v1/setup/profile", json={"personality": [], "complete": True})
+    status = done.json()
     assert status["profile_done"] is True and status["profile_skipped"] is False
+    assert status["profile"]["first_name"] == "Ada"
 
 
 def test_profile_can_be_skipped(api: TestClient, aldwin_home: Path) -> None:

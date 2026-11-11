@@ -1,9 +1,10 @@
-// Proves only that the static export loads with the design tokens applied.
-// Journey specs (onboarding, chat, history, @ menu) arrive with those screens.
+// Proves the static export loads with the design tokens applied. The API is
+// stubbed: the preview server only serves files.
 describe("static export", () => {
   it("serves the Aldwin page with the design tokens applied", () => {
+    cy.intercept("GET", "/v1/setup/status", { fixture: "status-clear.json" });
     cy.visit("/");
-    cy.get('[data-testid="aldwin-stub"]').should("be.visible").and("contain.text", "Aldwin");
+    cy.get('[data-testid="aldwin-gates-clear"]').should("be.visible").and("contain.text", "Aldwin");
     cy.get("html").should("have.class", "dark");
     cy.get("body").should("have.css", "background-color", "rgb(13, 17, 23)");
   });

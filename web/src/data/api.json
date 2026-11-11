@@ -1,0 +1,4 @@
+{
+  "notAnswering": "Aldwin is not answering. Check that `aldwin web` is still running.",
+  "httpStatus": "Aldwin answered with HTTP {status}."
+}

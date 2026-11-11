@@ -1,0 +1,9 @@
+{
+  "name": "Name",
+  "nameHint": "Lowercase letters, digits, - or _. Used in model names, such as mybox/qwen.",
+  "address": "Address",
+  "addressHint": "An OpenAI-compatible server. http:// only for this computer.",
+  "addressPlaceholder": "http://127.0.0.1:8000/v1",
+  "apiKey": "API key (if the server needs one)",
+  "submit": "Connect"
+}

@@ -1,0 +1,88 @@
+/* Maps the tokens onto Tailwind utilities: colours, fonts, radii and the type scale. */
+
+@theme inline {
+  /* Drop Tailwind's stock palette so only semantic colours are available. */
+  --color-*: initial;
+
+  --color-base: var(--bg-base);
+  --color-raised: var(--bg-raised);
+  --color-sunken: var(--bg-sunken);
+  --color-code: var(--bg-code);
+  --color-neutral-muted: var(--bg-neutral-muted);
+
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+
+  --color-fg: var(--fg);
+  --color-fg-secondary: var(--fg-secondary);
+  --color-fg-tertiary: var(--fg-tertiary);
+  --color-fg-inverse: var(--fg-inverse);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-subtle: var(--accent-subtle);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+
+  --color-control: var(--control-bg);
+  --color-control-hover: var(--control-bg-hover);
+  --color-control-active: var(--control-bg-active);
+  --color-control-fg: var(--control-fg);
+  --color-primary: var(--button-primary-bg);
+  --color-primary-hover: var(--button-primary-bg-hover);
+
+  --color-header: var(--header-bg);
+  --color-frame: var(--brand-frame);
+
+  --color-code-fg: var(--code-fg);
+  --color-code-muted: var(--code-muted);
+  --color-code-title: var(--code-title);
+  --color-code-border: var(--code-border);
+
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  /* Radii: 6 px for controls and boxes, 12 px for overlays. */
+  --radius-*: initial;
+  --radius-control: 6px;
+  --radius-panel: 6px;
+  --radius-overlay: 12px;
+  --radius-full: 9999px;
+
+  --shadow-*: initial;
+  --shadow-popover: var(--shadow-popover);
+  --shadow-dialog: var(--shadow-dialog);
+
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+
+  --font-sans: var(--font-mona), -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  /* Uppercase labels and figures. */
+  --font-brand-mono: var(--font-mona-mono), ui-monospace, SFMono-Regular, monospace;
+
+  /* Type scale: body and title sizes at line height 1.5. */
+  --text-*: initial;
+  --text-2xs: 11px;
+  --text-2xs--line-height: 16px;
+  --text-xs: 12px;
+  --text-xs--line-height: 18px;
+  --text-ui: 14px;
+  --text-ui--line-height: 20px;
+  --text-sm: 14px;
+  --text-sm--line-height: 21px;
+  --text-md: 16px;
+  --text-md--line-height: 24px;
+  --text-lede: 20px;
+  --text-lede--line-height: 30px;
+  --text-h3: 20px;
+  --text-h3--line-height: 25px;
+  --text-h2: 24px;
+  --text-h2--line-height: 30px;
+  --text-h1: 32px;
+  --text-h1--line-height: 40px;
+  --text-code: 13.6px;
+  --text-code--line-height: 20px;
+}

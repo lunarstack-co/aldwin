@@ -21,7 +21,6 @@ from aldwin.core.settings import (
     AldwinConfig,
     SecretsConfig,
     load_config,
-    load_secrets,
     normalize_key_field,
     remove_secret,
     save_secrets,
@@ -127,10 +126,100 @@ async def save_provider_key(
         return status
 
     secret_field = resolve_provider_secret_field(provider, active_config, root)
-    existing_dict = load_secrets(root).to_secret_dict()
-    existing_dict[secret_field] = key.strip()
-    updated = SecretsConfig(**{k: SecretStr(v) for k, v in existing_dict.items()})
-    save_secrets(updated, root)
+    # save_secrets merges under its lock; a pre-read here would race other writers.
+    save_secrets(SecretsConfig(**{secret_field: SecretStr(key.strip())}), root)
+    return AccessStatus.OK
+
+
+class ServerAddressError(ValueError):
+    """A custom server address that Aldwin will not connect to."""
+
+
+async def connect_provider_server(
+    name: str,
+    base_url: str,
+    key: str | None = None,
+    *,
+    home: Path | None = None,
+    title: str | None = None,
+    local: bool = False,
+    config: AldwinConfig | None = None,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> AccessStatus:
+    """Check an OpenAI-compatible server and, if it answers, add it to config.
+
+    The key, when given, is saved only after the server accepts it. Raises
+    ``ServerAddressError`` for an address that is not http(s), or plain http
+    to another computer.
+    """
+    import asyncio
+    from urllib.parse import urlsplit
+
+    from aldwin.core.providers.registry import is_loopback_host
+    from aldwin.core.settings import ProviderConfig, update_config_provider
+
+    root = (home if home is not None else home_dir()).expanduser().resolve()
+    cleaned_name = name.strip().lower()
+    cleaned_url = base_url.strip().rstrip("/")
+    cleaned_key = (key or "").strip()
+    parsed = urlsplit(cleaned_url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ServerAddressError(
+            f"Invalid server address {cleaned_url!r}. "
+            "Address must begin with http:// or https://."
+        )
+    is_local = local or (
+        parsed.scheme == "http" and is_loopback_host(parsed.hostname or "")
+    )
+    if parsed.scheme == "http" and not is_local:
+        raise ServerAddressError(f"Non-local server {cleaned_url!r} must use https://.")
+
+    provider_cfg = ProviderConfig(
+        shape="openai_chat",
+        base_url=cleaned_url,
+        title=title or cleaned_name,
+        local=is_local,
+        secret=f"{cleaned_name}_api_key" if cleaned_key else None,
+    )
+    candidate = ProviderEntry(
+        name=cleaned_name,
+        title=provider_cfg.title or cleaned_name,
+        shape="openai_chat",
+        base_url=cleaned_url,
+        secret=provider_cfg.secret,
+        local=is_local,
+        docs_url="",
+    )
+    candidate_secrets = (
+        SecretsConfig(**{f"{cleaned_name}_api_key": SecretStr(cleaned_key)})
+        if cleaned_key
+        else SecretsConfig()
+    )
+    active_config = config
+    if active_config is None and (root / "config.yaml").exists():
+        active_config = load_config(root)
+    backend = get_backend(
+        candidate,
+        config=active_config,
+        secrets=candidate_secrets,
+        home=root,
+        transport=transport,
+    )
+    try:
+        status = await asyncio.wait_for(backend.check_access(), timeout=5.0)
+    except Exception as exc:
+        logger.warning(
+            "Failed to verify server %s at %s: %s", cleaned_name, cleaned_url, exc
+        )
+        status = AccessStatus.UNREACHABLE
+    if status != AccessStatus.OK:
+        return status
+
+    update_config_provider(cleaned_name, provider_cfg, root)
+    if cleaned_key:
+        save_secrets(
+            SecretsConfig(**{f"{cleaned_name}_api_key": SecretStr(cleaned_key)}), root
+        )
     return AccessStatus.OK
 
 

@@ -44,7 +44,7 @@ All local data lives in `~/.aldwin`. Set `ALDWIN_HOME=/path/to/dir` to use a dif
 │   ├── notes/
 │   │   └── YYYY-MM-DD.md   daily notes written by `remember`
 │   └── index.sqlite        rebuildable search index over notes and sessions
-├── state/                  migration marker, last-shown tip, recent skills for @, locks/<session id>.lock held while a turn runs, web.lock (pid, address and start time of a running `aldwin web`), and onboarding.json (the optional first name, occupation and personality from the browser's first-run step, or a note that it was skipped)
+├── state/                  migration marker, last-shown tip, recent skills for @, locks/<session id>.lock held while a turn runs, web.lock (pid, address and start time of a running `aldwin web`), and onboarding.json (the browser's optional profile step: first name, occupation and answer styles, or a note that it was skipped)
 ├── tmp/                    trimmed tool output, cleared after 7 days
 ├── history                 prompt_toolkit input history
 └── logs/
@@ -59,6 +59,8 @@ All local data lives in `~/.aldwin`. Set `ALDWIN_HOME=/path/to/dir` to use a dif
 Anyone holding that link or cookie can use Aldwin as you, with your keys, files and conversations, until the server stops. Do not share the link. Requests from any other page are refused, including pages served by other programs on this computer.
 
 The page talks to Aldwin over a WebSocket. Browsers do not apply the same-origin rules to WebSockets, so the socket does not trust the cookie alone: the page first asks for a ticket, which works once and only for 30 seconds, and is kept in the server's memory only. The socket must also come from the Aldwin page itself. Only one browser tab is connected at a time.
+
+When you finish the profile step, your first name and occupation are added to `memory/profile.md` and your answer styles to `persona.md`, but only while those files still hold what Aldwin shipped. Anything you wrote yourself is never overwritten.
 
 The page can save API keys, but no answer from the server ever contains one: keys come back masked (`sk-…a1b2`) with where they were found (`env`, `file` or `missing`). A key is checked with its provider before it is saved, and a key that fails the check is not written.
 

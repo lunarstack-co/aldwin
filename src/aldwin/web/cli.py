@@ -63,7 +63,7 @@ def run_web(
                 home=result.home,
                 home_display=result.display_home,
                 version=__version__,
-                runtime=WebHostRuntime(),
+                runtime=WebHostRuntime(home=result.home, workspace=result.workspace),
             )
         except StaticFilesMissingError as exc:
             sock.close()

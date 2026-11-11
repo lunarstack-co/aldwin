@@ -1,22 +1,19 @@
-import { BookOpen } from "lucide-react";
+"use client";
 
-import { buttonClass } from "@/components/ui/button";
+import { Chip } from "@/components/atoms/chip";
+import copy from "@/data/home.json";
+import { useSetup } from "@/hooks/use-setup";
+import { CenteredLayout } from "@/layouts/centered-layout";
 
 export default function Home() {
+  const { status } = useSetup();
   return (
-    <section
-      data-testid="aldwin-stub"
-      className="mx-auto flex w-full max-w-[680px] flex-1 flex-col items-start justify-center gap-4 px-4 py-16 sm:px-6"
-    >
-      <span className="chip">Local</span>
-      <h1 className="text-h1 font-semibold">Aldwin</h1>
-      <p className="text-md text-fg-secondary">
-        Your personal assistant, running on this computer.
+    <CenteredLayout width="wide" className="items-start gap-4" data-testid="aldwin-gates-clear">
+      <Chip>{status.model}</Chip>
+      <h1 className="text-h1 font-semibold">{copy.title}</h1>
+      <p className="text-md text-fg-secondary" role="status">
+        {status.host_ready ? copy.running : copy.starting}
       </p>
-      <a href="https://askaldwin.com" className={buttonClass({ variant: "primary" })}>
-        <BookOpen aria-hidden className="size-4" />
-        Read the docs
-      </a>
-    </section>
+    </CenteredLayout>
   );
 }

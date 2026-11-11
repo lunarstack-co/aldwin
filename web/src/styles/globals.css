@@ -1,0 +1,9 @@
+/* Design tokens and recipes ported from the Aldwin docs design system. */
+@import "tailwindcss";
+@import "./tokens.css";
+@import "./theme.css";
+@import "./base.css";
+@import "./recipes.css";
+@import "./motion.css";
+
+@custom-variant dark (&:where(.dark, .dark *));

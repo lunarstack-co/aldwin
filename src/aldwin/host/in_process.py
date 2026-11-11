@@ -60,6 +60,8 @@ from aldwin.core.workspace import (
 if TYPE_CHECKING:
     from aldwin.client.client import AldwinClient
     from aldwin.core.providers import ModelInfo
+    from aldwin.host.runner import AldwinHost
+    from aldwin.host.transport import HostTransport
     from aldwin.protocol import ApprovalEvent, Event, Request
 
 logger = logging.getLogger("aldwin.host")
@@ -715,6 +717,31 @@ class InProcessTransport:
         self._closed = True
         await self._inbound.put(None)
         await self._outbound.put(None)
+
+
+async def start_host(
+    transport: HostTransport,
+    *,
+    home: Path | None = None,
+    workspace: Path | str | None = None,
+) -> AldwinHost:
+    """Start an `AldwinHost` serving `transport`; stop it with `stop_host()`.
+
+    For doors that own their transport, such as the browser's WebSocket.
+    """
+    from aldwin.host.runner import AldwinHost
+    from aldwin.host.sessions import SessionStore
+
+    root = (home if home is not None else home_dir()).expanduser().resolve()
+    host = AldwinHost(
+        transport=transport,
+        session_store=SessionStore(sessions_dir=root / "sessions"),
+        home=root,
+        workspace=workspace,
+    )
+    await host.start()
+    _register_exit_backstop()
+    return host
 
 
 @asynccontextmanager

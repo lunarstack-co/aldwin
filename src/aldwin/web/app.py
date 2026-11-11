@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import cast
 
@@ -77,8 +79,8 @@ def create_app(
 ) -> FastAPI:
     """Build the app that serves the web UI, the session bootstrap and ``/v1``.
 
-    ``runtime`` carries the WebSocket transport; without one, tickets and
-    sockets are refused until a host is started on it.
+    ``runtime`` carries the WebSocket transport and starts the host once keys
+    work: at startup if they already do, else after setup saves them.
     """
     index = static_dir / "index.html"
     if not index.is_file():
@@ -87,7 +89,18 @@ def create_app(
             "Run `npm run build` in web/ to build it."
         )
 
-    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    host_runtime = runtime or WebHostRuntime(home=home)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        # A home whose keys already work gets its host before the first tab.
+        await host_runtime.start_host()
+        try:
+            yield
+        finally:
+            await host_runtime.shutdown()
+
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.add_middleware(SessionGuard, authenticator=authenticator)
     app.add_exception_handler(RequestValidationError, _invalid_request)
     app.add_exception_handler(client.SettingsError, _settings_refused)
@@ -103,9 +116,9 @@ def create_app(
         return {"home": home_display, "version": version}
 
     api.include_router(conversations_router(home))
-    api.include_router(settings_router(home))
-    api.include_router(setup_router(home))
-    api.include_router(ws_router(runtime or WebHostRuntime(), authenticator))
+    api.include_router(settings_router(home, host_runtime))
+    api.include_router(setup_router(home, host_runtime))
+    api.include_router(ws_router(host_runtime, authenticator))
     app.include_router(api)
 
     @app.get("/", include_in_schema=False)

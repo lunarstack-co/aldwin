@@ -2,10 +2,13 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import type { ReactNode } from "react";
 
-import { ThemeProvider } from "@/components/theme-provider";
-import { THEME_COLORS } from "@/lib/theme";
+import { THEME_COLORS } from "@/constants/theme";
+import copy from "@/data/app.json";
+import { AppShell } from "@/layouts/app-shell";
+import { SetupProvider } from "@/providers/setup-provider";
+import { ThemeProvider } from "@/providers/theme-provider";
 
-import "./globals.css";
+import "@/styles/globals.css";
 
 // The official Mona Sans release (OFL, licence beside the files), bundled so
 // the local UI never fetches fonts from the network.
@@ -25,8 +28,8 @@ const monaSansMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Aldwin",
-  description: "Your personal assistant, running on this computer.",
+  title: copy.title,
+  description: copy.description,
 };
 
 export const viewport: Viewport = {
@@ -47,15 +50,9 @@ export default function RootLayout({
     >
       <body className="flex min-h-full flex-col bg-base font-sans text-fg">
         <ThemeProvider>
-          <a
-            href="#main"
-            className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-control focus:bg-fg focus:px-3 focus:py-1.5 focus:text-ui focus:font-medium focus:text-fg-inverse"
-          >
-            Skip to content
-          </a>
-          <main id="main" className="flex flex-1 flex-col">
-            {children}
-          </main>
+          <AppShell>
+            <SetupProvider>{children}</SetupProvider>
+          </AppShell>
         </ThemeProvider>
       </body>
     </html>
