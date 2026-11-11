@@ -4,25 +4,32 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 import aldwin.client as client
 from aldwin.web.routes.keys import MAX_KEY_CHARS, KeyBody, saved_key_response
+from aldwin.web.runtime import WebHostRuntime
 
 
 class ProviderKeyBody(BaseModel):
-    """A model provider key to check and save."""
+    """A built-in provider's key, or a server address with an optional key."""
 
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, max_length=64)
-    key: str = Field(min_length=1, max_length=MAX_KEY_CHARS)
+    key: str | None = Field(default=None, min_length=1, max_length=MAX_KEY_CHARS)
     base_url: str | None = Field(default=None, max_length=2048)
+
+    @model_validator(mode="after")
+    def _key_or_server(self) -> ProviderKeyBody:
+        if self.key is None and not self.base_url:
+            raise ValueError("Enter an API key, or a server address.")
+        return self
 
 
 class ModelsBody(BaseModel):
@@ -44,23 +51,29 @@ class SetupBody(BaseModel):
 
 
 class ProfileBody(BaseModel):
-    """The optional profile step; ``skipped`` records that the user passed on it."""
+    """One answer of the optional profile step, the finish, or a skip."""
 
     model_config = ConfigDict(extra="forbid")
 
     first_name: str | None = None
     occupation: str | None = None
-    personality: str | None = None
+    personality: list[str] | None = Field(default=None, max_length=10)
+    complete: bool = False
     skipped: bool = False
 
 
-def setup_router(home: Path) -> APIRouter:
-    """Build the first-run routes for the Aldwin home at ``home``."""
+def setup_router(home: Path, runtime: WebHostRuntime) -> APIRouter:
+    """Build the first-run routes; saving working keys starts the host."""
     router = APIRouter(prefix="/setup")
+
+    def status_with_host() -> dict[str, Any]:
+        status = client.get_setup_status(home)
+        status["host_ready"] = runtime.ready
+        return status
 
     @router.get("/status")
     def status() -> dict[str, Any]:
-        return client.get_setup_status(home)
+        return status_with_host()
 
     @router.post("/check-key")
     async def check_key(body: KeyBody) -> dict[str, Any]:
@@ -71,11 +84,16 @@ def setup_router(home: Path) -> APIRouter:
 
     @router.post("/provider-key", response_model=None)
     async def provider_key(body: ProviderKeyBody) -> dict[str, Any] | JSONResponse:
-        key_body = KeyBody(kind="provider", **body.model_dump())
-        outcome = await client.save_key(
-            "provider", body.name, body.key, home=home, base_url=body.base_url
-        )
-        return saved_key_response(key_body, outcome)
+        if body.base_url:
+            outcome = await client.connect_server(
+                body.name, body.base_url, body.key, home=home
+            )
+        else:
+            key = cast(str, body.key)
+            outcome = await client.save_key("provider", body.name, key, home=home)
+        if outcome.ok:
+            await runtime.start_host()
+        return saved_key_response("provider", body.name, outcome)
 
     @router.post("/detect-local")
     async def detect_local() -> dict[str, Any]:
@@ -114,11 +132,15 @@ def setup_router(home: Path) -> APIRouter:
         model = (body.model or "").strip()
         if model:
             await run_in_threadpool(client.apply_settings_patch, {"model": model}, home)
-        return client.get_setup_status(home)
+        await runtime.start_host()
+        return status_with_host()
 
     @router.post("/profile")
     def profile(body: ProfileBody) -> dict[str, Any]:
-        fields = body.model_dump(exclude={"skipped"})
-        return client.save_onboarding_profile(fields, skipped=body.skipped, home=home)
+        fields = body.model_dump(exclude={"complete", "skipped"}, exclude_none=True)
+        client.save_onboarding_profile(
+            fields, complete=body.complete, skipped=body.skipped, home=home
+        )
+        return status_with_host()
 
     return router

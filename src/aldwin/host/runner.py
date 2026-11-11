@@ -2153,75 +2153,28 @@ class AldwinHost:
         scope: RequestScope,
         req: ProviderServerRequest,
     ) -> None:
-        from urllib.parse import urlsplit
-
-        from pydantic import SecretStr
-
         from aldwin.core.providers.base import AccessStatus
-        from aldwin.core.providers.factory import get_backend
-        from aldwin.core.providers.registry import ProviderEntry, is_loopback_host
-        from aldwin.core.settings import (
-            ProviderConfig,
-            SecretsConfig,
-            save_secrets,
-            update_config_provider,
+        from aldwin.core.providers.keys import (
+            ServerAddressError,
+            connect_provider_server,
         )
 
         name = req.name.strip().lower()
         base_url = req.base_url.strip().rstrip("/")
-        parsed = urlsplit(base_url)
-        if parsed.scheme not in ("http", "https") or not parsed.netloc:
-            await scope.error(
-                "invalid_request",
-                f"Invalid server address {base_url!r}. "
-                "Address must begin with http:// or https://.",
-            )
-            return
-
-        is_local = req.local or (
-            parsed.scheme == "http" and is_loopback_host(parsed.hostname or "")
-        )
-        if parsed.scheme == "http" and not is_local:
-            await scope.error(
-                "invalid_request",
-                f"Non-local server {base_url!r} must use https://.",
-            )
-            return
-
-        provider_cfg = ProviderConfig(
-            shape="openai_chat",
-            base_url=base_url,
-            title=req.title or name,
-            local=is_local,
-            secret=f"{name}_api_key" if req.key else None,
-        )
-        candidate_entry = ProviderEntry(
-            name=name,
-            title=provider_cfg.title or name,
-            shape="openai_chat",
-            base_url=base_url,
-            secret=provider_cfg.secret,
-            local=is_local,
-            docs_url="",
-        )
-        candidate_secrets = (
-            SecretsConfig(**{f"{name}_api_key": SecretStr(req.key.strip())})
-            if req.key
-            else SecretsConfig()
-        )
-        backend = get_backend(
-            candidate_entry,
-            config=self._config,
-            secrets=candidate_secrets,
-            home=self._home,
-            transport=self._backend_transport,
-        )
         try:
-            status = await asyncio.wait_for(backend.check_access(), timeout=5.0)
-        except Exception as exc:
-            logger.warning("Failed to verify server %s at %s: %s", name, base_url, exc)
-            status = AccessStatus.UNREACHABLE
-
+            status = await connect_provider_server(
+                name,
+                base_url,
+                req.key,
+                home=self._home,
+                title=req.title,
+                local=req.local,
+                config=self._config,
+                transport=self._backend_transport,
+            )
+        except ServerAddressError as exc:
+            await scope.error("invalid_request", str(exc))
+            return
         if status != AccessStatus.OK:
             await scope.error(
                 "model_unavailable",
@@ -2229,17 +2182,7 @@ class AldwinHost:
             )
             return
 
-        update_config_provider(name, provider_cfg, self._home)
         self._config = load_config(self._home)
-        if req.key and req.key.strip():
-            existing = load_secrets(self._home)
-            existing_dict = existing.to_secret_dict()
-            existing_dict[f"{name}_api_key"] = req.key.strip()
-            save_secrets(
-                SecretsConfig(**{k: SecretStr(v) for k, v in existing_dict.items()}),
-                self._home,
-            )
-
         self._provider_models_cache.pop(name, None)
         await scope.done("ok")
 

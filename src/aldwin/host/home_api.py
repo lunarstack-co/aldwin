@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
+import unicodedata
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -49,8 +51,18 @@ PATCHABLE_SETTINGS: Final[tuple[str, ...]] = (
 _SEARCH_FIELDS: Final[frozenset[str]] = frozenset({"provider", "searxng_url"})
 _SECRET_SUFFIXES: Final[tuple[str, ...]] = ("_key", "_token", "_secret")
 ONBOARDING_FILE: Final[str] = "onboarding.json"
-PROFILE_FIELDS: Final[tuple[str, ...]] = ("first_name", "occupation", "personality")
+PROFILE_TEXT_FIELDS: Final[tuple[str, ...]] = ("first_name", "occupation")
 MAX_PROFILE_CHARS: Final[int] = 200
+# Fixed sentences, so nothing the user types reaches persona.md.
+PERSONALITY_STYLES: Final[dict[str, str]] = {
+    "concise": "Keep answers short, and expand only when asked.",
+    "detailed": "Give thorough answers with the reasoning behind them.",
+    "friendly": "Be warm and conversational.",
+    "direct": "Be direct and skip pleasantries.",
+    "teaching": "Explain the why, and teach as you go.",
+}
+ONBOARDING_VERSION: Final[int] = 1
+_SERVER_NAME_RE: Final[re.Pattern[str]] = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}")
 
 
 class SettingsError(ValueError):
@@ -201,6 +213,20 @@ async def save_key(
     )
 
 
+def keys_gate_ok(home: Path | None = None) -> bool:
+    """Return whether a model can run: an OpenAI key, the model's own key, or local.
+
+    This is the rule the terminal uses to skip first-run setup.
+    """
+    from aldwin.host.in_process import get_onboarding_status
+
+    try:
+        status = get_onboarding_status(_resolve_home(home))
+    except ConfigError as exc:
+        raise SettingsError(str(exc)) from None
+    return _model_can_run(asdict(status))
+
+
 def get_setup_status(home: Path | None = None) -> dict[str, Any]:
     """Return which first-run steps are done; keys appear masked, never in full."""
     from aldwin.host.in_process import get_onboarding_status
@@ -210,40 +236,105 @@ def get_setup_status(home: Path | None = None) -> dict[str, Any]:
         status = asdict(get_onboarding_status(root))
     except ConfigError as exc:
         raise SettingsError(str(exc)) from None
-    profile = _read_onboarding(root)
-    status["profile_done"] = profile is not None
-    status["profile_skipped"] = bool(profile and profile.get("skipped"))
+    status["keys_ok"] = _model_can_run(status)
+    record = _read_onboarding(root) or {}
+    skipped = bool(record.get("skipped"))
+    status["profile_done"] = bool(record.get("complete")) or skipped
+    status["profile_skipped"] = skipped
+    status["profile"] = {
+        "first_name": record.get("first_name", ""),
+        "occupation": record.get("occupation", ""),
+        "personality": list(record.get("personality", [])),
+    }
     return status
 
 
 def save_onboarding_profile(
     fields: Mapping[str, Any],
     *,
+    complete: bool = False,
     skipped: bool = False,
     home: Path | None = None,
 ) -> dict[str, Any]:
-    """Write ``state/onboarding.json`` so the profile step is not asked again."""
+    """Save the profile step to ``state/onboarding.json``.
+
+    Fields are kept as drafts until ``complete``; ``skipped`` clears them. On
+    completion the answers are added to ``memory/profile.md`` and
+    ``persona.md``, but only while those still hold the shipped defaults.
+    """
     root = _resolve_home(home)
-    record: dict[str, Any] = {}
-    for name in PROFILE_FIELDS:
-        value = fields.get(name)
-        if value is None or skipped:
-            continue
-        if not isinstance(value, str):
-            raise SettingsError(f"{name} must be text.")
-        cleaned = value.strip()
-        if len(cleaned) > MAX_PROFILE_CHARS:
-            raise SettingsError(
-                f"{name} must be at most {MAX_PROFILE_CHARS} characters."
-            )
-        if cleaned:
-            record[name] = cleaned
-    record["skipped"] = skipped
+    drafts = _checked_profile_fields(fields)
+    if skipped:
+        record: dict[str, Any] = {"skipped": True, "complete": False}
+    else:
+        record = {
+            k: v
+            for k, v in (_read_onboarding(root) or {}).items()
+            if k in (*PROFILE_TEXT_FIELDS, "personality", "complete")
+        }
+        record.update(drafts)
+        record["complete"] = complete or bool(record.get("complete"))
+        record["skipped"] = False
+    record["version"] = ONBOARDING_VERSION
     record["saved_at"] = datetime.now(UTC).isoformat(timespec="seconds")
     path = root / "state" / ONBOARDING_FILE
     path.parent.mkdir(parents=True, exist_ok=True, mode=DIR_MODE)
     atomic_write(path, json.dumps(record, indent=2) + "\n", mode=FILE_MODE)
+    if complete and not skipped:
+        _seed_profile(root, record)
+        _seed_persona(root, record.get("personality", []))
     return record
+
+
+async def connect_server(
+    name: str,
+    base_url: str,
+    key: str | None = None,
+    *,
+    home: Path | None = None,
+) -> KeyOutcome:
+    """Add an OpenAI-compatible server once it answers; any key is saved with it."""
+    from aldwin.core.providers.base import AccessStatus
+    from aldwin.core.providers.keys import ServerAddressError, connect_provider_server
+    from aldwin.core.providers.registry import get_provider
+
+    root = _resolve_home(home)
+    cleaned = name.strip().lower()
+    if not _SERVER_NAME_RE.fullmatch(cleaned):
+        return KeyOutcome(
+            False,
+            "unknown",
+            "Name the server with lowercase letters, digits, '-' or '_' "
+            "(up to 32 characters).",
+        )
+    builtin = get_provider(cleaned)
+    if builtin is not None:
+        return KeyOutcome(
+            False,
+            "unknown",
+            f"{builtin.title} is already built in. Pick another name for this server.",
+        )
+    address = base_url.strip().rstrip("/")
+    try:
+        status = await connect_provider_server(cleaned, address, key, home=root)
+    except ServerAddressError as exc:
+        return KeyOutcome(False, "rejected", str(exc))
+    if status == AccessStatus.OK:
+        return KeyOutcome(
+            True, "ok", f"Connected to {address}.", masked=mask_secret(key)
+        )
+    if status == AccessStatus.INVALID_KEY:
+        reason = "rejected the key" if key else "needs an API key"
+        return KeyOutcome(False, "rejected", f"The server at {address} {reason}.")
+    return KeyOutcome(
+        False, "unreachable", f"Could not connect to server at {address}."
+    )
+
+
+def _model_can_run(status: Mapping[str, Any]) -> bool:
+    return bool(
+        status["has_openai_key"] or status["has_provider_key"] or status["is_local"]
+    )
 
 
 def _resolve_home(home: Path | None) -> Path:
@@ -426,6 +517,87 @@ async def _check_search_key(provider: str, key: str) -> KeyOutcome:
         else "unreachable"
     )
     return KeyOutcome(False, status, key_check_error(cls.name, provider, result)[1])
+
+
+def _checked_profile_fields(fields: Mapping[str, Any]) -> dict[str, Any]:
+    checked: dict[str, Any] = {}
+    for name in PROFILE_TEXT_FIELDS:
+        value = fields.get(name)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise SettingsError(f"{name} must be text.")
+        cleaned = _one_line(value)
+        if len(cleaned) > MAX_PROFILE_CHARS:
+            raise SettingsError(
+                f"{name} must be at most {MAX_PROFILE_CHARS} characters."
+            )
+        checked[name] = cleaned
+    styles = fields.get("personality")
+    if styles is not None:
+        if not isinstance(styles, list) or not all(isinstance(s, str) for s in styles):
+            raise SettingsError("personality must be a list of styles.")
+        unknown = [s for s in styles if s not in PERSONALITY_STYLES]
+        if unknown:
+            raise SettingsError(
+                f"Unknown personality {unknown[0]!r}. "
+                f"Choose from: {', '.join(PERSONALITY_STYLES)}."
+            )
+        checked["personality"] = list(dict.fromkeys(styles))
+    return checked
+
+
+def _one_line(value: str) -> str:
+    """Drop control and format characters and fold whitespace to single spaces."""
+    kept = "".join(
+        " " if ch.isspace() else ch
+        for ch in value
+        if ch.isspace() or not unicodedata.category(ch).startswith("C")
+    )
+    return " ".join(kept.split())
+
+
+def _seed_profile(root: Path, record: Mapping[str, Any]) -> None:
+    from aldwin.core.memory import PROFILE_REL_PATH, read_profile
+
+    if read_profile(root)[0].strip():
+        return
+    lines = [
+        f"- {label}: {record[key]}"
+        for key, label in (("first_name", "First name"), ("occupation", "Occupation"))
+        if record.get(key)
+    ]
+    if not lines:
+        return
+    path = root / PROFILE_REL_PATH
+    try:
+        existing = path.read_text(encoding="utf-8").rstrip()
+    except OSError:
+        existing = ""
+    body = "\n".join(lines)
+    text = f"{existing}\n\n{body}\n" if existing else f"{body}\n"
+    path.parent.mkdir(parents=True, exist_ok=True, mode=DIR_MODE)
+    atomic_write(path, text, mode=FILE_MODE)
+
+
+def _seed_persona(root: Path, styles: list[str]) -> None:
+    from aldwin.core.persona import (
+        PERSONA_FILENAME,
+        read_default_persona,
+        write_persona,
+    )
+
+    if not styles:
+        return
+    default = read_default_persona()
+    try:
+        current = (root / PERSONA_FILENAME).read_text(encoding="utf-8").strip()
+    except OSError:
+        current = ""
+    if current and current != default:
+        return
+    wishes = "\n".join(f"- {PERSONALITY_STYLES[s]}" for s in styles)
+    write_persona(root, f"{default}\n\n## How the user likes answers\n\n{wishes}")
 
 
 def _read_onboarding(root: Path) -> dict[str, Any] | None:

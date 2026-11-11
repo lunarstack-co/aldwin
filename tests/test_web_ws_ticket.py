@@ -74,7 +74,7 @@ def test_minting_prunes_in_place() -> None:
     assert not store.consume(spent)
 
 
-def test_ticket_route_runs_on_the_event_loop() -> None:
+def test_ticket_route_runs_on_the_event_loop(tmp_path: Path) -> None:
     """A threaded mint could race a spend on the loop; the route must be async."""
     import inspect
 
@@ -82,7 +82,9 @@ def test_ticket_route_runs_on_the_event_loop() -> None:
 
     from aldwin.web.routes.ws import ws_router
 
-    router = ws_router(WebHostRuntime(), Authenticator.mint("127.0.0.1", PORT))
+    router = ws_router(
+        WebHostRuntime(home=tmp_path), Authenticator.mint("127.0.0.1", PORT)
+    )
     mint = next(r for r in router.routes if isinstance(r, APIRoute))
     assert inspect.iscoroutinefunction(mint.endpoint)
 
@@ -93,8 +95,8 @@ def test_default_lifetime_is_thirty_seconds() -> None:
 
 
 @pytest.fixture
-def runtime() -> WebHostRuntime:
-    return WebHostRuntime()
+def runtime(aldwin_home: Path) -> WebHostRuntime:
+    return WebHostRuntime(home=aldwin_home)
 
 
 @pytest.fixture

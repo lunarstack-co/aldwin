@@ -273,7 +273,7 @@ def _app(runtime: WebHostRuntime, aldwin_home: Path, tmp_path: Path) -> TestClie
 
 @pytest.fixture
 def rig(aldwin_home: Path, tmp_path: Path, fake_model: FakeModel) -> Iterator[Rig]:
-    runtime = WebHostRuntime()
+    runtime = WebHostRuntime(home=aldwin_home)
     client = _app(runtime, aldwin_home, tmp_path)
     try:
         host, tools = _portal(client).call(_start_host, runtime, fake_model)
@@ -548,7 +548,7 @@ def test_localhost_origin_on_the_bound_port_is_accepted(rig: Rig) -> None:
 
 def test_expired_ticket_is_401(aldwin_home: Path, tmp_path: Path) -> None:
     """TC-13: a ticket used after its lifetime is refused."""
-    runtime = WebHostRuntime(ticket_ttl=0.05)
+    runtime = WebHostRuntime(home=aldwin_home, ticket_ttl=0.05)
     runtime.mark_ready()
     client = _app(runtime, aldwin_home, tmp_path)
     try:
@@ -566,7 +566,7 @@ def test_expired_ticket_is_401(aldwin_home: Path, tmp_path: Path) -> None:
 
 def test_socket_waits_for_a_host(aldwin_home: Path, tmp_path: Path) -> None:
     """TC-24: before a host is serving, the upgrade is refused with 503."""
-    runtime = WebHostRuntime()
+    runtime = WebHostRuntime(home=aldwin_home)
     client = _app(runtime, aldwin_home, tmp_path)
     try:
         ticket = runtime.tickets.mint()

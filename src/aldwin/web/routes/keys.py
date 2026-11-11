@@ -24,7 +24,7 @@ class KeyBody(BaseModel):
 
 
 def saved_key_response(
-    body: KeyBody, outcome: client.KeyOutcome
+    kind: str, name: str, outcome: client.KeyOutcome
 ) -> dict[str, Any] | JSONResponse:
     """Answer a save: the masked key on success, the reason and a 4xx/5xx if not."""
     if not outcome.ok:
@@ -35,8 +35,8 @@ def saved_key_response(
         )
     return {
         "ok": True,
-        "kind": body.kind,
-        "name": body.name.strip().lower(),
+        "kind": kind,
+        "name": name.strip().lower(),
         "masked": outcome.masked,
         "env_override": outcome.env_override,
     }

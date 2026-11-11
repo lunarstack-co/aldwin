@@ -54,7 +54,7 @@ def serve(app: FastAPI, sock: socket.socket, on_ready: Callable[[], None]) -> No
         log_level="warning",
         access_log=False,
         server_header=False,
-        lifespan="off",
+        lifespan="on",
     )
     server = uvicorn.Server(config)
     # uvicorn re-raises the signal after a clean shutdown; the default SIGTERM
