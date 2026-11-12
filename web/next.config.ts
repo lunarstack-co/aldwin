@@ -18,10 +18,14 @@ export default function config(phase: string): NextConfig {
   if (phase !== PHASE_DEVELOPMENT_SERVER) {
     return { ...shared, output: "export" };
   }
+  // `page.dev.tsx` files (the component gallery) exist only under `next dev`.
   // Rewrites cannot coexist with a static export, so the dev server leaves
   // `output` unset. `npm run build` still enforces every export restriction.
   return {
     ...shared,
+    pageExtensions: ["tsx", "ts", "jsx", "js", "dev.tsx"],
+    // The dev server only serves its own assets to origins it knows; tests use 127.0.0.1.
+    allowedDevOrigins: ["127.0.0.1"],
     async rewrites() {
       return [{ source: "/v1/:path*", destination: `${DEV_API}/v1/:path*` }];
     },

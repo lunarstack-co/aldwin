@@ -4,9 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { FormEvent, ReactNode } from "react";
 
-import { Button, buttonClass } from "@/components/atoms/button";
-import { FormAlert } from "@/components/atoms/form-message";
-import { StepHeader } from "@/components/molecules/step-header";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { ROUTES } from "@/constants/routes";
 import copy from "@/data/onboarding/profile-step.json";
 import { useAction } from "@/hooks/use-action";
@@ -14,11 +12,15 @@ import { useSetup } from "@/hooks/use-setup";
 import { saveProfile } from "@/utils/api";
 import { fill } from "@/utils/text";
 
+import { FormAlert } from "./form-message";
+import { StepHeader } from "./step-header";
+
 const PROFILE_STEPS = 3;
 
 /**
  * One page of the optional profile step. `onContinue` saves this page's
- * answer; Skip is always there and marks the whole step as skipped.
+ * answer; Skip is always there, marks the whole step as skipped, and never
+ * holds Aldwin up.
  */
 export function ProfileStep({
   step,
@@ -64,18 +66,18 @@ export function ProfileStep({
       {children}
       <FormAlert>{problem}</FormAlert>
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="submit" variant="primary" disabled={busy}>
+        <Button type="submit" disabled={busy} className="max-md:h-10">
           {continueLabel}
         </Button>
         {back ? (
-          <Link href={back} className={buttonClass({ variant: "outline" })}>
+          <Link href={back} className={buttonVariants({ variant: "outline", className: "max-md:h-10" })}>
             {copy.back}
           </Link>
         ) : null}
         <Button
           variant="ghost"
           disabled={busy}
-          className="ml-auto"
+          className="ml-auto max-md:h-10"
           onClick={() => saveThenGo(() => saveProfile({ skipped: true }), ROUTES.home)}
         >
           {copy.skip}

@@ -3,5 +3,38 @@
   "description": "An open-source personal assistant that runs on your own computer, built on agentling.",
   "skipLink": "Skip to content",
   "brand": "Aldwin",
-  "loading": "Loading…"
+  "brandLink": "Aldwin, new chat",
+  "loading": "Loading…",
+  "pages": {
+    "home": {
+      "title": "New chat",
+      "description": "Start a conversation with Aldwin, the assistant running on this computer."
+    },
+    "conversation": {
+      "title": "Conversation",
+      "description": "A saved conversation with Aldwin, kept on this computer."
+    },
+    "connect": {
+      "title": "Connect a model",
+      "description": "Choose the model Aldwin uses: an API key, a local model, or another OpenAI-compatible server."
+    },
+    "name": {
+      "title": "Your name",
+      "description": "Tell Aldwin what to call you. You can skip this step."
+    },
+    "occupation": {
+      "title": "Your work",
+      "description": "Tell Aldwin what you do, so answers fit your work. You can skip this step."
+    },
+    "personality": {
+      "title": "Answer style",
+      "description": "Pick how Aldwin should answer you. You can skip this step."
+    },
+    "notFound": {
+      "title": "Page not found",
+      "description": "This page does not exist in Aldwin.",
+      "body": "The address may be mistyped, or the page may have moved.",
+      "action": "Go to chat"
+    }
+  }
 }

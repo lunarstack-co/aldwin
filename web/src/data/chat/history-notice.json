@@ -1,5 +1,8 @@
 {
   "busy": "Still working on the last answer. Stop it before switching conversations.",
   "notFound": "That conversation no longer exists, so it has left the list.",
-  "dismiss": "Dismiss"
+  "dismiss": "Dismiss",
+  "label": "Not switched",
+  "interrupted": "The last answer in this conversation was cut off before it finished. Ask again to pick it up.",
+  "interruptedLabel": "Cut off"
 }

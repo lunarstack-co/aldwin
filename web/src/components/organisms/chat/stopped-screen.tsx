@@ -1,7 +1,7 @@
 "use client";
 
-import { Button } from "@/components/atoms/button";
-import { Mark } from "@/components/atoms/mark";
+import { Mark } from "@/components/brand/mark";
+import { Button } from "@/components/ui/button";
 import copy from "@/data/chat/stopped.json";
 
 /** The end of the line: Aldwin is gone and a reload is the only way back. */
@@ -13,9 +13,9 @@ export function StoppedScreen() {
       className="flex flex-1 flex-col items-center justify-center gap-4 px-4 text-center"
     >
       <Mark className="size-10" />
-      <h1 className="text-h2 font-semibold">{copy.title}</h1>
-      <p className="max-w-[480px] text-md text-fg-secondary">{copy.body}</p>
-      <Button variant="primary" onClick={() => window.location.reload()}>
+      <h1 className="text-2xl">{copy.title}</h1>
+      <p className="text-muted-foreground max-w-[480px] text-base">{copy.body}</p>
+      <Button onClick={() => window.location.reload()} className="max-md:h-10">
         {copy.reload}
       </Button>
     </div>

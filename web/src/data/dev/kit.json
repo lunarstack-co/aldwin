@@ -1,0 +1,17 @@
+{
+  "title": "Component kit",
+  "light": "Light",
+  "dark": "Dark",
+  "sample": {
+    "button": "Continue",
+    "input": "Type here",
+    "badge": "GitHub",
+    "callout": "Callouts carry notes, warnings and errors.",
+    "kbd": "/",
+    "step": "Connect a model",
+    "code": "const answer = 42;",
+    "option": "Option",
+    "dialog": "Dialog content",
+    "tab": "Tab"
+  }
+}

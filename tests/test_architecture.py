@@ -372,7 +372,7 @@ def _ci_jobs() -> dict[str, Any]:
 
 
 def test_ci_workflow_has_web_job() -> None:
-    """TC-10: a separate `web` job lints, type-checks, builds and smokes."""
+    """TC-10: a separate `web` job lints, type-checks, builds and runs Playwright."""
     web = _ci_jobs()["web"]
     assert web["runs-on"] == "ubuntu-latest"
     assert web["defaults"]["run"]["working-directory"] == "web"
@@ -381,23 +381,22 @@ def test_ci_workflow_has_web_job() -> None:
     node = next(s for s in steps if s.get("uses", "").startswith("actions/setup-node@"))
     assert node["with"]["node-version"] == "22"
     runs = [s.get("run", "") for s in steps]
-    for command in ("npm run lint", "npm run typecheck", "npm run build"):
+    for command in (
+        "npm ci",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run build",
+        "npm run test:pw",
+        "npm run test:pw:timing",
+        "npm run test:pw:kit",
+    ):
         assert command in runs, f"web job is missing {command!r}"
-    install = next(r for r in runs if "npm ci" in r)
-    # The action runs with install: false, so the job must fetch the binary
-    # itself rather than rely on npm running postinstall scripts.
-    assert "npx cypress install" in install
-
-    cypress = next(
-        s for s in steps if s.get("uses", "") == "cypress-io/github-action@v6"
-    )
-    assert cypress["with"]["working-directory"] == "web"
-    assert cypress["with"]["install"] is False
-    # A bare URL uses the action's own probe, which stops on the first
-    # refused connection instead of waiting for the preview server.
-    wait_on = cypress["with"]["wait-on"]
-    assert wait_on.startswith("npx wait-on "), wait_on
-    assert "http-get://127.0.0.1:4173" in wait_on
+    # npm ci does not fetch browsers; the job installs every engine the suite runs.
+    browsers = next(r for r in runs if "npx playwright install" in r)
+    for engine in ("chromium", "firefox", "webkit"):
+        assert engine in browsers, engine
+    assert runs.index("npm run build") < runs.index("npm run test:pw")
+    assert not any("cypress" in s.get("uses", "") for s in steps)
 
 
 def test_ci_test_job_remains_node_free() -> None:

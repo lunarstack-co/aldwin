@@ -36,13 +36,13 @@ def test_web_static_page_committed() -> None:
 
 
 def test_gitignore_web_artifacts_and_static_tracked() -> None:
-    """TC-02: Node and Cypress output is ignored; the packaged UI is not."""
+    """TC-02: Node and Playwright output is ignored; the packaged UI is not."""
     for path in (
         "web/node_modules/next/package.json",
         "web/.next/build-manifest.json",
         "web/out/index.html",
-        "web/cypress/screenshots/a.png",
-        "web/cypress/videos/a.mp4",
+        "web/test-results/a/trace.zip",
+        "web/playwright-report/index.html",
     ):
         assert _git_ignored(path), f"{path} should be ignored"
     assert not _git_ignored("src/aldwin/web/static/index.html")
@@ -63,39 +63,61 @@ def test_web_package_scripts_and_lockfile() -> None:
     """TC-04: npm lockfile and the scripts CI and contributors run."""
     assert (WEB / "package-lock.json").is_file()
     scripts = _package_json()["scripts"]
-    for name in ("dev", "build", "postbuild", "lint", "typecheck", "cypress:run"):
+    for name in (
+        "dev",
+        "build",
+        "postbuild",
+        "lint",
+        "typecheck",
+        "test:pw",
+        "test:pw:kit",
+    ):
         assert name in scripts, f"web/package.json is missing script {name!r}"
     assert scripts["postbuild"] == "node scripts/copy-export.mjs"
 
 
 def test_web_ds_tokens_and_theme_hooks() -> None:
-    """TC-07: docs DS tokens, class theme, button recipe and local Mona Sans."""
+    """TC-07: assistant-ui tokens, class theme, kit button and local fonts."""
     styles = WEB / "src" / "styles"
     css = "".join(p.read_text(encoding="utf-8") for p in sorted(styles.glob("*.css")))
-    for token in (":root {", ".dark {", "@theme inline", "--bg-base: #0d1117;"):
+    for token in (
+        ":root {",
+        ".dark {",
+        "@theme inline",
+        "--background: oklch(0.17 0.003 var(--tint));",
+    ):
         assert token in css
     entry = (styles / "globals.css").read_text(encoding="utf-8")
     assert entry.index('@import "tailwindcss"') < entry.index('@import "./tokens.css"')
     provider = (WEB / "src" / "providers" / "theme-provider.tsx").read_text("utf-8")
     assert 'attribute="class"' in provider
-    button = (WEB / "src" / "components" / "atoms" / "button.tsx").read_text("utf-8")
-    assert "export function buttonClass" in button
+    button = (WEB / "src" / "components" / "ui" / "button.tsx").read_text("utf-8")
+    assert "buttonVariants" in button
 
-    fonts = WEB / "src" / "assets" / "fonts" / "mona-sans"
-    for name in ("MonaSansVF.woff2", "MonaSansMonoVF.woff2", "OFL.txt"):
-        assert (fonts / name).is_file()
+    fonts = WEB / "src" / "assets" / "fonts"
+    for name in (
+        "public-sans/PublicSansVF-latin.woff2",
+        "public-sans/OFL.txt",
+        "jetbrains-mono/JetBrainsMonoVF-latin.woff2",
+        "jetbrains-mono/OFL.txt",
+    ):
+        assert (fonts / name).is_file(), name
 
     deps = {**_package_json()["dependencies"], **_package_json()["devDependencies"]}
-    assert "lucide-react" in deps
-    for banned in ("@radix-ui", "@headlessui", "shadcn", "next-auth"):
+    for needed in ("lucide-react", "@assistant-ui/react", "@base-ui/react"):
+        assert needed in deps, needed
+    for banned in ("@radix-ui", "@headlessui", "next-auth"):
         assert not any(name.startswith(banned) for name in deps), banned
 
 
 def test_home_page_mounts_the_chat_shell_behind_the_gates() -> None:
-    """TC-01, TC-20: the home page is the chat shell, behind the gates."""
-    page = (WEB / "src" / "app" / "page.tsx").read_text(encoding="utf-8")
-    assert 'data-testid="aldwin-gates-clear"' in page
-    assert "<ChatShell />" in page
+    """TC-01, TC-20: `/` and `/c/` share the chat shell, behind the gates."""
+    chat = WEB / "src" / "app" / "(chat)"
+    assert (chat / "page.tsx").is_file()
+    assert (chat / "c" / "page.tsx").is_file()
+    shell = (chat / "layout.tsx").read_text(encoding="utf-8")
+    assert 'data-testid="aldwin-gates-clear"' in shell
+    assert "<ChatShell>" in shell
     layout = (WEB / "src" / "app" / "layout.tsx").read_text(encoding="utf-8")
     assert "<SetupProvider>" in layout
     chat_layout = (WEB / "src" / "layouts" / "chat-layout.tsx").read_text("utf-8")
@@ -116,9 +138,14 @@ def test_gates_are_plain_pages_without_a_sign_in_layer() -> None:
 
 
 def test_web_source_follows_the_folder_layout() -> None:
-    """Components sit in atomic levels and shared code in its own top folder."""
+    """Kit, registry and app components sit apart; shared code has its own folder."""
     src = WEB / "src"
-    levels = ("components/atoms", "components/molecules", "components/organisms")
+    levels = (
+        "components/ui",
+        "components/assistant-ui",
+        "components/brand",
+        "components/organisms",
+    )
     shared = (
         "layouts",
         "providers",
@@ -131,7 +158,7 @@ def test_web_source_follows_the_folder_layout() -> None:
     )
     for folder in (*levels, *shared):
         assert (src / folder).is_dir(), folder
-    for gone in ("lib", "components/ui", "app/globals.css"):
+    for gone in ("lib", "components/atoms", "components/molecules", "app/globals.css"):
         assert not (src / gone).exists(), gone
     for path in (src / "utils").glob("*"):
         assert path.is_dir(), f"utils/{path.name} should be a folder"
@@ -172,9 +199,12 @@ def test_page_text_lives_in_data_files_not_in_tsx() -> None:
     assert not leaked, f"text written in source instead of data/: {leaked}"
 
 
-def test_web_uses_cypress_not_playwright() -> None:
-    """TC-25: the settled E2E runner is Cypress."""
+def test_web_uses_playwright_not_cypress() -> None:
+    """TC-25: the E2E runner is Playwright, with its fake host."""
     dev_deps = _package_json()["devDependencies"]
-    assert "cypress" in dev_deps
-    assert not any("playwright" in name for name in dev_deps)
-    assert (WEB / "cypress" / "e2e" / "smoke.cy.ts").is_file()
+    assert "@playwright/test" in dev_deps
+    assert not any("cypress" in name for name in dev_deps)
+    assert (WEB / "playwright.config.ts").is_file()
+    assert (WEB / "playwright" / "smoke.spec.ts").is_file()
+    assert (WEB / "playwright" / "fixtures" / "fake-host.ts").is_file()
+    assert not (WEB / "cypress").exists()

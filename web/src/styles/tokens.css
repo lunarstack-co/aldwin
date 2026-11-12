@@ -1,98 +1,77 @@
-/* Colour, shadow and selection tokens for light (:root) and dark (.dark).
-   The accent is the brand teal; success, warning and danger keep their own hues. */
+/* The assistant-ui token set, value for value from apps/docs/styles/globals.css
+   at assistant-ui/assistant-ui@437b410. Every neutral sits on the --tint hue. */
 
 :root {
-  --bg-base: #ffffff;
-  --bg-raised: #ffffff;
-  --bg-sunken: #f6f8fa;
-  --bg-code: #f6f8fa;
-  --bg-neutral-muted: #818b981f;
-
-  --border-subtle: #d1d9e0b3;
-  --border-default: #d1d9e0;
-
-  --fg: #1f2328;
-  --fg-secondary: #59636e;
-  --fg-tertiary: #59636e;
-  --fg-inverse: #ffffff;
-
-  --accent: #0f7f75;
-  --accent-hover: #0b6b62;
-  --accent-fg: #ffffff;
-  --accent-subtle: #d9f3ef;
-  --focus: #0f7f75;
-
-  --success: #1a7f37;
-  --warning: #9a6700;
-  --danger: #d1242f;
-  --done: #8250df;
-
-  --control-bg: #f6f8fa;
-  --control-bg-hover: #eff2f5;
-  --control-bg-active: #e6eaef;
-  --control-fg: #25292e;
-  --button-primary-bg: #0f7f75;
-  --button-primary-bg-hover: #0b6b62;
-
-  --code-fg: #1f2328;
-  --code-muted: #59636e;
-  --code-title: #59636e;
-  --code-border: #d1d9e0b3;
-
-  --selection: #0f7f7533;
-  --underline-active: #fd8c73;
-  --header-bg: #f6f8fa;
-
-  /* Framing rules and grid lines for brand surfaces. */
-  --brand-frame: #d1d9e0b3;
-  --brand-grid: #1f23280d;
-  --shadow-popover: 0 0 0 1px #d1d9e040, 0 6px 12px -3px #25292e0a, 0 6px 18px 0 #25292e1f;
-  --shadow-dialog: 0 0 0 1px #d1d9e000, 0 40px 80px 0 #25292e3d;
+  --page-width: 80rem;
+  --radius: 0.5rem;
+  --tint: 106;
+  --background: oklch(0.992 0.002 var(--tint));
+  --foreground: oklch(0.145 0.006 var(--tint));
+  --code-surface: color-mix(in oklab, var(--foreground) 4%, var(--background));
+  --card: oklch(0.992 0.002 var(--tint));
+  --card-foreground: oklch(0.145 0.006 var(--tint));
+  --popover: oklch(0.992 0.002 var(--tint));
+  --popover-foreground: oklch(0.145 0.006 var(--tint));
+  --primary: oklch(0.205 0.006 var(--tint));
+  --primary-foreground: oklch(0.985 0.003 var(--tint));
+  --secondary: oklch(0.97 0.004 var(--tint));
+  --secondary-foreground: oklch(0.205 0.006 var(--tint));
+  --muted: oklch(0.97 0.004 var(--tint));
+  --muted-foreground: oklch(0.556 0.007 var(--tint));
+  --accent: oklch(0.97 0.004 var(--tint));
+  --accent-foreground: oklch(0.205 0.006 var(--tint));
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0.005 var(--tint));
+  --input: oklch(0.922 0.005 var(--tint));
+  --ring: oklch(0.708 0.006 var(--tint));
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.978 0.003 var(--tint));
+  --sidebar-foreground: oklch(0.145 0.006 var(--tint));
+  --sidebar-primary: oklch(0.205 0.006 var(--tint));
+  --sidebar-primary-foreground: oklch(0.985 0.003 var(--tint));
+  --sidebar-accent: oklch(0.97 0.004 var(--tint));
+  --sidebar-accent-foreground: oklch(0.205 0.006 var(--tint));
+  --sidebar-border: oklch(0.922 0.005 var(--tint));
+  --sidebar-ring: oklch(0.708 0.006 var(--tint));
+  /* The one accent: something is live (streaming, running, connected). */
+  --live: var(--color-blue-500);
+  --thread-max-width: 45rem;
 }
 
 .dark {
-  --bg-base: #0d1117;
-  --bg-raised: #151b23;
-  --bg-sunken: #151b23;
-  --bg-code: #151b23;
-  --bg-neutral-muted: #656c7633;
-
-  --border-subtle: #3d444db3;
-  --border-default: #3d444d;
-
-  --fg: #f0f6fc;
-  --fg-secondary: #9198a1;
-  --fg-tertiary: #9198a1;
-  --fg-inverse: #ffffff;
-
-  --accent: #38bdb0;
-  --accent-hover: #5ccbc0;
-  --accent-fg: #0e1716;
-  --accent-subtle: #38bdb01f;
-  --focus: #38bdb0;
-
-  --success: #3fb950;
-  --warning: #d29922;
-  --danger: #f85149;
-  --done: #ab7df8;
-
-  --control-bg: #212830;
-  --control-bg-hover: #262c36;
-  --control-bg-active: #2a313c;
-  --control-fg: #f0f6fc;
-  --button-primary-bg: #38bdb0;
-  --button-primary-bg-hover: #5ccbc0;
-
-  --code-fg: #f0f6fc;
-  --code-muted: #9198a1;
-  --code-title: #9198a1;
-  --code-border: #3d444db3;
-
-  --selection: #38bdb04d;
-  --underline-active: #f78166;
-  --header-bg: #010409;
-  --brand-frame: #3d444db3;
-  --brand-grid: #f0f6fc0d;
-  --shadow-popover: 0 0 0 1px #3d444d, 0 6px 12px -3px #01040966, 0 6px 18px 0 #01040966;
-  --shadow-dialog: 0 0 0 1px #3d444d, 0 24px 48px 0 #010409;
+  --background: oklch(0.17 0.003 var(--tint));
+  --foreground: oklch(0.985 0.002 var(--tint));
+  --card: oklch(0.215 0.003 var(--tint));
+  --card-foreground: oklch(0.985 0.002 var(--tint));
+  --popover: oklch(0.215 0.003 var(--tint));
+  --popover-foreground: oklch(0.985 0.002 var(--tint));
+  --primary: oklch(0.922 0.002 var(--tint));
+  --primary-foreground: oklch(0.215 0.003 var(--tint));
+  --secondary: oklch(0.275 0.004 var(--tint));
+  --secondary-foreground: oklch(0.985 0.002 var(--tint));
+  --muted: oklch(0.275 0.004 var(--tint));
+  --muted-foreground: oklch(0.708 0.004 var(--tint));
+  --accent: oklch(0.275 0.004 var(--tint));
+  --accent-foreground: oklch(0.985 0.002 var(--tint));
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(0.985 0.002 var(--tint) / 10%);
+  --input: oklch(0.985 0.002 var(--tint) / 15%);
+  --ring: oklch(0.556 0.004 var(--tint));
+  --chart-1: oklch(0.68 0.21 41.116);
+  --chart-2: oklch(0.64 0.118 184.704);
+  --chart-3: oklch(0.56 0.09 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.215 0.003 var(--tint));
+  --sidebar-foreground: oklch(0.985 0.002 var(--tint));
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0.002 var(--tint));
+  --sidebar-accent: oklch(0.275 0.004 var(--tint));
+  --sidebar-accent-foreground: oklch(0.985 0.002 var(--tint));
+  --sidebar-border: oklch(0.985 0.002 var(--tint) / 10%);
+  --sidebar-ring: oklch(0.556 0.004 var(--tint));
 }

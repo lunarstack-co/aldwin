@@ -23,3 +23,5 @@ export const RECONNECT = {
 
 export const COPY_FEEDBACK_MS = 1800;
 export const WORK_TICK_MS = 1000;
+/** A wait shorter than this shows nothing, so a fast reload never flashes a placeholder. */
+export const LOADING_DELAY_MS = 400;

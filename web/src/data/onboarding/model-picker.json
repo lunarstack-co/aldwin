@@ -1,4 +1,6 @@
 {
   "label": "Model",
-  "submit": "Use this model"
+  "submit": "Use this model",
+  "search": "Search models\u2026",
+  "none": "No model matches."
 }

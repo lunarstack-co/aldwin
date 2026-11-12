@@ -4,10 +4,13 @@ import {
   AssistantRuntimeProvider,
   useExternalStoreRuntime,
   type AppendMessage,
+  type ExternalStoreThreadData,
   type ThreadMessageLike,
 } from "@assistant-ui/react";
+import { useRouter } from "next/navigation";
 import { useCallback, useMemo, type ReactNode } from "react";
 
+import { conversationHref } from "@/constants/routes";
 import { useChatStore } from "@/state/chat-store";
 import { useConnectionStore } from "@/state/connection-store";
 import { turnIdOf, turnsToMessages } from "@/utils/thread-messages";
@@ -23,9 +26,10 @@ function textOf(message: AppendMessage): string {
 }
 
 /**
- * Bridges the chat store to the chat runtime. The runtime only sees messages;
- * sending, stopping and retrying go back through the session, so Retry adds
- * a new turn and the transcript grows.
+ * Bridges the chat store to the chat runtime. The runtime only sees messages
+ * and the saved conversations; sending, stopping, retrying and switching go
+ * back through the session or the address bar, so Retry adds a new turn and
+ * opening a conversation is a navigation like any other.
  */
 export function ChatRuntimeProvider({
   session,
@@ -34,8 +38,10 @@ export function ChatRuntimeProvider({
   session: ChatSession;
   children: ReactNode;
 }) {
+  const router = useRouter();
   const turns = useChatStore((s) => s.turns);
   const activeId = useChatStore((s) => s.activeId);
+  const sessions = useChatStore((s) => s.sessions);
   const phase = useConnectionStore((s) => s.phase);
   const messages = useMemo(() => turnsToMessages(turns), [turns]);
 
@@ -56,6 +62,28 @@ export function ChatRuntimeProvider({
     [session],
   );
 
+  const threads = useMemo(
+    (): ExternalStoreThreadData<"regular">[] =>
+      sessions.map((s) => ({
+        status: "regular",
+        id: s.id,
+        title: s.title || undefined,
+        custom: { updatedAt: s.updated_at, interrupted: s.interrupted },
+      })),
+    [sessions],
+  );
+  const onSwitchToThread = useCallback(
+    (id: string) => {
+      if (id === useChatStore.getState().currentSessionId) useChatStore.getState().setHistoryView("chat");
+      else router.push(conversationHref(id));
+    },
+    [router],
+  );
+  const onSwitchToNewThread = useCallback(() => {
+    useChatStore.getState().setHistoryView("chat");
+    router.push("/");
+  }, [router]);
+
   const runtime = useExternalStoreRuntime({
     messages,
     convertMessage: asIs,
@@ -64,6 +92,15 @@ export function ChatRuntimeProvider({
     onNew,
     onCancel,
     onReload,
+    adapters: {
+      // No threadId: changing it makes the runtime rebuild its thread, and the
+      // transcript already follows the open conversation through the store.
+      threadList: {
+        threads,
+        onSwitchToThread,
+        onSwitchToNewThread,
+      },
+    },
   });
 
   return <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>;

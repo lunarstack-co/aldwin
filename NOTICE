@@ -3,3 +3,13 @@ Copyright 2026 Folarin Akinloye
 
 This product includes software developed at Lunarstack
 (https://askaldwin.com/).
+
+The web UI (web/) includes or is built from third-party work:
+
+- assistant-ui components and design kit, Copyright (c) assistant-ui contributors, MIT License
+- shadcn/ui component source, Copyright (c) shadcn, MIT License
+- Base UI, Copyright (c) Base UI contributors, MIT License
+- Public Sans, Copyright 2015 The Public Sans Project Authors, SIL Open Font License 1.1
+  (web/src/assets/fonts/public-sans/OFL.txt)
+- JetBrains Mono, Copyright 2020 The JetBrains Mono Project Authors, SIL Open Font License 1.1
+  (web/src/assets/fonts/jetbrains-mono/OFL.txt)

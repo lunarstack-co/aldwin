@@ -14,5 +14,7 @@ export function gateTarget(status: SetupStatus, pathname: string): string | null
   const path = withSlash(pathname);
   if (!status.keys_ok) return path === ROUTES.connect ? null : ROUTES.connect;
   if (!status.profile_done) return PROFILE_PAGES.includes(path) ? null : ROUTES.name;
-  return path === ROUTES.home ? null : ROUTES.home;
+  // Setup is done: onboarding is behind us, and anything else (a chat or the
+  // not-found page) is shown where it is.
+  return path === ROUTES.connect || PROFILE_PAGES.includes(path) ? ROUTES.home : null;
 }

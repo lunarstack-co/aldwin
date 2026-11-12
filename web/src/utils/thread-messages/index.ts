@@ -9,7 +9,10 @@ const USER = "_user";
 const ASSISTANT = "_assistant";
 
 /** What a tool call shows once it has finished. */
-export type ToolResult = { summary: string; durationMs: number };
+export type ToolResult = { summary: string; durationMs: number; preview: string };
+
+/** Where a tool call came from and why, known from the moment it starts. */
+export type ToolSource = { connectorTitle: string | null; remoteTool: string | null; reason: string | null };
 
 export function userMessageId(turnId: string): string {
   return `${turnId}${USER}`;
@@ -66,10 +69,18 @@ export function turnsToMessages(turns: readonly Turn[]): ThreadMessageLike[] {
       args: {},
       argsText: row.argsPreview,
       result:
-        row.ok === null ? undefined : ({ summary: row.summary, durationMs: row.durationMs } satisfies ToolResult),
+        row.ok === null
+          ? undefined
+          : ({ summary: row.summary, durationMs: row.durationMs, preview: row.preview } satisfies ToolResult),
+      artifact: {
+        connectorTitle: row.connectorTitle,
+        remoteTool: row.remoteTool,
+        reason: row.reason,
+      } satisfies ToolSource,
       isError: row.ok === false,
     }));
-    if (turn.answer || running) {
+    // An empty running text part would draw a lone streaming dot before any words arrive.
+    if (turn.answer) {
       parts.push({
         type: "text",
         text: turn.answer,

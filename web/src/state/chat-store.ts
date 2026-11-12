@@ -4,6 +4,8 @@ import type {
   DoneReason,
   HistoryItem,
   SessionMeta,
+  TodoItem,
+  TokenUsage,
   ToolCallEvent,
   ToolResultEvent,
 } from "@/types/protocol";
@@ -13,8 +15,12 @@ export type ToolRow = {
   name: string;
   argsPreview: string;
   summary: string;
+  preview: string;
   ok: boolean | null;
   durationMs: number;
+  connectorTitle: string | null;
+  remoteTool: string | null;
+  reason: string | null;
 };
 
 export type TurnStatus = "streaming" | "stopping" | "answered" | "stopped" | "max_steps" | "error";
@@ -32,9 +38,23 @@ export type Turn = {
   tools: ToolRow[];
   status: TurnStatus;
   error: string | null;
+  /** The host's error code, such as `provider_error`, shown beside the message. */
+  errorCode: string | null;
   startedAt: number;
   endedAt: number | null;
+  /** The host's latest status line and running tool while the turn is live. */
+  statusMessage: string;
+  activeTool: string | null;
+  usage: TokenUsage | null;
+  maxSteps: number | null;
 };
+
+export type Todos = { items: TodoItem[]; done: number; total: number };
+
+/** A passing message from the host, shown as a toast and never in the transcript. */
+export type Notice = { id: number; message: string };
+
+export type TurnEnd = { usage?: TokenUsage | null; maxSteps?: number | null };
 
 type ChatState = {
   turns: Turn[];
@@ -42,22 +62,44 @@ type ChatState = {
   /** Saved conversations with at least one turn, newest first, and the open one. */
   sessions: SessionMeta[];
   currentSessionId: string | null;
+  /** The host has listed its conversations at least once since this page loaded. */
+  sessionsLoaded: boolean;
+  /** The first history has arrived, so the transcript shows the real conversation. */
+  historyLoaded: boolean;
   historyView: HistoryView;
   notice: SessionNotice | null;
+  todos: Todos;
+  toasts: Notice[];
+  /** The host saved this conversation mid-answer; its last turn was cut off. */
+  interrupted: boolean;
+  /** Text to put back in the composer, after the host refused to start it. */
+  draft: string | null;
+  setTodos: (todos: Todos) => void;
+  pushToast: (message: string) => void;
+  dropToast: (id: number) => void;
+  setTurnStatus: (message: string, activeTool: string | null) => void;
   setHistoryView: (view: HistoryView) => void;
   setNotice: (notice: SessionNotice | null) => void;
   setSessions: (items: SessionMeta[], current: SessionMeta | null) => void;
   startTurn: (id: string, text: string, now: number) => void;
+  /** Take back a turn the host refused because another is running, keeping its text as a draft. */
+  refuseTurn: (id: string) => void;
+  clearDraft: () => void;
   appendText: (delta: string) => void;
   addToolCall: (event: ToolCallEvent) => void;
   addToolResult: (event: ToolResultEvent) => void;
   markStopping: () => void;
-  finishTurn: (reason: DoneReason, now: number) => void;
-  failTurn: (message: string, now: number) => void;
+  finishTurn: (reason: DoneReason, now: number, end?: TurnEnd) => void;
+  failTurn: (message: string, now: number, code?: string) => void;
   /** Replace the transcript with the host's history, keeping a running turn at the end. */
-  loadHistory: (items: HistoryItem[]) => void;
+  loadHistory: (items: HistoryItem[], interrupted?: boolean) => void;
   /** Make the host's in-flight turn the active one after a reconnect. */
-  adoptRunningTurn: (partialText: string | null, activeTool: string | null, now: number) => void;
+  adoptRunningTurn: (
+    partialText: string | null,
+    activeTool: string | null,
+    now: number,
+    message?: string,
+  ) => void;
   clearTranscript: () => void;
 };
 
@@ -69,7 +111,39 @@ const DONE_STATUS: Record<DoneReason, TurnStatus> = {
 };
 
 function newTurn(id: string, userText: string, now: number, status: TurnStatus): Turn {
-  return { id, userText, answer: "", tools: [], status, error: null, startedAt: now, endedAt: null };
+  return {
+    id,
+    userText,
+    answer: "",
+    tools: [],
+    status,
+    error: null,
+    errorCode: null,
+    startedAt: now,
+    endedAt: null,
+    statusMessage: "",
+    activeTool: null,
+    usage: null,
+    maxSteps: null,
+  };
+}
+
+const NO_TODOS: Todos = { items: [], done: 0, total: 0 };
+let toastSeq = 0;
+
+function toolRow(callId: string, name: string): ToolRow {
+  return {
+    callId,
+    name,
+    argsPreview: "",
+    summary: "",
+    preview: "",
+    ok: null,
+    durationMs: 0,
+    connectorTitle: null,
+    remoteTool: null,
+    reason: null,
+  };
 }
 
 /** History rows arrive flat; each user row opens a turn that the rows after it fill. */
@@ -84,14 +158,7 @@ function groupHistory(items: HistoryItem[]): Turn[] {
       turn.answer = turn.answer ? `${turn.answer}\n\n${item.text}` : item.text;
     } else if (item.role === "tool") {
       const failed = item.text.startsWith("✗");
-      turn.tools.push({
-        callId: `history_${index}`,
-        name: item.text.replace(/^[✓✗]\s*/, ""),
-        argsPreview: "",
-        summary: "",
-        ok: !failed,
-        durationMs: 0,
-      });
+      turn.tools.push({ ...toolRow(`history_${index}`, item.text.replace(/^[✓✗]\s*/, "")), ok: !failed });
     }
   });
   return turns;
@@ -107,20 +174,42 @@ export const useChatStore = create<ChatState>((set, get) => ({
   activeId: null,
   sessions: [],
   currentSessionId: null,
+  sessionsLoaded: false,
+  historyLoaded: false,
   historyView: "chat",
   notice: null,
+  todos: NO_TODOS,
+  toasts: [],
+  interrupted: false,
+  draft: null,
 
   setHistoryView: (view) => set({ historyView: view }),
   setNotice: (notice) => set({ notice }),
+  setTodos: (todos) => set({ todos }),
+  pushToast: (message) => set((state) => ({ toasts: [...state.toasts, { id: ++toastSeq, message }] })),
+  dropToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
+  setTurnStatus: (message, activeTool) =>
+    set((state) => updateActive(state, (t) => ({ ...t, statusMessage: message, activeTool }))),
 
-  setSessions: (items, current) => set({ sessions: items, currentSessionId: current?.id ?? null }),
+  setSessions: (items, current) =>
+    set({ sessions: items, currentSessionId: current?.id ?? null, sessionsLoaded: true }),
 
   startTurn: (id, text, now) =>
     set((state) => ({
       turns: [...state.turns, newTurn(id, text, now, "streaming")],
       activeId: id,
       notice: null,
+      interrupted: false,
     })),
+
+  refuseTurn: (id) =>
+    set((state) => ({
+      turns: state.turns.filter((t) => t.id !== id),
+      activeId: state.activeId === id ? null : state.activeId,
+      draft: state.turns.find((t) => t.id === id)?.userText ?? null,
+    })),
+
+  clearDraft: () => set({ draft: null }),
 
   appendText: (delta) =>
     set((state) => updateActive(state, (t) => ({ ...t, answer: t.answer + delta }))),
@@ -132,12 +221,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
         tools: [
           ...t.tools,
           {
-            callId: event.call_id,
-            name: event.name,
+            ...toolRow(event.call_id, event.name),
             argsPreview: event.args_preview,
             summary: event.summary,
-            ok: null,
-            durationMs: 0,
+            connectorTitle: event.connector ? (event.connector_title ?? event.connector) : null,
+            remoteTool: event.remote_tool ?? null,
+            reason: event.reason ?? null,
           },
         ],
       })),
@@ -149,7 +238,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ...t,
         tools: t.tools.map((row) =>
           row.callId === event.call_id
-            ? { ...row, ok: event.ok, summary: event.summary || row.summary, durationMs: event.duration_ms }
+            ? {
+                ...row,
+                ok: event.ok,
+                summary: event.summary || row.summary,
+                preview: event.preview,
+                durationMs: event.duration_ms,
+              }
             : row,
         ),
       })),
@@ -157,21 +252,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   markStopping: () => set((state) => updateActive(state, (t) => ({ ...t, status: "stopping" }))),
 
-  finishTurn: (reason, now) =>
+  finishTurn: (reason, now, end = {}) =>
     set((state) => ({
-      ...updateActive(state, (t) => ({ ...t, status: DONE_STATUS[reason], endedAt: now })),
+      ...updateActive(state, (t) => ({
+        ...t,
+        status: DONE_STATUS[reason],
+        endedAt: now,
+        activeTool: null,
+        usage: end.usage ?? null,
+        maxSteps: end.maxSteps ?? null,
+      })),
       activeId: null,
       notice: null,
     })),
 
-  failTurn: (message, now) =>
+  failTurn: (message, now, code) =>
     set((state) => ({
-      ...updateActive(state, (t) => ({ ...t, status: "error", error: message, endedAt: now })),
+      ...updateActive(state, (t) => ({ ...t, status: "error", error: message, errorCode: code ?? null, endedAt: now })),
       activeId: null,
       notice: null,
     })),
 
-  loadHistory: (items) => {
+  loadHistory: (items, interrupted = false) => {
     const { turns, activeId } = get();
     const fromHistory = groupHistory(items);
     const active = turns.find((t) => t.id === activeId);
@@ -185,28 +287,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       fromHistory.push(active);
     }
-    set({ turns: fromHistory });
+    set({ turns: fromHistory, interrupted: interrupted && active === undefined, historyLoaded: true });
   },
 
-  adoptRunningTurn: (partialText, activeTool, now) =>
+  adoptRunningTurn: (partialText, activeTool, now, message = "") =>
     set((state) => {
       const id = `adopted_${now}`;
       const turn = newTurn(id, "", now, "streaming");
       turn.answer = partialText ?? "";
-      if (activeTool) {
-        turn.tools.push({
-          callId: `${id}_tool`,
-          name: activeTool,
-          argsPreview: "",
-          summary: "",
-          ok: null,
-          durationMs: 0,
-        });
-      }
+      turn.statusMessage = message;
+      turn.activeTool = activeTool;
+      if (activeTool) turn.tools.push(toolRow(`${id}_tool`, activeTool));
       return { turns: [...state.turns, turn], activeId: id };
     }),
 
-  clearTranscript: () => set({ turns: [], activeId: null, notice: null }),
+  clearTranscript: () => set({ turns: [], activeId: null, notice: null, todos: NO_TODOS, interrupted: false }),
 }));
 
 /** The text Retry sends again as a new turn: the last thing the user asked. */

@@ -1,73 +1,82 @@
 "use client";
 
-import { ActionBarPrimitive, MessagePrimitive, useAuiState } from "@assistant-ui/react";
-import { Check, Copy, RotateCcw } from "lucide-react";
+import { ActionBarPrimitive, AuiIf, MessagePrimitive, useAuiState } from "@assistant-ui/react";
+import { CheckIcon, CopyIcon, RotateCcwIcon } from "lucide-react";
 
-import { Button } from "@/components/atoms/button";
-import { FormStatus } from "@/components/atoms/form-message";
-import { ErrorRow } from "@/components/molecules/error-row";
-import { MarkdownText } from "@/components/molecules/markdown-text";
-import { ToolCard } from "@/components/molecules/tool-card";
-import errorCopy from "@/data/chat/error-row.json";
+import { MarkdownText } from "@/components/assistant-ui/elements/markdown-text";
+import { ToolRow } from "@/components/assistant-ui/tool-row";
+import { ThinkingIndicator, TurnFooter, TurnOutcome } from "@/components/assistant-ui/turn";
+import { DetailToolGroup, WorkChip } from "@/components/assistant-ui/work";
+import { Mark } from "@/components/brand/mark";
+import { Button } from "@/components/ui/button";
 import actions from "@/data/chat/message-actions.json";
 import copy from "@/data/chat/transcript.json";
+import { useDensity } from "@/hooks/use-density";
 
-import { ToolGroup } from "./tool-group";
+// The runtime's own placeholder for a running message with no words yet is a lone dot; the thinking line covers that wait.
+const Nothing = () => null;
 
-const components = { Text: MarkdownText, tools: { Fallback: ToolCard }, ToolGroup };
+// Clean folds the turn's tool calls into one chip; WorkChip draws each call with ToolRow.
+const cleanParts = { Text: MarkdownText, ChainOfThought: WorkChip, Empty: Nothing };
+const detailParts = { Text: MarkdownText, tools: { Fallback: ToolRow }, ToolGroup: DetailToolGroup, Empty: Nothing };
 
-function Outcome() {
-  const status = useAuiState((s) => s.message.status);
-  if (status === undefined || status.type !== "incomplete") return null;
-  if (status.reason === "cancelled") return <FormStatus>{copy.stopped}</FormStatus>;
-  if (status.reason === "length") return <FormStatus>{copy.maxSteps}</FormStatus>;
-  if (status.reason === "error") {
-    return <ErrorRow message={String(status.error ?? "")} labels={errorCopy} />;
-  }
-  return null;
-}
-
+/** Copy and Retry, and nothing else; Retry asks the last question again as a new turn. */
 function Actions() {
-  const copied = useAuiState((s) => s.message.isCopied);
   return (
     <ActionBarPrimitive.Root
       hideWhenRunning
-      autohide="never"
-      className="flex items-center gap-1"
+      autohide="not-last"
       data-testid="message-actions"
+      className="text-muted-foreground flex items-center gap-1"
     >
-      <ActionBarPrimitive.Copy asChild>
-        <Button aria-label={actions.copy} data-testid="copy-answer">
-          {copied ? <Check aria-hidden className="size-4" /> : <Copy aria-hidden className="size-4" />}
-          <span role="status" aria-live="polite">
-            {copied ? actions.copied : actions.copy}
-          </span>
-        </Button>
+      <ActionBarPrimitive.Copy
+        render={<Button variant="ghost" size="sm" data-testid="copy-answer" className="max-md:h-10" />}
+      >
+        <AuiIf condition={(s) => s.message.isCopied}>
+          <CheckIcon aria-hidden />
+        </AuiIf>
+        <AuiIf condition={(s) => !s.message.isCopied}>
+          <CopyIcon aria-hidden />
+        </AuiIf>
+        <span role="status" aria-live="polite">
+          <AuiIf condition={(s) => s.message.isCopied}>{actions.copied}</AuiIf>
+          <AuiIf condition={(s) => !s.message.isCopied}>{actions.copy}</AuiIf>
+        </span>
       </ActionBarPrimitive.Copy>
-      <ActionBarPrimitive.Reload asChild>
-        <Button data-testid="retry-turn">
-          <RotateCcw aria-hidden className="size-4" />
-          {actions.retry}
-        </Button>
+      <ActionBarPrimitive.Reload
+        render={<Button variant="ghost" size="sm" data-testid="retry-turn" className="max-md:h-10" />}
+      >
+        <RotateCcwIcon aria-hidden />
+        {actions.retry}
       </ActionBarPrimitive.Reload>
     </ActionBarPrimitive.Root>
   );
 }
 
-/** The answer to one question: the work behind it, the text, and what to do next. */
+/** The answer to one question: the work behind it, the text, how it ended, and what to do next. */
 export function AssistantMessage() {
+  const [density] = useDensity();
   const status = useAuiState((s) => s.message.status?.type ?? "complete");
-  const hasText = useAuiState((s) => s.message.content.some((p) => p.type === "text" && p.text !== ""));
+  const hasText = useAuiState((s) => s.message.parts.some((p) => p.type === "text" && p.text !== ""));
   return (
     <MessagePrimitive.Root
-      className="flex flex-col gap-3"
+      className="flex gap-3"
       aria-label={copy.answer}
       data-testid="turn"
       data-status={status}
     >
-      <MessagePrimitive.Parts components={components} />
-      <Outcome />
-      {status !== "running" && hasText ? <Actions /> : null}
+      {density === "detail" ? <Mark className="mt-0.5" /> : null}
+      <div className="flex min-w-0 flex-1 flex-col gap-3">
+        {density === "detail" ? (
+          <MessagePrimitive.Parts components={detailParts} />
+        ) : (
+          <MessagePrimitive.Parts components={cleanParts} />
+        )}
+        <ThinkingIndicator />
+        <TurnOutcome />
+        <TurnFooter />
+        {status !== "running" && hasText ? <Actions /> : null}
+      </div>
     </MessagePrimitive.Root>
   );
 }

@@ -2,12 +2,14 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 
-import { Button } from "@/components/atoms/button";
-import { SelectField } from "@/components/molecules/select-field";
-import { TextField } from "@/components/molecules/text-field";
+import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import copy from "@/data/onboarding/key-form.json";
 import type { ProviderOption } from "@/types/setup";
 import { listKeyProviders } from "@/utils/api";
+
+import { SecretInput } from "../secret-input";
 
 const FALLBACK_PROVIDERS: ProviderOption[] = [copy.fallbackProvider];
 
@@ -37,31 +39,27 @@ export function KeyForm({
     setKey("");
   }
 
+  const items = providers.map((p) => ({ value: p.name, label: p.title }));
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
-      <SelectField
-        id="provider"
-        label={copy.provider}
-        value={provider}
-        options={providers.map((p) => ({ value: p.name, label: p.title }))}
-        onChange={setProvider}
-      />
-      <TextField
-        id="api-key"
-        label={copy.apiKey}
-        type="password"
-        autoComplete="off"
-        spellCheck={false}
-        value={key}
-        onChange={(event) => setKey(event.target.value)}
-        required
-      />
-      <Button
-        type="submit"
-        variant="primary"
-        disabled={busy || key.trim() === ""}
-        className="self-start"
-      >
+      <Field id="provider" label={copy.provider}>
+        <Select items={items} value={provider} onValueChange={(value) => value && setProvider(String(value))}>
+          <SelectTrigger id="provider" className="w-full max-md:h-10" data-testid="provider-select">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {items.map((item) => (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+      <Field id="api-key" label={copy.apiKey}>
+        <SecretInput id="api-key" value={key} onChange={(event) => setKey(event.target.value)} required />
+      </Field>
+      <Button type="submit" disabled={busy || key.trim() === ""} className="self-start max-md:h-10">
         {copy.submit}
       </Button>
     </form>

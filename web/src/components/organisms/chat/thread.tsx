@@ -3,14 +3,16 @@
 import { ThreadPrimitive } from "@assistant-ui/react";
 import { ArrowDown } from "lucide-react";
 
-import { Button } from "@/components/atoms/button";
+import { AgentPlan } from "@/components/assistant-ui/agent-plan";
+import { Button } from "@/components/ui/button";
 import copy from "@/data/chat/transcript.json";
 import { useChatStore } from "@/state/chat-store";
+import { useConnectionStore } from "@/state/connection-store";
 import { cn } from "@/utils/cn";
 
 import { AssistantMessage } from "./assistant-message";
 import { Composer } from "./composer";
-import { EmptyHome, TrustLine } from "./empty-home";
+import { EmptyHome } from "./empty-home";
 import { UserMessage } from "./user-message";
 
 const components = { UserMessage, AssistantMessage };
@@ -21,16 +23,25 @@ const components = { UserMessage, AssistantMessage };
  */
 export function Thread({ model, disabled }: { model: string; disabled: boolean }) {
   const isEmpty = useChatStore((s) => s.turns.length === 0);
+  // Until the first history arrives the conversation is unknown, so show nothing rather than the wrong screen.
+  // A host that is not serving yet sends no history, so its waiting state shows at once.
+  const historyLoaded = useChatStore((s) => s.historyLoaded);
+  const notReady = useConnectionStore((s) => s.phase === "not_ready");
+  const settled = historyLoaded || notReady;
   return (
-    <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
+    <ThreadPrimitive.Root
+      data-testid="thread"
+      data-settled={settled}
+      className={cn("flex min-h-0 flex-1 flex-col transition-opacity duration-300 ease-out", !settled && "opacity-0")}
+    >
       <ThreadPrimitive.Viewport
         turnAnchor="top"
         data-testid="transcript"
-        className="relative flex min-h-0 flex-1 flex-col overflow-y-auto"
+        className="relative flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto"
       >
         <div
           className={cn(
-            "mx-auto flex w-full max-w-[720px] flex-1 flex-col px-4 sm:px-6",
+            "mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 sm:px-6 xl:max-w-3xl",
             isEmpty && "justify-center",
           )}
         >
@@ -42,24 +53,25 @@ export function Thread({ model, disabled }: { model: string; disabled: boolean }
           </section>
           <ThreadPrimitive.ViewportFooter
             className={cn(
-              "relative flex flex-col gap-3 pb-4",
-              !isEmpty && "sticky bottom-0 mt-auto bg-base pt-2",
+              "bg-background relative flex flex-col gap-3 pb-[max(1rem,env(safe-area-inset-bottom))]",
+              !isEmpty && "sticky bottom-0 mt-auto pt-2",
             )}
           >
-            <ThreadPrimitive.ScrollToBottom asChild>
-              <Button
-                variant="outline"
-                icon
-                aria-label={copy.scrollToBottom}
-                className="absolute -top-10 self-center rounded-full shadow-popover disabled:invisible"
-              >
-                <ArrowDown aria-hidden className="size-4" />
-              </Button>
+            <ThreadPrimitive.ScrollToBottom
+              render={
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label={copy.scrollToBottom}
+                  title={copy.scrollToBottom}
+                  className="bg-background absolute -top-11 self-center rounded-full disabled:invisible max-md:size-10"
+                />
+              }
+            >
+              <ArrowDown aria-hidden />
             </ThreadPrimitive.ScrollToBottom>
+            <AgentPlan />
             <Composer variant={isEmpty ? "centered" : "docked"} model={model} disabled={disabled} />
-            <ThreadPrimitive.Empty>
-              <TrustLine />
-            </ThreadPrimitive.Empty>
           </ThreadPrimitive.ViewportFooter>
         </div>
       </ThreadPrimitive.Viewport>

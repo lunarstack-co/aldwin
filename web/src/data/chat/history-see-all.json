@@ -4,8 +4,11 @@
   "searchLabel": "Search history",
   "searchPlaceholder": "Search history…",
   "today": "Today",
-  "earlier": "Earlier",
   "empty": "No conversations yet. Send a message and it will show up here.",
   "noMatch": "No conversations match \"{query}\".",
-  "resultCount": "{count} conversations"
+  "resultCount": "{count} conversations",
+  "yesterday": "Yesterday",
+  "previous7": "Previous 7 days",
+  "older": "Older",
+  "searchShortcut": "Press / to search"
 }

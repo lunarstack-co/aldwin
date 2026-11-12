@@ -1,0 +1,12 @@
+{
+  "label": "Setup steps",
+  "optional": "Optional",
+  "required": "Required",
+  "position": "Step {step} of {total}",
+  "steps": {
+    "connect": "Connect a model",
+    "name": "Your name",
+    "occupation": "Your work",
+    "personality": "Answer style"
+  }
+}

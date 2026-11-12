@@ -112,7 +112,7 @@ jobs:
 
   web:
     name: web
-    timeout-minutes: 15
+    timeout-minutes: 25
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -129,9 +129,10 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Install web dependencies
-        run: |
-          npm ci
-          npx cypress install
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium firefox webkit
 
       - name: Lint (eslint)
         run: npm run lint
@@ -142,13 +143,24 @@ jobs:
       - name: Build static export
         run: npm run build
 
-      # The action's built-in URL probe gives up on the first refused
-      # connection when Node reports it as ERR_SOCKET_CLOSED_BEFORE_CONNECTION,
-      # so the wait-on CLI, which retries every error, does the waiting.
-      - name: Smoke test (Cypress)
-        uses: cypress-io/github-action@v6
+      # The suite serves out/ itself (playwright/serve.mjs) and fakes the host,
+      # so no Python runs here.
+      - name: End-to-end (Playwright)
+        run: npm run test:pw
+
+      # Timing checks run alone so other browsers do not share the CPU they measure.
+      - name: Timing checks (Playwright, one worker)
+        run: npm run test:pw:timing
+
+      - name: Component kit (Playwright on next dev)
+        run: npm run test:pw:kit
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
         with:
-          working-directory: web
-          install: false
-          start: npm run preview
-          wait-on: npx wait-on --timeout 60000 http-get://127.0.0.1:4173
+          name: playwright-report
+          path: |
+            web/playwright-report/
+            web/test-results/
+          retention-days: 14

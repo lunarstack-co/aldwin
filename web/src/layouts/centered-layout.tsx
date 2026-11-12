@@ -16,11 +16,7 @@ export function CenteredLayout({
 }: HTMLAttributes<HTMLElement> & { width: keyof typeof WIDTHS }) {
   return (
     <section
-      className={cn(
-        "mx-auto flex w-full flex-1 flex-col justify-center px-4 py-16 sm:px-6",
-        WIDTHS[width],
-        className,
-      )}
+      className={cn("mx-auto flex w-full flex-1 flex-col justify-center px-4 py-16 sm:px-6", WIDTHS[width], className)}
       {...props}
     />
   );

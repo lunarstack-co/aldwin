@@ -12,6 +12,7 @@ export type StatusRequest = RequestBase & { type: "status" };
 export type SessionsNewRequest = RequestBase & { type: "sessions.new" };
 export type SessionsListRequest = RequestBase & { type: "sessions.list" };
 export type SessionsOpenRequest = RequestBase & { type: "sessions.open"; session_id: string };
+export type TodoGetRequest = RequestBase & { type: "todo.get" };
 
 export type Request =
   | HelloRequest
@@ -21,7 +22,8 @@ export type Request =
   | StatusRequest
   | SessionsNewRequest
   | SessionsListRequest
-  | SessionsOpenRequest;
+  | SessionsOpenRequest
+  | TodoGetRequest;
 
 type Outbound<R> = R extends Request ? Omit<R, "v" | "channel" | "sender"> : never;
 /** A request as the page builds it; the envelope is added when it is framed. */
@@ -30,6 +32,9 @@ export type OutboundRequest = Outbound<Request>;
 export type HistoryRole = "user" | "assistant" | "tool";
 export type HistoryItem = { role: HistoryRole; text: string; at?: string | null };
 export type DoneReason = "answered" | "stopped" | "max_steps" | "ok";
+export type TokenUsage = { input_tokens: number; output_tokens: number };
+export type TodoStatus = "pending" | "in_progress" | "done" | "dropped";
+export type TodoItem = { text: string; status: TodoStatus };
 
 export type SessionMeta = {
   id: string;
@@ -49,6 +54,10 @@ export type ToolCallEvent = EventBase & {
   name: string;
   args_preview: string;
   summary: string;
+  connector?: string | null;
+  connector_title?: string | null;
+  remote_tool?: string | null;
+  reason?: string | null;
 };
 export type ToolResultEvent = EventBase & {
   kind: "tool_result";
@@ -75,14 +84,24 @@ export type SessionsEvent = EventBase & {
   items: SessionMeta[];
   current: SessionMeta | null;
 };
-export type DoneEvent = EventBase & { kind: "done"; reason: DoneReason };
+export type DoneEvent = EventBase & {
+  kind: "done";
+  reason: DoneReason;
+  usage?: TokenUsage | null;
+  max_steps?: number | null;
+};
+export type TodoUpdatedEvent = EventBase & {
+  kind: "todo.updated";
+  items: TodoItem[];
+  done: number;
+  total: number;
+};
+export type NoticeEvent = EventBase & { kind: "notice"; message: string };
 export type ErrorEvent = EventBase & { kind: "error"; code: string; message: string };
 /** Events the chat screen leaves alone, approvals included. */
 export type UnhandledEvent = EventBase & {
   kind:
     | "approval"
-    | "notice"
-    | "todo.updated"
     | "skills"
     | "skills.used"
     | "skill.body"
@@ -103,5 +122,7 @@ export type Event =
   | StatusEvent
   | SessionsEvent
   | DoneEvent
+  | TodoUpdatedEvent
+  | NoticeEvent
   | ErrorEvent
   | UnhandledEvent;

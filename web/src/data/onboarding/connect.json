@@ -15,5 +15,6 @@
     "noModels": "No models came back from that provider. Check the account, then try again.",
     "noLocalModels": "No models found. Start Ollama or LM Studio with a model, then look again.",
     "stillNoKey": "That model still has no working key. Add one, then try again."
-  }
+  },
+  "problem": "Not connected"
 }
