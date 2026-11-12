@@ -2,8 +2,10 @@ import { create } from "zustand";
 
 import type {
   DoneReason,
+  DroppedSkill,
   HistoryItem,
   SessionMeta,
+  SkillCatalogItem,
   TodoItem,
   TokenUsage,
   ToolCallEvent,
@@ -47,9 +49,14 @@ export type Turn = {
   activeTool: string | null;
   usage: TokenUsage | null;
   maxSteps: number | null;
+  /** What the host made of the `@` skills on this turn; `null` when none were picked. */
+  skillsUsed: { names: string[]; dropped: DroppedSkill[] } | null;
 };
 
 export type Todos = { items: TodoItem[]; done: number; total: number };
+
+/** The `@` menu's catalogue: asked for the first time it opens, then kept up to date by the host. */
+export type SkillsCatalog = { status: "idle" | "loading" | "ready" | "error"; items: SkillCatalogItem[] };
 
 /** A passing message from the host, shown as a toast and never in the transcript. */
 export type Notice = { id: number; message: string };
@@ -74,6 +81,7 @@ type ChatState = {
   interrupted: boolean;
   /** Text to put back in the composer, after the host refused to start it. */
   draft: string | null;
+  skills: SkillsCatalog;
   setTodos: (todos: Todos) => void;
   pushToast: (message: string) => void;
   dropToast: (id: number) => void;
@@ -85,6 +93,9 @@ type ChatState = {
   /** Take back a turn the host refused because another is running, keeping its text as a draft. */
   refuseTurn: (id: string) => void;
   clearDraft: () => void;
+  setSkillsStatus: (status: SkillsCatalog["status"]) => void;
+  setSkills: (items: SkillCatalogItem[]) => void;
+  setSkillsUsed: (turnId: string, names: string[], dropped: DroppedSkill[]) => void;
   appendText: (delta: string) => void;
   addToolCall: (event: ToolCallEvent) => void;
   addToolResult: (event: ToolResultEvent) => void;
@@ -125,6 +136,7 @@ function newTurn(id: string, userText: string, now: number, status: TurnStatus):
     activeTool: null,
     usage: null,
     maxSteps: null,
+    skillsUsed: null,
   };
 }
 
@@ -182,6 +194,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   toasts: [],
   interrupted: false,
   draft: null,
+  skills: { status: "idle", items: [] },
 
   setHistoryView: (view) => set({ historyView: view }),
   setNotice: (notice) => set({ notice }),
@@ -210,6 +223,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     })),
 
   clearDraft: () => set({ draft: null }),
+
+  setSkillsStatus: (status) => set((state) => ({ skills: { ...state.skills, status } })),
+  setSkills: (items) => set({ skills: { status: "ready", items } }),
+  setSkillsUsed: (turnId, names, dropped) =>
+    set((state) => ({
+      turns: state.turns.map((t) => (t.id === turnId ? { ...t, skillsUsed: { names, dropped } } : t)),
+    })),
 
   appendText: (delta) =>
     set((state) => updateActive(state, (t) => ({ ...t, answer: t.answer + delta }))),

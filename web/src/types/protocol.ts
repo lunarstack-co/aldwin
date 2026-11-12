@@ -13,6 +13,7 @@ export type SessionsNewRequest = RequestBase & { type: "sessions.new" };
 export type SessionsListRequest = RequestBase & { type: "sessions.list" };
 export type SessionsOpenRequest = RequestBase & { type: "sessions.open"; session_id: string };
 export type TodoGetRequest = RequestBase & { type: "todo.get" };
+export type SkillsListRequest = RequestBase & { type: "skills.list" };
 
 export type Request =
   | HelloRequest
@@ -23,7 +24,8 @@ export type Request =
   | SessionsNewRequest
   | SessionsListRequest
   | SessionsOpenRequest
-  | TodoGetRequest;
+  | TodoGetRequest
+  | SkillsListRequest;
 
 type Outbound<R> = R extends Request ? Omit<R, "v" | "channel" | "sender"> : never;
 /** A request as the page builds it; the envelope is added when it is framed. */
@@ -35,6 +37,17 @@ export type DoneReason = "answered" | "stopped" | "max_steps" | "ok";
 export type TokenUsage = { input_tokens: number; output_tokens: number };
 export type TodoStatus = "pending" | "in_progress" | "done" | "dropped";
 export type TodoItem = { text: string; status: TodoStatus };
+export type SkillSource = "default" | "user" | "user override";
+/** One skill in the host's catalogue; a flag starting `error:` means it failed to load. */
+export type SkillCatalogItem = {
+  name: string;
+  description: string;
+  source: SkillSource;
+  flags: string[];
+  last_used: string | null;
+};
+/** A picked skill the host left out: not in the catalogue, or past the per-turn limit. */
+export type DroppedSkill = { name: string; reason: "unknown" | "limit" };
 
 export type SessionMeta = {
   id: string;
@@ -97,13 +110,13 @@ export type TodoUpdatedEvent = EventBase & {
   total: number;
 };
 export type NoticeEvent = EventBase & { kind: "notice"; message: string };
+export type SkillsEvent = EventBase & { kind: "skills"; items: SkillCatalogItem[] };
+export type SkillsUsedEvent = EventBase & { kind: "skills.used"; names: string[]; dropped: DroppedSkill[] };
 export type ErrorEvent = EventBase & { kind: "error"; code: string; message: string };
 /** Events the chat screen leaves alone, approvals included. */
 export type UnhandledEvent = EventBase & {
   kind:
     | "approval"
-    | "skills"
-    | "skills.used"
     | "skill.body"
     | "models"
     | "search.providers"
@@ -125,4 +138,6 @@ export type Event =
   | TodoUpdatedEvent
   | NoticeEvent
   | ErrorEvent
+  | SkillsEvent
+  | SkillsUsedEvent
   | UnhandledEvent;

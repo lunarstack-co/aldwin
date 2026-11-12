@@ -1,5 +1,7 @@
 import type { Page, Route, WebSocketRoute } from "@playwright/test";
 
+import type { SkillCatalogItem } from "../../src/types/protocol";
+
 /** A frame the page sent over the socket. */
 export type Frame = { id: string; type: string } & Record<string, unknown>;
 export type HistoryRow = { role: "user" | "assistant" | "tool"; text: string };
@@ -39,6 +41,26 @@ export const BUSY = "Aldwin is still working on your last request. Stop it befor
 export const TURN_BUSY = "Aldwin is still working on your last request. Press Esc to stop it first.";
 export const NOT_FOUND = "That conversation no longer exists.";
 
+/** The host's per-turn cap on `@` skills (`MAX_PICKED_SKILLS`). */
+export const MAX_PICKED_SKILLS = 3;
+
+export function newSkill(name: string, extra: Partial<SkillCatalogItem> = {}): SkillCatalogItem {
+  return { name, description: `Help with ${name}.`, source: "default", flags: [], last_used: null, ...extra };
+}
+
+export const SKILL_FIXTURE: SkillCatalogItem[] = [
+  newSkill("files", { last_used: "2026-11-10T09:00:00Z" }),
+  newSkill("memory"),
+  newSkill("ship-notes", { source: "user", description: "Write release notes in our house style." }),
+  newSkill("web-research", { last_used: "2026-11-11T09:00:00Z" }),
+  newSkill("broken-skill", { flags: ["error:bad frontmatter"] }),
+];
+
+/** `n` plain skills named s01, s02 and so on, for the row cap. */
+export function skillsOf(n: number): SkillCatalogItem[] {
+  return Array.from({ length: n }, (_, i) => newSkill(`s${String(i + 1).padStart(2, "0")}`));
+}
+
 export function session(id: string, title: string, updatedAt = "2026-11-11T09:00:00Z", interrupted = false): SessionRow {
   return { id, created_at: updatedAt, updated_at: updatedAt, model: "openai/gpt-4o", title, interrupted };
 }
@@ -72,6 +94,12 @@ export class FakeHost {
   holdOpen = false;
   /** Hold `hello` replies until `release()`. */
   holdHello = false;
+  skills: SkillCatalogItem[] = SKILL_FIXTURE.map((s) => ({ ...s }));
+  /** Answer `skills.list` with this error message instead of the catalogue. */
+  skillsListError: string | null = null;
+  /** Hold `skills.list` replies until `releaseSkills()`. */
+  holdSkills = false;
+  private heldSkills: (() => void)[] = [];
   private held: (() => void)[] = [];
   statusReply: { message: string; turn_streamed_chunks: number; active_tool: string | null; partial_text: string | null } = {
     message: "",
@@ -120,6 +148,31 @@ export class FakeHost {
   /** Push one event to the page, as the host would. */
   emit(event: { re: string; kind: string } & Record<string, unknown>, ws: WebSocketRoute = this.socket): void {
     ws.send(JSON.stringify({ v: 2, type: "event", channel: "web", sender: "host", ...event }));
+  }
+
+  releaseSkills(): void {
+    this.holdSkills = false;
+    for (const go of this.heldSkills.splice(0)) go();
+  }
+
+  /** The host's fresh catalogue, as after `create_skill`. */
+  emitSkills(items: SkillCatalogItem[]): void {
+    this.skills = items;
+    this.emit({ re: "host", kind: "skills", items });
+  }
+
+  /** What the host does with `turn.skills`: dedupe, drop unknown or broken names, cap at three. */
+  private skillsUsed(frame: Frame, ws: WebSocketRoute): void {
+    const picked = [...new Set((frame.skills as string[] | undefined) ?? [])];
+    const names: string[] = [];
+    const dropped: { name: string; reason: "unknown" | "limit" }[] = [];
+    for (const name of picked) {
+      const skill = this.skills.find((s) => s.name === name);
+      if (!skill || skill.flags.some((f) => f.startsWith("error:"))) dropped.push({ name, reason: "unknown" });
+      else if (names.length >= MAX_PICKED_SKILLS) dropped.push({ name, reason: "limit" });
+      else names.push(name);
+    }
+    if (names.length || dropped.length) this.emit({ re: frame.id, kind: "skills.used", names, dropped }, ws);
   }
 
   release(): void {
@@ -181,6 +234,19 @@ export class FakeHost {
         this.emit({ re: frame.id, kind: "status", ...this.statusReply }, ws);
         done();
         break;
+      case "skills.list": {
+        const go = () => {
+          if (this.skillsListError) {
+            this.emit({ re: frame.id, kind: "error", code: "internal", message: this.skillsListError }, ws);
+            return;
+          }
+          this.emit({ re: frame.id, kind: "skills", items: this.skills }, ws);
+          done();
+        };
+        if (this.holdSkills) this.heldSkills.push(go);
+        else go();
+        break;
+      }
       case "todo.get":
         this.emit({ re: frame.id, kind: "todo.updated", ...this.todoCounts() }, ws);
         done();
@@ -199,6 +265,7 @@ export class FakeHost {
           break;
         }
         this.activeTurn = frame.id;
+        this.skillsUsed(frame, ws);
         if (this.current === null) {
           const row = session(`s${this.sessions.length + 1}`, String(frame.text), "2026-11-11T10:00:00Z");
           this.sessions = [row, ...this.sessions];

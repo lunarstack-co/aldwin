@@ -59,10 +59,10 @@ test("the rail does not show the user's name", async ({ page }) => {
   await expect(page.getByTestId("rail")).not.toContainText("Ada");
 });
 
-test("settings and at wait for their screens", async ({ page }) => {
+test("settings waits for its screen while @ is live", async ({ page }) => {
   await openChat(page);
   await expect(page.getByTestId("settings")).toBeDisabled();
-  await expect(page.getByTestId("composer-skills")).toBeDisabled();
+  await expect(page.getByTestId("composer-skills")).toBeEnabled();
   await expect(page.getByTestId("composer-model")).toHaveText("Model: openai/gpt-4o");
 });
 

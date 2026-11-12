@@ -21,6 +21,7 @@ import { Step, Steps } from "@/components/ui/steps";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { SkillText } from "@/components/organisms/chat/user-message";
 import markdownCopy from "@/data/chat/markdown.json";
 import copy from "@/data/dev/kit.json";
 
@@ -49,6 +50,7 @@ function Gallery() {
       <Item name="field"><Field id="kit-field" label={s.input}><Input id="kit-field" /></Field></Item>
       <Item name="textarea"><Textarea placeholder={s.input} /></Item>
       <Item name="label"><Label>{s.input}</Label></Item>
+      <Item name="directive-text"><SkillText text={s.skillText} /></Item>
       <Item name="badge"><Badge>{s.badge}</Badge><Badge variant="outline">{s.badge}</Badge></Item>
       <Item name="callout">
         <Callout type="warning">{s.callout}</Callout>

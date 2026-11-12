@@ -3,6 +3,7 @@ import { lastUserText, useChatStore } from "@/state/chat-store";
 import { useConnectionStore } from "@/state/connection-store";
 import { PROTOCOL_VERSION, type Event, type StatusEvent, type TodoUpdatedEvent } from "@/types/protocol";
 import { shouldCallSessionsNew } from "@/utils/history";
+import { skillsFromText } from "@/utils/skills";
 
 import { createConnection, type ConnectionDeps } from "./connection";
 import { requestId } from "./index";
@@ -12,7 +13,7 @@ type Reply = (event: Event) => void;
 function todosOf(event: TodoUpdatedEvent) {
   return { items: event.items, done: event.done, total: event.total };
 }
-type Ask = "hello" | "history" | "status" | "sessions.new" | "sessions.list" | "todo.get";
+type Ask = "hello" | "history" | "status" | "sessions.new" | "sessions.list" | "todo.get" | "skills.list";
 
 export type ChatSession = {
   start: () => void;
@@ -25,6 +26,8 @@ export type ChatSession = {
   /** Opens a saved conversation; `onSettled` hears whether the host switched. */
   openConversation: (id: string, onSettled?: (opened: boolean) => void) => void;
   refreshSessions: () => void;
+  /** Asks the host for its skill catalogue, for the `@` menu. */
+  listSkills: () => void;
   takeOver: () => void;
   reconnect: () => void;
 };
@@ -67,6 +70,8 @@ export function createChatSession(
   function handleOpen() {
     // Requests sent on a dropped socket will never be answered.
     replies.clear();
+    // A catalogue request lost with the old socket is asked again once something wants it.
+    if (chat().skills.status === "loading") chat().setSkillsStatus("idle");
     ask("hello", (event) => {
       if (event.kind !== "done") return;
       // A turn may be running from before this page opened, not only from before a drop.
@@ -99,6 +104,14 @@ export function createChatSession(
   function refreshTodos() {
     ask("todo.get", (event) => {
       if (event.kind === "todo.updated") chat().setTodos(todosOf(event));
+    });
+  }
+
+  function listSkills() {
+    chat().setSkillsStatus("loading");
+    ask("skills.list", (event) => {
+      if (event.kind === "skills") chat().setSkills(event.items);
+      if (event.kind === "error") chat().setSkillsStatus("error");
     });
   }
 
@@ -146,6 +159,15 @@ export function createChatSession(
       store.setTodos(todosOf(event));
       return;
     }
+    // The host sends a fresh catalogue after a skill is created.
+    if (event.kind === "skills") {
+      store.setSkills(event.items);
+      return;
+    }
+    if (event.kind === "skills.used") {
+      store.setSkillsUsed(event.re, event.names, event.dropped);
+      return;
+    }
     if (store.activeId === null) return;
     if (expectedRe !== null && event.re !== expectedRe) return;
     switch (event.kind) {
@@ -191,7 +213,8 @@ export function createChatSession(
     const id = requestId("turn");
     expectedRe = id;
     chat().startTurn(id, cleaned, now());
-    connection.send({ type: "turn", id, text: cleaned, skills: [] });
+    // Send, Retry and pasted text all name their skills the same way: as `@name` in the text.
+    connection.send({ type: "turn", id, text: cleaned, skills: skillsFromText(cleaned) });
   }
 
   return {
@@ -231,6 +254,7 @@ export function createChatSession(
       connection.send({ type: "sessions.open", id: reqId, session_id: id });
     },
     refreshSessions,
+    listSkills,
     takeOver: connection.takeOver,
     reconnect: connection.retry,
   };

@@ -59,6 +59,31 @@ test("no axe violations on onboarding, take over and not found", async ({ page, 
   await axe(page, "take over");
 });
 
+test("the open skills menu passes axe and wires the listbox to the composer", async ({ page }) => {
+  await openChat(page);
+  await page.getByTestId("composer-input").click();
+  await page.keyboard.type("@");
+  const menu = page.getByRole("listbox", { name: "Skills" });
+  await expect(menu.getByRole("option")).toHaveCount(4);
+  const input = page.getByTestId("composer-input");
+  await expect(input).toHaveAttribute("aria-expanded", "true");
+  await expect(input).toHaveAttribute("aria-controls", (await menu.getAttribute("id"))!);
+  await expect(menu.getByRole("option").first()).toHaveAttribute("aria-selected", "true");
+  await axe(page, "skills menu");
+});
+
+test("a skill can be picked and sent without a pointer", async ({ page, host }) => {
+  await openChat(page);
+  await expect(page.getByTestId("composer-input")).toBeFocused();
+  await page.keyboard.type("@");
+  await expect(page.getByRole("listbox", { name: "Skills" })).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("tidy my notes");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => host.sentOfType("turn").at(-1)?.skills).toEqual(["files"]);
+});
+
 test("the whole flow works without a pointer", async ({ page, host }) => {
   host.status = { ...host.status, profile_done: false };
   await page.goto("/onboarding/name/");
