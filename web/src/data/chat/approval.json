@@ -1,0 +1,39 @@
+{
+  "pill": "Aldwin needs your OK",
+  "allow": "Allow",
+  "alwaysAllow": "Always allow in this chat",
+  "deny": "Deny",
+  "sendDeny": "Send deny",
+  "cancelDeny": "Cancel",
+  "reasonLabel": "Reason (optional)",
+  "reasonPlaceholder": "Why you are saying no (optional, up to 280 characters)",
+  "running": "Running",
+  "done": "Approved",
+  "denied": "Denied: you said no",
+  "inApp": "{summary} in {app}",
+  "requester": "Aldwin",
+  "requestedBy": "requested by {requester}",
+  "grants": "This grants",
+  "allowOnce": "Allow once",
+  "forThisChat": "For this chat",
+  "grantedOnce": "Allowed once",
+  "grantedSession": "Allowed for this chat",
+  "riskLabel": "Risk: {label}",
+  "titles": {
+    "run_command": "Run a command",
+    "edit_file": "Edit a file",
+    "write_file": "Write a file",
+    "remember": "Update a memory note",
+    "forget": "Remove a memory note",
+    "set_persona": "Update persona",
+    "create_skill": "Save a skill",
+    "download_file": "Download a file",
+    "propose_connector": "Connect an app",
+    "default": "Action needs approval"
+  },
+  "grantCapabilities": {
+    "folder": "Read files in {reach}",
+    "file": "Edit {reach}",
+    "tool": "Run {reach}"
+  }
+}

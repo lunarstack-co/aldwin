@@ -1,5 +1,6 @@
 {
   "menu": "View options",
   "density": "Transcript",
-  "theme": "Theme"
+  "theme": "Theme",
+  "conversationJson": "Conversation JSON"
 }

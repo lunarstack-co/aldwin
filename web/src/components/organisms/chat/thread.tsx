@@ -2,19 +2,29 @@
 
 import { ThreadPrimitive } from "@assistant-ui/react";
 import { ArrowDown } from "lucide-react";
+import dynamic from "next/dynamic";
 
-import { AgentPlan } from "@/components/assistant-ui/agent-plan";
 import { Button } from "@/components/ui/button";
 import copy from "@/data/chat/transcript.json";
 import { useChatStore } from "@/state/chat-store";
 import { useConnectionStore } from "@/state/connection-store";
 import { cn } from "@/utils/cn";
 
-import { ApprovalNotice } from "./approval-notice";
+import { ApprovalPill } from "./approval-pill";
 import { AssistantMessage } from "./assistant-message";
 import { Composer } from "./composer";
 import { EmptyHome } from "./empty-home";
 import { UserMessage } from "./user-message";
+
+// Loaded only once a plan exists, so the chat page does not carry it up front.
+const TodoPlan = dynamic(() => import("@/components/assistant-ui/todo-plan").then((m) => m.TodoPlan), {
+  ssr: false,
+});
+
+function PlanSlot() {
+  const hasPlan = useChatStore((s) => s.todos.total > 0);
+  return hasPlan ? <TodoPlan /> : null;
+}
 
 const components = { UserMessage, AssistantMessage };
 
@@ -73,8 +83,8 @@ export function Thread({ model, disabled }: { model: string; disabled: boolean }
             >
               <ArrowDown aria-hidden />
             </ThreadPrimitive.ScrollToBottom>
-            <ApprovalNotice />
-            <AgentPlan />
+            <ApprovalPill />
+            <PlanSlot />
             <Composer variant={isEmpty ? "centered" : "docked"} model={model} disabled={disabled} />
           </ThreadPrimitive.ViewportFooter>
         </div>

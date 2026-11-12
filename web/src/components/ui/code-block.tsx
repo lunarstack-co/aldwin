@@ -11,6 +11,7 @@ import {
 } from "react";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import { cn } from "@/utils/cn";
+import displaysCopy from "@/data/chat/displays.json";
 
 const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect;
@@ -236,7 +237,7 @@ export function CodeBlock({
           onClick={() => setExpanded((value) => !value)}
           className="text-muted-foreground hover:text-foreground self-start px-3.5 py-2 text-xs transition-colors motion-reduce:transition-none"
         >
-          {isCollapsed ? `Show all ${lineCount} lines` : "Show less"}
+          {isCollapsed ? `Show all ${lineCount} lines` : displaysCopy.showLess}
         </button>
       )}
     </figure>

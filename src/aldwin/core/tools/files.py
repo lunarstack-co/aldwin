@@ -20,6 +20,7 @@ from agentling import Tool
 
 from aldwin.core.policy import BLOCKED_PATTERNS, PolicySession, is_blocked_path
 from aldwin.core.tools import ToolOutput
+from aldwin.core.tools import display as core_display
 from aldwin.core.workspace import (
     Workspace,
     WorkspaceError,
@@ -579,6 +580,7 @@ class ListDirTool(_FileTool):
         rules = _IgnoreRules(resolved, include_ignored=include_ignored)
         rules.load_ancestors(self._workspace.root)
         lines: list[str] = []
+        file_entries: list[dict[str, str]] = []
         hidden = 0
         unreadable = 0
         visited = 0
@@ -627,6 +629,7 @@ class ListDirTool(_FileTool):
             for _order, rel, child, is_dir in pending:
                 if is_dir:
                     lines.append(f"{rel}/")
+                    file_entries.append({"path": rel, "kind": "folder"})
                     if levels_left > 1:
                         rules.load(child)
                         await walk(child, rel, levels_left - 1)
@@ -638,6 +641,7 @@ class ListDirTool(_FileTool):
                     continue
                 when = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d")
                 lines.append(f"{rel}  {format_size(stat.st_size)}  {when}")
+                file_entries.append({"path": rel, "kind": "file"})
 
         await walk(resolved, "", used)
         shown = lines[:LIST_CAP]
@@ -658,7 +662,12 @@ class ListDirTool(_FileTool):
             f"List {display} · {_noun(len(shown), 'item', 'items')}",
             hidden,
         )
-        return ToolOutput("\n".join(body), summary=summary, ok=True)
+        return ToolOutput(
+            "\n".join(body),
+            summary=summary,
+            ok=True,
+            display=core_display.files(root=display, entries=file_entries),
+        )
 
 
 class GlobTool(_FileTool):
@@ -751,9 +760,16 @@ class GlobTool(_FileTool):
         paths = [item[1] for item in found]
         shown = paths[:GLOB_CAP]
         extra = len(paths) - len(shown)
+        root_display = _display_path(resolved, self._workspace)
+        glob_entries = [{"path": item, "kind": "file"} for item in paths]
         if not shown and hidden == 0:
             message = f"no files match {pattern}"
-            return ToolOutput(message, summary=message, ok=True)
+            return ToolOutput(
+                message,
+                summary=message,
+                ok=True,
+                display=core_display.files(root=root_display, entries=[]),
+            )
         body = list(shown)
         if extra > 0:
             body.append(f"… and {extra} more")
@@ -764,7 +780,12 @@ class GlobTool(_FileTool):
             f"Find {pattern} · {_noun(len(shown), 'file', 'files')}",
             hidden,
         )
-        return ToolOutput("\n".join(body), summary=summary, ok=True)
+        return ToolOutput(
+            "\n".join(body),
+            summary=summary,
+            ok=True,
+            display=core_display.files(root=root_display, entries=glob_entries),
+        )
 
 
 def _keep_glob_path(candidate: Path, root: Path) -> bool:

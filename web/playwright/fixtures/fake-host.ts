@@ -1,6 +1,13 @@
 import type { Page, Route, WebSocketRoute } from "@playwright/test";
 
-import type { AuthMode, ConnectorStatus, SkillCatalogItem } from "../../src/types/protocol";
+import type {
+  AuthMode,
+  ConnectorStatus,
+  ContextUsage,
+  Display,
+  GrantScope,
+  SkillCatalogItem,
+} from "../../src/types/protocol";
 
 import {
   LIMIT_MINIMUMS,
@@ -13,7 +20,7 @@ import {
 
 /** A frame the page sent over the socket. */
 export type Frame = { id: string; type: string } & Record<string, unknown>;
-export type HistoryRow = { role: "user" | "assistant" | "tool"; text: string };
+export type HistoryRow = { role: "user" | "assistant" | "tool"; text: string; at?: string | null };
 export type SessionRow = {
   id: string;
   created_at: string;
@@ -119,6 +126,10 @@ export class FakeHost {
   /** Settings request types the fake answers with an error, to test the page's fallbacks. */
   failing = new Set<string>();
   lastSignInId: string | null = null;
+  /** Optional error reply to the next `approve` frame (`unknown_approval` or digest mismatch). */
+  approveError: { code: string; message: string } | null = null;
+  /** Per-conversation saved JSON fixtures for `GET /v1/conversations/:id`. */
+  conversations = new Map<string, { status?: number; delayMs?: number; body?: unknown }>();
   private heldSkills: (() => void)[] = [];
   private held: (() => void)[] = [];
   statusReply: { message: string; turn_streamed_chunks: number; active_tool: string | null; partial_text: string | null } = {
@@ -232,10 +243,17 @@ export class FakeHost {
         else go();
         break;
       }
-      case "history":
-        this.emit({ re: frame.id, kind: "history", messages: this.history, interrupted: this.interrupted }, ws);
+      case "history": {
+        const messages =
+          this.history.length > 0
+            ? this.history
+            : this.current
+              ? (this.histories.get(this.current.id) ?? [])
+              : [];
+        this.emit({ re: frame.id, kind: "history", messages, interrupted: this.interrupted }, ws);
         done();
         break;
+      }
       case "sessions.list":
         this.emit({ re: frame.id, kind: "sessions", items: this.sessions, current: this.current }, ws);
         done();
@@ -295,6 +313,15 @@ export class FakeHost {
           this.activeTurn = null;
         }
         break;
+      case "approve": {
+        if (this.approveError) {
+          this.emit({ re: frame.id, kind: "error", ...this.approveError }, ws);
+          this.approveError = null;
+          break;
+        }
+        done();
+        break;
+      }
       case "turn":
         // Like the host: one turn at a time.
         if (this.activeTurn !== null) {
@@ -508,8 +535,39 @@ export class FakeHost {
     this.emit({ re: this.turnId, kind: "tool_call", call_id: "c1", name: "read_file", args_preview: "", summary: "", ...event });
   }
 
-  toolResult(event: Partial<{ call_id: string; ok: boolean; summary: string; preview: string; duration_ms: number }> = {}): void {
-    this.emit({ re: this.turnId, kind: "tool_result", call_id: "c1", ok: true, summary: "", preview: "", duration_ms: 0, ...event });
+  toolResult(
+    event: Partial<{
+      call_id: string;
+      ok: boolean;
+      summary: string;
+      preview: string;
+      duration_ms: number;
+      display: Display | null;
+    }> = {},
+  ): void {
+    this.emit({
+      re: this.turnId,
+      kind: "tool_result",
+      call_id: "c1",
+      ok: true,
+      summary: "",
+      preview: "",
+      duration_ms: 0,
+      ...event,
+    });
+  }
+
+  emitToolResult(
+    event: Partial<{
+      call_id: string;
+      ok: boolean;
+      summary: string;
+      preview: string;
+      duration_ms: number;
+      display: Display | null;
+    }> = {},
+  ): void {
+    this.toolResult(event);
   }
 
   liveStatus(message: string, activeTool: string | null = null): void {
@@ -525,7 +583,14 @@ export class FakeHost {
     this.emit({ re: this.activeTurn ?? "host", kind: "notice", message });
   }
 
-  done(event: { reason?: string; usage?: { input_tokens: number; output_tokens: number } | null; max_steps?: number } = {}): void {
+  done(
+    event: {
+      reason?: string;
+      usage?: { input_tokens: number; output_tokens: number } | null;
+      max_steps?: number;
+      context?: ContextUsage | null;
+    } = {},
+  ): void {
     const re = this.turnId;
     this.activeTurn = null;
     if (this.current && this.current.title === "") this.current.title = "Untitled";
@@ -556,8 +621,45 @@ export class FakeHost {
     await this.socket.close({ code, reason: "" });
   }
 
-  approval(event: Record<string, unknown>): void {
-    this.emit({ re: this.activeTurn ?? "host", kind: "approval", approval_id: "a1", tool: "write_file", tier: "ask", summary: "Write a file", ...event });
+  approval(
+    event: Partial<{
+      approval_id: string;
+      call_id: string | null;
+      tool: string;
+      tier: "ask" | "diff";
+      summary: string;
+      detail: string;
+      grantable: boolean;
+      grant_scope: GrantScope | null;
+      digest: string;
+      risky: string[];
+      connector: string | null;
+      connector_title: string | null;
+      remote_tool: string | null;
+      display: Display | null;
+    }> & Record<string, unknown> = {},
+  ): void {
+    this.emit({
+      re: this.activeTurn ?? "host",
+      kind: "approval",
+      approval_id: "a1",
+      call_id: "c1",
+      tool: "write_file",
+      tier: "ask",
+      summary: "Write a file",
+      detail: "",
+      grantable: false,
+      grant_scope: null,
+      digest: "sha256:fixture",
+      risky: [],
+      ...event,
+    });
+  }
+
+  emitApproval(
+    event: Parameters<FakeHost["approval"]>[0] = {},
+  ): void {
+    this.approval(event);
   }
 
   // --- REST ---
@@ -603,8 +705,33 @@ export class FakeHost {
         else if (update.complete) this.status = { ...this.status, profile_done: true };
         return route.fulfill({ json: this.status });
       }
-      default:
+      case "GET /v1/conversations":
+        return reply({ items: this.sessions });
+      default: {
+        const convMatch = method === "GET" ? pathname.match(/^\/v1\/conversations\/([^/]+)$/) : null;
+        if (convMatch) {
+          const id = decodeURIComponent(convMatch[1]);
+          const customConv = this.conversations.get(id);
+          if (customConv) {
+            if (customConv.delayMs && customConv.delayMs > 0) {
+              await new Promise((r) => setTimeout(r, customConv.delayMs));
+            }
+            const status = customConv.status ?? 200;
+            if (status >= 400) {
+              return reply(customConv.body ?? { detail: NOT_FOUND }, status);
+            }
+            return reply(customConv.body ?? { meta: this.sessions.find((s) => s.id === id) ?? { id }, memory: "{}" }, status);
+          }
+          const found = this.sessions.find((s) => s.id === id) ?? (this.current?.id === id ? this.current : null);
+          if (!found) return reply({ detail: NOT_FOUND }, 404);
+          return reply({
+            meta: found,
+            memory: JSON.stringify({ version: 1, steps: [] }),
+            turns: [],
+          });
+        }
         return route.fulfill({ status: 404, json: { detail: `No fake for ${method} ${pathname}` } });
+      }
     }
   }
 

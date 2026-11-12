@@ -18,6 +18,7 @@ import trafilatura
 from agentling import Tool
 
 from aldwin.core.tools import USER_AGENT, ToolOutput
+from aldwin.core.tools import display as core_display
 
 FETCH_TIMEOUT_SECONDS: Final[float] = 10.0
 MAX_FETCH_BYTES: Final[int] = 2 * 1024 * 1024  # 2 MB
@@ -263,6 +264,78 @@ def _charset_from_content_type(content_type: str) -> str:
     return "utf-8"
 
 
+class _PageMetaParser(HTMLParser):
+    """Extract `<title>` and meta description from HTML."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._in_title = False
+        self._title_parts: list[str] = []
+        self.og_title = ""
+        self.description = ""
+        self.og_description = ""
+
+    @property
+    def title(self) -> str:
+        return " ".join("".join(self._title_parts).split()) or self.og_title
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        lower_tag = tag.lower()
+        if lower_tag == "title":
+            self._in_title = True
+            return
+        if lower_tag != "meta":
+            return
+        attr_map = {k.lower(): (v or "").strip() for k, v in attrs if k}
+        content = " ".join(attr_map.get("content", "").split())
+        if not content:
+            return
+        name = attr_map.get("name", "").lower()
+        prop = attr_map.get("property", "").lower()
+        if name == "description" and not self.description:
+            self.description = content
+        elif prop == "og:description" and not self.og_description:
+            self.og_description = content
+        elif prop == "og:title" and not self.og_title:
+            self.og_title = content
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() == "title":
+            self._in_title = False
+
+    def handle_data(self, data: str) -> None:
+        if self._in_title:
+            self._title_parts.append(data)
+
+
+def _extract_page_display(
+    final_url: str,
+    raw_bytes: bytes,
+    content_type: str,
+) -> dict[str, Any]:
+    """Build a `page` display dict from fetched URL, bytes, and content-type."""
+    site = (urlsplit(final_url).hostname or "").lower()
+    media = _media_type(content_type)
+    if media in {"text/plain", "text/markdown", "text/csv", "application/json"}:
+        return core_display.page(url=final_url, title="", site=site, description="")
+
+    charset = _charset_from_content_type(content_type)
+    try:
+        decoded = raw_bytes.decode(charset, errors="replace")
+    except LookupError:
+        decoded = raw_bytes.decode("utf-8", errors="replace")
+
+    parser = _PageMetaParser()
+    parser.feed(decoded[:131_072])
+    description = parser.description or parser.og_description
+    return core_display.page(
+        url=final_url,
+        title=parser.title,
+        site=site,
+        description=description,
+    )
+
+
 def extract_readable_text(raw_bytes: bytes, content_type: str = "text/html") -> str:
     """Extract readable main text from `raw_bytes` using `trafilatura` + fallback."""
     charset = _charset_from_content_type(content_type)
@@ -465,12 +538,13 @@ class WebFetchTool(Tool):
             raw_bytes,
             content_type,
         )
+        page_disp = _extract_page_display(final_url, raw_bytes, content_type)
         truncated = extracted[: self._max_chars]
         summary = format_char_count_summary(len(truncated))
         if self._wrapped_by_policy:
-            return ToolOutput(truncated, summary=summary, ok=True)
+            return ToolOutput(truncated, summary=summary, ok=True, display=page_disp)
         wrapped = format_untrusted_page(final_url, truncated)
-        return ToolOutput(wrapped, summary=summary, ok=True)
+        return ToolOutput(wrapped, summary=summary, ok=True, display=page_disp)
 
 
 def build_web_fetch_tool(

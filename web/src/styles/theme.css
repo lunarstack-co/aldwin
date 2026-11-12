@@ -40,6 +40,10 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-diff-added: var(--diff-added);
+  --color-diff-added-mark: var(--diff-added-mark);
+  --color-diff-removed: var(--diff-removed);
+  --color-diff-removed-mark: var(--diff-removed-mark);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);

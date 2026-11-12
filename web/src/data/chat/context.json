@@ -1,0 +1,8 @@
+{
+  "label": "Context window usage",
+  "triggerTitle": "{used} of {limit} tokens ({percent}%)",
+  "percent": "{percent}%",
+  "title": "Context",
+  "about": "about {tokens}",
+  "headroom": "Headroom"
+}

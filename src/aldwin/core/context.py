@@ -193,7 +193,7 @@ def _trim_conversation(
     return list(conversation[start_idx:]), trimmed_window
 
 
-def build_system_message(
+def _assemble_system_message(
     base_instructions: str,
     home: Path,
     limits: LimitsConfig,
@@ -205,8 +205,8 @@ def build_system_message(
     persona_reader: Callable[[Path, int], str] | None = None,
     memory_builder: Callable[[Path, LimitsConfig], str] | None = None,
     connectors_block: Callable[[], str] | None = None,
-) -> str:
-    """Assemble the complete system prompt content for one model call."""
+) -> tuple[str, dict[str, int]]:
+    """Assemble the system prompt and return `(content, segment_char_counts)`."""
     read_persona_fn = persona_reader or read_persona
     build_memory_fn = memory_builder or memory_block
 
@@ -222,19 +222,97 @@ def build_system_message(
         time_zone=time_zone,
         os_name=os_name,
     )
+    connectors_text = connectors_block() if connectors_block is not None else ""
+
+    base_section = base_instructions.rstrip() if base_instructions.strip() else ""
+    base_file_text = read_base_instructions().rstrip()
+    if base_section:
+        instructions_len = min(len(base_section), len(base_file_text))
+        skills_len = max(0, len(base_section) - instructions_len)
+    else:
+        instructions_len = 0
+        skills_len = 0
+
+    persona_section = f"## Persona\n{persona_text}" if persona_text else ""
+    memory_section = memory_text
+    env_section = env_text
+    connectors_section = connectors_text
 
     sections: list[str] = []
-    if base_instructions.strip():
-        sections.append(base_instructions.rstrip())
-    if persona_text:
-        sections.append(f"## Persona\n{persona_text}")
-    if memory_text:
-        sections.append(memory_text)
-    sections.append(env_text)
-    connectors_text = connectors_block() if connectors_block is not None else ""
-    if connectors_text:
-        sections.append(connectors_text)
-    return "\n\n".join(sections)
+    counts: dict[str, int] = {
+        "instructions": instructions_len,
+        "skills": skills_len,
+        "persona": 0,
+        "memory": 0,
+        "environment": 0,
+        "connectors": 0,
+    }
+    if base_section:
+        sections.append(base_section)
+
+    for key, text_val in (
+        ("persona", persona_section),
+        ("memory", memory_section),
+        ("environment", env_section),
+        ("connectors", connectors_section),
+    ):
+        if not text_val:
+            continue
+        sep_chars = 2 if sections else 0
+        sections.append(text_val)
+        counts[key] = len(text_val) + sep_chars
+
+    return "\n\n".join(sections), counts
+
+
+def build_system_message(
+    base_instructions: str,
+    home: Path,
+    limits: LimitsConfig,
+    *,
+    workspace_getter: Callable[[], Path | str] | None = None,
+    now_fn: Callable[[], datetime] | None = None,
+    time_zone: str | None = None,
+    os_name: str | None = None,
+    persona_reader: Callable[[Path, int], str] | None = None,
+    memory_builder: Callable[[Path, LimitsConfig], str] | None = None,
+    connectors_block: Callable[[], str] | None = None,
+) -> str:
+    """Assemble the complete system prompt content for one model call."""
+    content, _ = _assemble_system_message(
+        base_instructions,
+        home,
+        limits,
+        workspace_getter=workspace_getter,
+        now_fn=now_fn,
+        time_zone=time_zone,
+        os_name=os_name,
+        persona_reader=persona_reader,
+        memory_builder=memory_builder,
+        connectors_block=connectors_block,
+    )
+    return content
+
+
+ContextChars = dict[str, int]
+
+
+class ContextHook:
+    """Agentling's `context_manager`; reports prompt segment sizes to `on_context`."""
+
+    def __init__(
+        self,
+        build: Callable[
+            [list[ChatMessage], Callable[[ContextChars], None] | None],
+            list[ChatMessage],
+        ],
+        on_context: Callable[[ContextChars], None] | None,
+    ) -> None:
+        self._build = build
+        self.on_context = on_context
+
+    def __call__(self, messages: list[ChatMessage]) -> list[ChatMessage]:
+        return self._build(messages, self.on_context)
 
 
 def build_context(
@@ -250,7 +328,8 @@ def build_context(
     context_window: int | None = None,
     notice_emitter: Callable[[str], None] | None = None,
     model_id: str | None = None,
-) -> Callable[[list[ChatMessage]], list[ChatMessage]]:
+    on_context: Callable[[ContextChars], None] | None = None,
+) -> ContextHook:
     """Build the Agentling `context_manager` hook for `home` and `limits`.
 
     On every model call:
@@ -278,7 +357,10 @@ def build_context(
     else:
         ws_getter = lambda: Path.cwd().resolve()  # noqa: E731
 
-    def _context_manager(messages: list[ChatMessage]) -> list[ChatMessage]:
+    def _context_manager(
+        messages: list[ChatMessage],
+        report: Callable[[ContextChars], None] | None,
+    ) -> list[ChatMessage]:
         nonlocal trimmed_notice_emitted
         if messages and messages[0].role == "system":
             base_instructions = messages[0].content
@@ -287,7 +369,7 @@ def build_context(
             base_instructions = read_base_instructions()
             conversation = messages
 
-        sys_content = build_system_message(
+        sys_content, sys_counts = _assemble_system_message(
             base_instructions,
             resolved_home,
             effective_limits,
@@ -312,6 +394,14 @@ def build_context(
                 f"This conversation is too long for {model_id or 'this model'}. "
                 "Aldwin trimmed older messages."
             )
+        if report is not None:
+            conv_chars = 0
+            for msg in kept_conversation:
+                conv_chars += len(msg.content or "")
+                if msg.tool_calls:
+                    for tc in msg.tool_calls:
+                        conv_chars += len(tc.name or "") + len(str(tc.arguments or ""))
+            report({**sys_counts, "conversation": conv_chars})
         return [system_message, *kept_conversation]
 
-    return _context_manager
+    return ContextHook(_context_manager, on_context)

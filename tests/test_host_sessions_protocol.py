@@ -18,7 +18,6 @@ from aldwin.protocol import (
     DoneEvent,
     Event,
     HistoryEvent,
-    HistoryItem,
     Request,
     SessionsEvent,
     SessionsNewRequest,
@@ -102,10 +101,11 @@ async def test_sessions_open_idle_switches_active(
     assert opened.items == []
     assert host.stored_session.meta.id == first_id
     history = await client.history()
-    assert history.messages == [
-        HistoryItem(role="user", text="Capital of France?"),
-        HistoryItem(role="assistant", text="Paris."),
+    assert [(m.role, m.text) for m in history.messages] == [
+        ("user", "Capital of France?"),
+        ("assistant", "Paris."),
     ]
+    assert all(m.at is not None for m in history.messages)
 
 
 async def test_sessions_open_labels_the_conversation_with_the_active_model(
@@ -349,3 +349,55 @@ def test_protocol_doc_lists_sessions_messages() -> None:
     for name in ("`sessions.list`", "`sessions.open`", "`sessions.new`"):
         assert name in doc
     assert "`history`" in doc and "busy" in doc
+
+
+async def test_history_carries_at_and_done_at_timestamps(
+    rig: Rig,
+    fake_model: FakeModel,
+    frozen_clock,
+) -> None:
+    """Stored turns record `at` and `done_at` and surface them in `history`."""
+    from datetime import datetime, timezone
+
+    host, client = rig
+    start_ts = datetime(2026, 11, 12, 10, 0, 0, tzinfo=timezone.utc).timestamp()
+    frozen_clock(start_ts)
+    fake_model.add_turns(FakeTurn.text(["Morning!"]))
+    await _chat(client, "Good morning")
+
+    raw = json.loads(host.stored_session.path.read_text("utf-8"))
+    turn_entry = raw["turns"][0]
+    assert turn_entry["at"] == "2026-11-12T10:00:00+00:00"
+    assert turn_entry["done_at"] == "2026-11-12T10:00:00+00:00"
+
+    history = await client.history()
+    assert [(m.role, m.at) for m in history.messages] == [
+        ("user", "2026-11-12T10:00:00+00:00"),
+        ("assistant", "2026-11-12T10:00:00+00:00"),
+    ]
+
+
+async def test_old_sessions_without_at_load_cleanly(
+    rig: Rig,
+    fake_model: FakeModel,
+) -> None:
+    """Sessions saved before `at`/`done_at` existed load with `at=None`."""
+    host, client = rig
+    fake_model.add_turns(FakeTurn.text(["Legacy reply."]))
+    await _chat(client, "Legacy question")
+
+    session_path = host.stored_session.path
+    raw = json.loads(session_path.read_text("utf-8"))
+    raw["turns"] = [{"text": "Legacy question", "skills": []}]
+    session_path.write_text(json.dumps(raw), encoding="utf-8")
+
+    reloaded = host._session_store.load_file(session_path)
+    assert reloaded is not None
+    rendered = host._session_store.render_history(
+        reloaded.memory,
+        turns=reloaded.turns,
+    )
+    assert [(m.role, m.text, m.at) for m in rendered] == [
+        ("user", "Legacy question", None),
+        ("assistant", "Legacy reply.", None),
+    ]

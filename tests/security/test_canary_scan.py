@@ -36,7 +36,28 @@ async def test_canary_absent_after_security_actions(
         security_tools.home / "memory",
         security_tools.home / "sessions",
     ]
-    texts = [str(grepped), str(env_out)]
+    from aldwin.core.tools import display as core_display
+    from aldwin.host.display import context_usage, to_display
+    from aldwin.protocol import DoneEvent
+
+    disp = to_display(
+        core_display.terminal(command="echo", stdout=f"leak {CANARY}"),
+        tool="run_command",
+    )
+    assert disp is not None
+    done_ev = DoneEvent(
+        re="req_1",
+        reason="answered",
+        context=context_usage(
+            {"instructions": 350, "conversation": 700}, used=500, limit=8000
+        ),
+    )
+    texts = [
+        str(grepped),
+        str(env_out),
+        disp.model_dump_json(),
+        done_ev.model_dump_json(),
+    ]
     hits = scan_for_canary(paths, texts)
     # Canary may legitimately live in secrets.yaml / .env on disk (planted).
     # It must not appear in logs, tmp, tool output, or sessions.

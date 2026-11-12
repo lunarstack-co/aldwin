@@ -248,10 +248,21 @@ def test_protocol_never_imports_core_or_agentling() -> None:
     assert (
         check_forbidden_imports(
             SRC_ALDWIN / "protocol",
-            ("aldwin.core", "agentling"),
+            ("aldwin.core", "aldwin.host", "aldwin.client", "aldwin.cli", "agentling"),
         )
         == []
     )
+
+    display_py = SRC_ALDWIN / "protocol" / "display.py"
+    assert display_py.is_file()
+    imported = _imported_modules(
+        ast.parse(display_py.read_text(encoding="utf-8"), filename=str(display_py))
+    )
+    allowed_roots = {"__future__", "functools", "typing", "pydantic", "aldwin"}
+    for mod in imported:
+        root = mod.split(".")[0]
+        assert root in allowed_roots, f"Unexpected import {mod!r} in {display_py}"
+        assert not mod.startswith("aldwin.") or mod.startswith("aldwin.protocol")
 
 
 def test_core_never_imports_protocol_host_client_or_cli() -> None:
@@ -478,3 +489,29 @@ def test_manual_test_doc_has_connectors_section() -> None:
     assert "aldwin connectors add github" in doc
     assert "### Step 15: Connectors: sign in with your browser" in doc
     assert "aldwin connectors login linear --paste" in doc
+
+
+def test_protocol_doc_lists_displays() -> None:
+    """`docs/protocol.md` lists the 9 display kinds, caps, `call_id`, and `context`."""
+    doc = (REPO_ROOT / "docs" / "protocol.md").read_text(encoding="utf-8")
+    for token in (
+        "`terminal`",
+        "`diff`",
+        "`files`",
+        "`search`",
+        "`page`",
+        "`table`",
+        "`memory`",
+        "`denied`",
+        "`grant`",
+        "`400`",
+        "`65536`",
+        "`600`",
+        "`300`",
+        "`10`",
+        "`200`",
+        "`20`",
+        "`call_id`",
+        "`context`",
+    ):
+        assert token in doc, f"Missing {token} in docs/protocol.md"

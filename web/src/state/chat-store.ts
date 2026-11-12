@@ -1,6 +1,10 @@
 import { create } from "zustand";
 
 import type {
+  ApprovalAnswer,
+  ApprovalEvent,
+  ContextUsage,
+  Display,
   DoneReason,
   DroppedSkill,
   HistoryItem,
@@ -11,6 +15,15 @@ import type {
   ToolCallEvent,
   ToolResultEvent,
 } from "@/types/protocol";
+
+export type ApprovalState = "request" | "running" | "done" | "denied";
+
+export type TurnApproval = {
+  event: ApprovalEvent;
+  state: ApprovalState;
+  answer?: ApprovalAnswer;
+  reason?: string | null;
+};
 
 export type ToolRow = {
   callId: string;
@@ -23,6 +36,7 @@ export type ToolRow = {
   connectorTitle: string | null;
   remoteTool: string | null;
   reason: string | null;
+  display: Display | null;
 };
 
 export type TurnStatus = "streaming" | "stopping" | "answered" | "stopped" | "max_steps" | "error";
@@ -43,12 +57,21 @@ export type Turn = {
   /** The host's error code, such as `provider_error`, shown beside the message. */
   errorCode: string | null;
   startedAt: number;
+  firstTokenAt: number | null;
   endedAt: number | null;
+  userAt: string | null;
+  assistantAt: string | null;
   /** The host's latest status line and running tool while the turn is live. */
   statusMessage: string;
   activeTool: string | null;
   usage: TokenUsage | null;
   maxSteps: number | null;
+  context: ContextUsage | null;
+  approval: TurnApproval | null;
+  approvalsByCallId: Record<string, TurnApproval>;
+  discarded: boolean;
+  /** A tool ran after some text, so the next text starts a new paragraph. */
+  breakBeforeText: boolean;
   /** What the host made of the `@` skills on this turn; `null` when none were picked. */
   skillsUsed: { names: string[]; dropped: DroppedSkill[] } | null;
   /** Connected apps picked with `/` for this turn, and what the host made of them. */
@@ -67,7 +90,11 @@ export type SkillsCatalog = { status: "idle" | "loading" | "ready" | "error"; it
 /** A passing message from the host, shown as a toast and never in the transcript. */
 export type Notice = { id: number; message: string };
 
-export type TurnEnd = { usage?: TokenUsage | null; maxSteps?: number | null };
+export type TurnEnd = {
+  usage?: TokenUsage | null;
+  maxSteps?: number | null;
+  context?: ContextUsage | null;
+};
 
 type ChatState = {
   turns: Turn[];
@@ -82,15 +109,23 @@ type ChatState = {
   historyView: HistoryView;
   notice: SessionNotice | null;
   todos: Todos;
+  /** The turn that last changed the plan, so a finished plan from earlier work stays away. */
+  todosTurnId: string | null;
   toasts: Notice[];
   /** The host saved this conversation mid-answer; its last turn was cut off. */
   interrupted: boolean;
   /** Text to put back in the composer, after the host refused to start it. */
   draft: string | null;
   skills: SkillsCatalog;
-  /** What the running turn waits on the user to approve, which the web cannot answer yet; `null` when nothing. */
+  /** Latest prompt context window usage reported on `done`. */
+  context: ContextUsage | null;
   waitingApproval: string | null;
   setWaitingApproval: (summary: string | null) => void;
+  setApproval: (event: ApprovalEvent) => void;
+  answerApproval: (answer: ApprovalAnswer, reason?: string | null) => void;
+  settleApproval: (callId?: string | null) => void;
+  clearApproval: (approvalId?: string) => void;
+  discardTurn: (turnId: string) => void;
   /** Apps picked for the message being written; they go with the next send. */
   pickedApps: PickedApp[];
   pickApp: (app: PickedApp) => void;
@@ -110,7 +145,7 @@ type ChatState = {
   setSkillsStatus: (status: SkillsCatalog["status"]) => void;
   setSkills: (items: SkillCatalogItem[]) => void;
   setSkillsUsed: (turnId: string, names: string[], dropped: DroppedSkill[]) => void;
-  appendText: (delta: string) => void;
+  appendText: (delta: string, now?: number) => void;
   addToolCall: (event: ToolCallEvent) => void;
   addToolResult: (event: ToolResultEvent) => void;
   markStopping: () => void;
@@ -127,6 +162,13 @@ type ChatState = {
   ) => void;
   clearTranscript: () => void;
 };
+
+/** Text written after a tool call reads as its own paragraph, not glued to the last sentence. */
+export function joinParagraph(answer: string, next: string): string {
+  if (answer.trim() === "") return answer + next;
+  const head = answer.replace(/\s+$/, "");
+  return `${head}\n\n${next.replace(/^\s+/, "")}`;
+}
 
 const DONE_STATUS: Record<DoneReason, TurnStatus> = {
   answered: "answered",
@@ -145,11 +187,19 @@ function newTurn(id: string, userText: string, now: number, status: TurnStatus):
     error: null,
     errorCode: null,
     startedAt: now,
+    firstTokenAt: null,
     endedAt: null,
+    userAt: now > 0 ? new Date(now).toISOString() : null,
+    assistantAt: null,
     statusMessage: "",
     activeTool: null,
     usage: null,
     maxSteps: null,
+    context: null,
+    approval: null,
+    approvalsByCallId: {},
+    discarded: false,
+    breakBeforeText: false,
     skillsUsed: null,
     pickedApps: [],
     appsUsed: null,
@@ -171,6 +221,7 @@ function toolRow(callId: string, name: string): ToolRow {
     connectorTitle: null,
     remoteTool: null,
     reason: null,
+    display: null,
   };
 }
 
@@ -179,11 +230,14 @@ function groupHistory(items: HistoryItem[]): Turn[] {
   const turns: Turn[] = [];
   items.forEach((item, index) => {
     if (item.role === "user" || turns.length === 0) {
-      turns.push(newTurn(`history_${index}`, item.role === "user" ? item.text : "", 0, "answered"));
+      const turn = newTurn(`history_${index}`, item.role === "user" ? item.text : "", 0, "answered");
+      if (item.role === "user") turn.userAt = item.at ?? null;
+      turns.push(turn);
     }
     const turn = turns[turns.length - 1];
     if (item.role === "assistant") {
       turn.answer = turn.answer ? `${turn.answer}\n\n${item.text}` : item.text;
+      if (item.at) turn.assistantAt = item.at;
     } else if (item.role === "tool") {
       const failed = item.text.startsWith("✗");
       turn.tools.push({ ...toolRow(`history_${index}`, item.text.replace(/^[✓✗]\s*/, "")), ok: !failed });
@@ -197,6 +251,14 @@ function updateActive(state: ChatState, change: (turn: Turn) => Turn): Partial<C
   return { turns: state.turns.map((t) => (t.id === state.activeId ? change(t) : t)) };
 }
 
+function dropUnsettledApprovals(map: Record<string, TurnApproval>): Record<string, TurnApproval> {
+  const kept: Record<string, TurnApproval> = {};
+  for (const [key, entry] of Object.entries(map)) {
+    if (entry.state === "done" || entry.state === "denied") kept[key] = entry;
+  }
+  return kept;
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   turns: [],
   activeId: null,
@@ -207,17 +269,99 @@ export const useChatStore = create<ChatState>((set, get) => ({
   historyView: "chat",
   notice: null,
   todos: NO_TODOS,
+  todosTurnId: null,
   toasts: [],
   interrupted: false,
   draft: null,
   skills: { status: "idle", items: [] },
+  context: null,
   pickedApps: [],
   waitingApproval: null,
   setWaitingApproval: (summary) => set({ waitingApproval: summary }),
 
+  setApproval: (event) =>
+    set((state) => ({
+      waitingApproval: event.summary,
+      ...updateActive(state, (t) => {
+        const entry: TurnApproval = { event, state: "request" };
+        const byCall = event.call_id
+          ? { ...t.approvalsByCallId, [event.call_id]: entry }
+          : t.approvalsByCallId;
+        return { ...t, approval: entry, approvalsByCallId: byCall };
+      }),
+    })),
+
+  answerApproval: (answer, reason = null) =>
+    set((state) => ({
+      waitingApproval: null,
+      ...updateActive(state, (t) => {
+        if (!t.approval || t.approval.state !== "request") return t;
+        const nextState: ApprovalState = answer === "no" ? "denied" : "running";
+        const updated: TurnApproval = {
+          ...t.approval,
+          state: nextState,
+          answer,
+          reason: answer === "no" ? (reason ?? null) : null,
+        };
+        const callId = updated.event.call_id;
+        return {
+          ...t,
+          approval: updated,
+          approvalsByCallId: callId
+            ? { ...t.approvalsByCallId, [callId]: updated }
+            : t.approvalsByCallId,
+        };
+      }),
+    })),
+
+  settleApproval: (callId = null) =>
+    set((state) =>
+      updateActive(state, (t) => {
+        const targetId = callId ?? t.approval?.event.call_id ?? null;
+        let nextApproval = t.approval;
+        if (
+          nextApproval &&
+          nextApproval.state === "running" &&
+          (!targetId || nextApproval.event.call_id === targetId || !nextApproval.event.call_id)
+        ) {
+          nextApproval = { ...nextApproval, state: "done" };
+        }
+        let nextMap = t.approvalsByCallId;
+        if (targetId && nextMap[targetId]?.state === "running") {
+          nextMap = { ...nextMap, [targetId]: { ...nextMap[targetId], state: "done" } };
+        }
+        return { ...t, approval: nextApproval, approvalsByCallId: nextMap };
+      }),
+    ),
+
+  clearApproval: (approvalId) =>
+    set((state) => ({
+      waitingApproval: null,
+      ...updateActive(state, (t) => {
+        const shouldClearActive =
+          t.approval !== null && (!approvalId || t.approval.event.approval_id === approvalId);
+        const nextMap: Record<string, TurnApproval> = {};
+        for (const [k, entry] of Object.entries(t.approvalsByCallId)) {
+          const matches = !approvalId || entry.event.approval_id === approvalId;
+          if (matches && (entry.state === "request" || entry.state === "running")) continue;
+          nextMap[k] = entry;
+        }
+        return {
+          ...t,
+          approval: shouldClearActive ? null : t.approval,
+          approvalsByCallId: nextMap,
+        };
+      }),
+    })),
+
+  discardTurn: (turnId) =>
+    set((state) => ({
+      turns: state.turns.map((t) => (t.id === turnId ? { ...t, discarded: true } : t)),
+    })),
+
   setHistoryView: (view) => set({ historyView: view }),
   setNotice: (notice) => set({ notice }),
-  setTodos: (todos) => set({ todos }),
+  setTodos: (todos) => set((state) => ({ todos, todosTurnId: state.activeId })),
   pushToast: (message) => set((state) => ({ toasts: [...state.toasts, { id: ++toastSeq, message }] })),
   dropToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
   setTurnStatus: (message, activeTool) =>
@@ -243,7 +387,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         turns: state.turns.filter((t) => t.id !== id),
         activeId: state.activeId === id ? null : state.activeId,
         draft: refused?.userText ?? null,
-        // The apps go back with the text, so sending again keeps them.
         pickedApps: refused?.pickedApps ?? state.pickedApps,
       };
     }),
@@ -267,13 +410,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
       turns: state.turns.map((t) => (t.id === turnId ? { ...t, skillsUsed: { names, dropped } } : t)),
     })),
 
-  appendText: (delta) =>
-    set((state) => updateActive(state, (t) => ({ ...t, answer: t.answer + delta }))),
+  appendText: (delta, now = Date.now()) =>
+    set((state) =>
+      updateActive(state, (t) => {
+        const startsParagraph = t.breakBeforeText && delta.trim() !== "";
+        return {
+          ...t,
+          answer: startsParagraph ? joinParagraph(t.answer, delta) : t.answer + delta,
+          breakBeforeText: startsParagraph ? false : t.breakBeforeText,
+          firstTokenAt: t.firstTokenAt === null && delta.length > 0 ? now : t.firstTokenAt,
+        };
+      }),
+    ),
 
   addToolCall: (event) =>
     set((state) =>
       updateActive(state, (t) => ({
         ...t,
+        breakBeforeText: t.answer.trim() !== "",
         tools: [
           ...t.tools,
           {
@@ -290,20 +444,40 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   addToolResult: (event) =>
     set((state) =>
-      updateActive(state, (t) => ({
-        ...t,
-        tools: t.tools.map((row) =>
-          row.callId === event.call_id
-            ? {
-                ...row,
-                ok: event.ok,
-                summary: event.summary || row.summary,
-                preview: event.preview,
-                durationMs: event.duration_ms,
-              }
-            : row,
-        ),
-      })),
+      updateActive(state, (t) => {
+        let nextApproval = t.approval;
+        if (
+          nextApproval &&
+          nextApproval.state === "running" &&
+          (!nextApproval.event.call_id || nextApproval.event.call_id === event.call_id)
+        ) {
+          nextApproval = { ...nextApproval, state: "done" };
+        }
+        let nextMap = t.approvalsByCallId;
+        if (nextMap[event.call_id]?.state === "running") {
+          nextMap = {
+            ...nextMap,
+            [event.call_id]: { ...nextMap[event.call_id], state: "done" },
+          };
+        }
+        return {
+          ...t,
+          approval: nextApproval,
+          approvalsByCallId: nextMap,
+          tools: t.tools.map((row) =>
+            row.callId === event.call_id
+              ? {
+                  ...row,
+                  ok: event.ok,
+                  summary: event.summary || row.summary,
+                  preview: event.preview,
+                  durationMs: event.duration_ms,
+                  display: event.display ?? null,
+                }
+              : row,
+          ),
+        };
+      }),
     ),
 
   markStopping: () => set((state) => updateActive(state, (t) => ({ ...t, status: "stopping" }))),
@@ -314,18 +488,31 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ...t,
         status: DONE_STATUS[reason],
         endedAt: now,
+        assistantAt: now > 0 ? new Date(now).toISOString() : t.assistantAt,
         activeTool: null,
         usage: end.usage ?? null,
         maxSteps: end.maxSteps ?? null,
+        context: end.context ?? null,
+        approval: null,
+        approvalsByCallId: dropUnsettledApprovals(t.approvalsByCallId),
       })),
       activeId: null,
       notice: null,
       waitingApproval: null,
+      context: end.context !== undefined ? (end.context ?? null) : state.context,
     })),
 
   failTurn: (message, now, code) =>
     set((state) => ({
-      ...updateActive(state, (t) => ({ ...t, status: "error", error: message, errorCode: code ?? null, endedAt: now })),
+      ...updateActive(state, (t) => ({
+        ...t,
+        status: "error",
+        error: message,
+        errorCode: code ?? null,
+        endedAt: now,
+        approval: null,
+        approvalsByCallId: dropUnsettledApprovals(t.approvalsByCallId),
+      })),
       activeId: null,
       notice: null,
       waitingApproval: null,
@@ -336,20 +523,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const fromHistory = groupHistory(items);
     const active = turns.find((t) => t.id === activeId);
     if (active) {
+      const copyActive: Turn = { ...active, tools: [...active.tools] };
       const last = fromHistory[fromHistory.length - 1];
-      // The in-flight turn's own user row is already in history; fold it in.
-      if (last && last.answer === "" && !active.userText) {
+      // Fold the host's saved in-flight user row into the live turn so reconnect never duplicates it.
+      if (last && last.answer === "" && (!copyActive.userText || last.userText === copyActive.userText)) {
         fromHistory.pop();
-        active.userText = last.userText;
-        active.tools = [...last.tools, ...active.tools];
+        if (!copyActive.userText) {
+          copyActive.userText = last.userText;
+          copyActive.userAt = last.userAt ?? copyActive.userAt;
+        }
+        if (copyActive.tools.length === 0 && last.tools.length > 0) {
+          copyActive.tools = [...last.tools];
+        }
       }
-      fromHistory.push(active);
+      fromHistory.push(copyActive);
     }
-    set({ turns: fromHistory, interrupted: interrupted && active === undefined, historyLoaded: true });
+    set({
+      turns: fromHistory,
+      interrupted: interrupted && active === undefined,
+      historyLoaded: true,
+      context: active ? get().context : null,
+    });
   },
 
   adoptRunningTurn: (partialText, activeTool, now, message = "") =>
     set((state) => {
+      if (state.activeId !== null) {
+        return updateActive(state, (t) => ({
+          ...t,
+          answer: partialText && partialText.length > t.answer.length ? partialText : t.answer,
+          statusMessage: message || t.statusMessage,
+          activeTool: activeTool ?? t.activeTool,
+        }));
+      }
       const id = `adopted_${now}`;
       const turn = newTurn(id, "", now, "streaming");
       turn.answer = partialText ?? "";
@@ -360,8 +566,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }),
 
   clearTranscript: () =>
-    set({ turns: [], activeId: null, notice: null, todos: NO_TODOS, interrupted: false, waitingApproval: null }),
+    set({
+      turns: [],
+      activeId: null,
+      notice: null,
+      todos: NO_TODOS,
+      todosTurnId: null,
+      interrupted: false,
+      waitingApproval: null,
+      context: null,
+    }),
 }));
+
+/** Pending approval in `request` state on the active turn, if any. */
+export function selectPendingApproval(state: { turns: Turn[]; activeId: string | null }): TurnApproval | null {
+  if (state.activeId === null) return null;
+  const active = state.turns.find((t) => t.id === state.activeId);
+  if (!active?.approval || active.approval.state !== "request") return null;
+  return active.approval;
+}
 
 /** The turn Retry sends again as a new turn: the last thing the user asked, with its picked apps. */
 export function lastUserTurn(turns: Turn[]): Turn | null {

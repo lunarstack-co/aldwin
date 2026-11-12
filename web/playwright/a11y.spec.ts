@@ -198,3 +198,181 @@ test("the remove-app dialog passes axe", async ({ page }) => {
   await expect(page.getByTestId("remove-connector")).toBeVisible();
   await axe(page, "remove app");
 });
+
+test("approvals, grants, every display, stopped run, context ring and JSON panel pass axe", async ({
+  page,
+  host,
+}) => {
+  host.sessions = [session("s_a11y", "Audit")];
+  host.current = host.sessions[0]!;
+  host.conversations.set("s_a11y", { body: { meta: { id: "s_a11y" }, turns: [] } });
+  await openChat(page, "/c/?id=s_a11y");
+  await setDensity(page, "detail");
+
+  await send(page, "audit");
+  host.toolCall({ call_id: "c_cmd", name: "run_command" });
+  host.emitApproval({
+    approval_id: "ap_1",
+    call_id: "c_cmd",
+    tool: "run_command",
+    summary: "Run ls",
+    grantable: true,
+    risky: ["recursive delete"],
+    display: {
+      kind: "terminal",
+      command: "ls -la",
+      cwd: "/ws",
+      stdout: "",
+      stderr: "",
+      exit_code: null,
+      duration_ms: 0,
+      truncated: false,
+    },
+  });
+  await expect(page.getByTestId("approval-card")).toBeVisible();
+  await axe(page, "approval request");
+
+  await page.getByTestId("approval-card").getByRole("button", { name: "Allow", exact: true }).click();
+  await axe(page, "approval running");
+
+  host.emitToolResult({
+    call_id: "c_cmd",
+    ok: true,
+    summary: "exit 0",
+    duration_ms: 12,
+    display: {
+      kind: "terminal",
+      command: "ls -la",
+      cwd: "/ws",
+      stdout: "ok\n",
+      stderr: "",
+      exit_code: 0,
+      duration_ms: 12,
+      truncated: false,
+    },
+  });
+  await expect(page.getByTestId("approval-card")).toContainText("Approved");
+  await axe(page, "approval done");
+
+  host.toolCall({ call_id: "c_grant", name: "read_file" });
+  host.emitApproval({
+    approval_id: "ap_g",
+    call_id: "c_grant",
+    tool: "read_file",
+    summary: "Read files in ~/Documents",
+    grantable: true,
+    display: { kind: "grant", scope: "folder", reach: ["~/Documents"] },
+  });
+  await expect(page.locator('[data-approval-id="ap_g"]')).toBeVisible();
+  await axe(page, "permission grant");
+  await page.locator('[data-approval-id="ap_g"]').getByRole("button", { name: "Deny" }).click();
+  await axe(page, "deny reason form");
+  await page.locator('[data-approval-id="ap_g"]').getByTestId("approval-deny-confirm").click();
+  await expect(page.locator('[data-approval-id="ap_g"]')).toContainText("Denied");
+  await axe(page, "approval denied");
+
+  const displays = [
+    {
+      id: "d_diff",
+      name: "edit_file",
+      display: {
+        kind: "diff" as const,
+        path: "a.py",
+        additions: 1,
+        deletions: 1,
+        lines: [
+          { kind: "removed" as const, text: "x" },
+          { kind: "added" as const, text: "y" },
+        ],
+        truncated: false,
+      },
+    },
+    {
+      id: "d_files",
+      name: "list_dir",
+      display: {
+        kind: "files" as const,
+        root: ".",
+        entries: [{ path: "src", kind: "folder" as const }, { path: "src/a.py", kind: "file" as const }],
+        truncated: false,
+      },
+    },
+    {
+      id: "d_search",
+      name: "web_search",
+      display: {
+        kind: "search" as const,
+        query: "aldwin",
+        results: [{ title: "Aldwin", url: "https://askaldwin.com", snippet: "Local assistant." }],
+      },
+    },
+    {
+      id: "d_page",
+      name: "web_fetch",
+      display: {
+        kind: "page" as const,
+        url: "https://askaldwin.com",
+        title: "Aldwin",
+        site: "askaldwin.com",
+        description: "Local assistant.",
+      },
+    },
+    {
+      id: "d_table",
+      name: "read_document",
+      display: {
+        kind: "table" as const,
+        columns: [{ key: "k", label: "Key" }],
+        rows: [{ k: "val" }],
+        truncated: false,
+      },
+    },
+    {
+      id: "d_mem",
+      name: "remember",
+      display: {
+        kind: "memory" as const,
+        changes: [{ text: "Fact", change: "added" as const }],
+      },
+    },
+    {
+      id: "d_den",
+      name: "run_command",
+      display: {
+        kind: "denied" as const,
+        rule: "blocked_command",
+        message: "Blocked by safety rule.",
+      },
+    },
+  ];
+  for (const item of displays) {
+    host.toolCall({ call_id: item.id, name: item.name });
+    host.emitToolResult({ call_id: item.id, ok: true, summary: "ok", display: item.display });
+  }
+  host.toolCall({ call_id: "d_err", name: "read_file" });
+  host.emitToolResult({ call_id: "d_err", ok: false, summary: "missing", preview: "not found", display: null });
+  host.todo([{ text: "Audit item", status: "in_progress" }]);
+  await host.stream("Partial stopped");
+  host.done({
+    reason: "stopped",
+    usage: { input_tokens: 110_000, output_tokens: 40 },
+    context: {
+      limit: 128_000,
+      used: 110_000,
+      segments: [{ key: "instructions", label: "Instructions", tokens: 110_000 }],
+    },
+  });
+
+  await expect(page.getByTestId("stopped-run")).toBeVisible();
+  await axe(page, "displays, tool failure, todo, stopped run, context ring");
+
+  await page.getByTestId("context-ring").click();
+  await expect(page.getByTestId("context-breakdown")).toBeVisible();
+  await axe(page, "context breakdown");
+  await page.keyboard.press("Escape");
+
+  await page.getByTestId("density-toggle").click();
+  await page.getByTestId("conversation-json-trigger").click();
+  await expect(page.getByTestId("conversation-json-body")).toBeVisible();
+  await axe(page, "conversation json sheet");
+});

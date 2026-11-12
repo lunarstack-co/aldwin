@@ -61,6 +61,7 @@ from aldwin.core.connectors.oauth_messages import needs_sign_in
 from aldwin.core.connectors.picks import build_picked_apps
 from aldwin.core.connectors.policy import tool_call_labels
 from aldwin.core.connectors.state import ConnectorSnapshot
+from aldwin.core.context import ContextHook
 from aldwin.core.home import home_dir
 from aldwin.core.models import (
     classify_model_error,
@@ -117,6 +118,7 @@ from aldwin.host.connectors import (
     ImportReport,
 )
 from aldwin.host.conversation_lock import ConversationLock
+from aldwin.host.display import context_usage, to_display
 from aldwin.host.in_process import WorkspaceSummary
 from aldwin.host.sessions import (
     MAX_PREVIEW_CHARS,
@@ -126,6 +128,7 @@ from aldwin.host.sessions import (
     session_file_fingerprint,
     session_has_turns,
     shorten_one_line,
+    utc_now_iso,
 )
 from aldwin.host.transport import HostTransport
 from aldwin.protocol import (
@@ -157,6 +160,7 @@ from aldwin.protocol import (
     ConnectorsToolPolicyRequest,
     ConnectorsTrustHintsRequest,
     ConnectorToolInfo,
+    ContextUsage,
     DoneEvent,
     DoneReason,
     DroppedApp,
@@ -347,6 +351,7 @@ class RequestScope:
         reason: DoneReason,
         usage: TokenUsage | None = None,
         max_steps: int | None = None,
+        context: ContextUsage | None = None,
     ) -> None:
         """Emit the single terminal `DoneEvent` for this request."""
         if self._terminated:
@@ -361,6 +366,7 @@ class RequestScope:
                 reason=reason,
                 usage=usage,
                 max_steps=max_steps,
+                context=context if self._version >= 2 else None,
             )
         )
 
@@ -484,6 +490,7 @@ class ApprovalBroker:
                         v=door_version,
                         re=re,
                         approval_id=approval_id,
+                        call_id=request.call_id,
                         tool=request.tool,
                         tier=request.tier,
                         summary=request.summary,
@@ -492,6 +499,7 @@ class ApprovalBroker:
                         grant_scope=grant_scope,
                         digest=request.digest,
                         risky=list(request.risky),
+                        display=to_display(request.display, tool=request.tool),
                     )
                     if request.connector is not None:
                         title, remote = (
@@ -754,6 +762,7 @@ class AldwinHost:
         self._turn_stream: list[str] = []
         self._turn_tools: dict[str, str] = {}
         self._skill_catalogue: list[LoadedSkill] = []
+        self._last_context_chars: dict[str, int] | None = None
 
         self._session_context = SessionContext(
             workspace=self._workspace,
@@ -883,6 +892,42 @@ class AldwinHost:
             on_retry=self.on_retry,
             session_context=self._session_context,
             notice_emitter=self._emit_sync_notice,
+            on_context=self._on_context_chars,
+        )
+
+    def _on_context_chars(self, chars: dict[str, int]) -> None:
+        """Record the per-segment prompt character counts from `build_context`."""
+        self._last_context_chars = dict(chars)
+
+    def _resolve_context_window(self) -> int | None:
+        """Return the active model's context window, or `None` when unknown."""
+        direct = getattr(self._agent.model, "context_window", None)
+        if isinstance(direct, int) and direct > 0:
+            return direct
+        provider, _model_id = parse_model_ref_parts(self._model)
+        cached = self._provider_models_cache.get(provider)
+        if cached is not None:
+            _ts, _status, entries = cached
+            for entry in entries:
+                if entry.ref == self._model and isinstance(entry.context_window, int):
+                    if entry.context_window > 0:
+                        return entry.context_window
+        return None
+
+    def _build_turn_context_usage(
+        self,
+        last_step_input: int | None,
+    ) -> ContextUsage | None:
+        """Build `DoneEvent.context` when the window, usage, and chars are known."""
+        if self._negotiated_version < 2:
+            return None
+        limit = self._resolve_context_window()
+        if limit is None or last_step_input is None or self._last_context_chars is None:
+            return None
+        return context_usage(
+            self._last_context_chars,
+            used=last_step_input,
+            limit=limit,
         )
 
     def _emit_sync_notice(self, message: str) -> None:
@@ -974,7 +1019,12 @@ class AldwinHost:
         ctx = getattr(agent, "session_context", None)
         if isinstance(ctx, SessionContext):
             self._session_context = ctx
+            if ctx.policy_session.on_circuit_breaker is None:
+                ctx.policy_session.on_circuit_breaker = self._on_circuit_breaker
             ctx.session_id = self._stored_session.meta.id
+
+        if isinstance(agent.context_manager, ContextHook):
+            agent.context_manager.on_context = self._on_context_chars
 
         retry = getattr(agent, "retry", None)
         if retry is not None and retry.on_retry is None:
@@ -2230,7 +2280,12 @@ class AldwinHost:
         self._active_turn_id = req.id
         self._active_turn_scope = scope
         self._circuit_breaker_tripped = False
+        self._last_context_chars = None
         self._policy_session.reset_turn()
+        # An injected agent may bring its own policy session; keep turn state on both.
+        agent_policy = self._session_context.policy_session
+        if agent_policy is not self._policy_session:
+            agent_policy.reset_turn()
         from aldwin.core.tools.web_search import reset_web_search_turn_budget
 
         reset_web_search_turn_budget()
@@ -2251,6 +2306,8 @@ class AldwinHost:
         final_status: str = "completed"
         final_usage: Usage | None = None
         final_finish_reason: str | None = None
+        action_steps_input_sum = 0
+        last_action_step_input: int | None = None
 
         picked: list[LoadedSkill] = []
         if self._negotiated_version >= 2:
@@ -2297,6 +2354,7 @@ class AldwinHost:
         stored_turn: dict[str, Any] = {
             "text": text,
             "skills": [entry.name for entry in picked],
+            "at": utc_now_iso(),
         }
         if picked_apps:
             stored_turn["apps"] = picked_apps
@@ -2352,6 +2410,12 @@ class AldwinHost:
                                 call.name,
                                 call.arguments,
                             )
+                            if agent_policy is not self._policy_session:
+                                agent_policy.enqueue_step_call(
+                                    call.id,
+                                    call.name,
+                                    call.arguments,
+                                )
                             tool_start_times[call.id] = time.monotonic()
                             if call.name == "todo":
                                 todo_call_items[call.id] = call.arguments.get("items")
@@ -2450,6 +2514,21 @@ class AldwinHost:
                                     await scope.emit(self._todo_event(req.id))
                             else:
                                 todo_call_items.pop(res.tool_call_id, None)
+                            raw_display = self._policy_session.take_display(
+                                res.tool_call_id
+                            )
+                            if (
+                                raw_display is None
+                                and agent_policy is not self._policy_session
+                            ):
+                                raw_display = agent_policy.take_display(
+                                    res.tool_call_id
+                                )
+                            validated_display = (
+                                to_display(raw_display, tool=res.name)
+                                if self._negotiated_version >= 2
+                                else None
+                            )
                             await scope.emit(
                                 ToolResultEvent(
                                     re=req.id,
@@ -2458,13 +2537,20 @@ class AldwinHost:
                                     summary=summary,
                                     preview=preview,
                                     duration_ms=duration_ms,
+                                    display=validated_display,
                                 )
                             )
                         elif isinstance(ev, StepEvent):
+                            step_usage = getattr(ev.step, "usage", None)
+                            if step_usage is not None:
+                                action_steps_input_sum += step_usage.input_tokens
+                                last_action_step_input = step_usage.input_tokens
                             if step_text_chunks:
                                 last_step_streamed = "".join(step_text_chunks)
                             step_text_chunks.clear()
                             self._policy_session.clear_step_calls()
+                            if agent_policy is not self._policy_session:
+                                agent_policy.clear_step_calls()
                             self._persist_session(interrupted=True)
                         elif isinstance(ev, FinalEvent):
                             final_status = ev.status
@@ -2499,6 +2585,8 @@ class AldwinHost:
                         step_text_chunks.clear()
                         self._turn_stream.clear()
                         last_step_streamed = ""
+                        action_steps_input_sum = 0
+                        last_action_step_input = None
                         _, model_id = parse_model_ref_parts(self._model)
                         await scope.emit(
                             NoticeEvent(
@@ -2513,8 +2601,21 @@ class AldwinHost:
                         continue
                     raise
 
+            last_step_input: int | None = None
+            if final_usage is not None:
+                extra_input = final_usage.input_tokens - action_steps_input_sum
+                if extra_input > 0:
+                    last_step_input = extra_input
+                elif last_action_step_input is not None:
+                    last_step_input = last_action_step_input
+                else:
+                    last_step_input = final_usage.input_tokens
+            elif last_action_step_input is not None:
+                last_step_input = last_action_step_input
+
             if final_status == "interrupted":
                 self._flush_partial_text(step_text_chunks)
+                stored_turn["done_at"] = utc_now_iso()
                 self._persist_session(interrupted=False)
                 if self._circuit_breaker_tripped and self._negotiated_version >= 2:
                     await scope.emit(
@@ -2523,12 +2624,17 @@ class AldwinHost:
                             message=CIRCUIT_BREAKER_NOTICE,
                         )
                     )
-                await scope.done("stopped", usage=_to_token_usage(final_usage))
+                await scope.done(
+                    "stopped",
+                    usage=_to_token_usage(final_usage),
+                    context=self._build_turn_context_usage(last_step_input),
+                )
                 return
 
             reason: DoneReason = (
                 "max_steps" if final_status == "max_steps" else "answered"
             )
+            stored_turn["done_at"] = utc_now_iso()
             self._persist_session(interrupted=False)
             # Rebuild after the turn loop (never mid-tool) and emit
             # notice/skills before `done` so the door still receives them.
@@ -2551,12 +2657,14 @@ class AldwinHost:
                 reason,
                 usage=_to_token_usage(final_usage),
                 max_steps=self._agent.max_steps if reason == "max_steps" else None,
+                context=self._build_turn_context_usage(last_step_input),
             )
 
         except asyncio.CancelledError:
             self._approvals.cancel_all()
             self._policy_session.clear_step_calls()
             self._flush_partial_text(step_text_chunks)
+            stored_turn["done_at"] = utc_now_iso()
             self._persist_session(interrupted=False)
             if not scope.terminated:
                 await scope.done("stopped")

@@ -1,10 +1,11 @@
 import { HISTORY_LIMIT } from "@/constants/chat";
-import { lastUserTurn, useChatStore, type PickedApp } from "@/state/chat-store";
+import { lastUserTurn, selectPendingApproval, useChatStore, type PickedApp } from "@/state/chat-store";
 import commonCopy from "@/data/settings/common.json";
 import { useConnectionStore } from "@/state/connection-store";
 import { useSettingsStore } from "@/state/settings-store";
 import {
   PROTOCOL_VERSION,
+  type ApprovalAnswer,
   type Event,
   type OutboundRequest,
   type StatusEvent,
@@ -15,6 +16,8 @@ import { skillsFromText } from "@/utils/skills";
 
 import { createConnection, type ConnectionDeps } from "./connection";
 import { requestId } from "./index";
+
+export const MAX_APPROVAL_REASON_CHARS = 280;
 
 type Reply = (event: Event) => void;
 
@@ -33,6 +36,7 @@ export type ChatSession = {
   start: () => void;
   dispose: () => void;
   sendTurn: (text: string, apps?: PickedApp[]) => void;
+  approve: (answer: ApprovalAnswer, reason?: string) => void;
   stop: () => void;
   retry: () => void;
   /** Starts a new chat, or keeps the empty one; `onSettled` hears whether the host agreed. */
@@ -58,7 +62,7 @@ export type ChatSession = {
 /**
  * The chat over the socket: hello, then history; after a drop, status and
  * history to catch up. Turn events go to the active turn in the store, and
- * approvals are shown as waiting, since the web cannot answer them yet.
+ * approvals stay cached across reconnects within the host's grace window.
  */
 export function createChatSession(
   deps?: ConnectionDeps,
@@ -113,8 +117,12 @@ export function createChatSession(
   }
 
   function adopt(status: StatusEvent) {
+    const hasPendingApproval = selectPendingApproval(chat()) !== null;
     const running =
-      status.turn_streamed_chunks > 0 || status.active_tool !== null || status.partial_text !== null;
+      hasPendingApproval ||
+      status.turn_streamed_chunks > 0 ||
+      status.active_tool !== null ||
+      status.partial_text !== null;
     if (!running) return;
     chat().adoptRunningTurn(status.partial_text, status.active_tool, now(), status.message);
     expectedRe = null;
@@ -163,7 +171,6 @@ export function createChatSession(
         return true;
       case "connector.status":
         settings().applyConnectorStatus(event);
-        // A connector that just connected has new tools; the list carries them.
         if (event.status === "connected" && settings().connectors.status === "ready") refreshConnectors();
         return true;
       default:
@@ -188,7 +195,6 @@ export function createChatSession(
     });
   }
 
-  // Asks for a list again without a loading state, so what is on screen stays until the new list lands.
   function refreshModels(probe = false) {
     void request({ type: "models.list", ...(probe ? { refresh: true } : {}) });
   }
@@ -197,7 +203,6 @@ export function createChatSession(
     void request({ type: "search.list" });
   }
 
-  // Settings lists already on screen may be out of date after a drop; they are asked again without a loading state.
   function refreshSettings() {
     const { models, search, connectors } = settings();
     if (models.status === "ready") refreshModels();
@@ -215,11 +220,6 @@ export function createChatSession(
     });
   }
 
-  /**
-   * The reply to an open or a new chat. The host owns the decision: it says
-   * `busy` while a turn runs and `not_found` for a conversation deleted
-   * elsewhere, and either way this tab keeps what it is showing.
-   */
   function switchReply(onDone: () => void, onSettled?: (opened: boolean) => void): Reply {
     return (event) => {
       if (event.kind === "done") {
@@ -244,7 +244,6 @@ export function createChatSession(
       return;
     }
     const store = chat();
-    // These belong to the conversation, not to one turn, so they land between turns too.
     if (event.kind === "notice") {
       store.pushToast(event.message);
       return;
@@ -253,7 +252,6 @@ export function createChatSession(
       store.setTodos(todosOf(event));
       return;
     }
-    // The host sends a fresh catalogue after a skill is created.
     if (event.kind === "skills") {
       store.setSkills(event.items);
       return;
@@ -271,10 +269,10 @@ export function createChatSession(
     if (expectedRe !== null && event.re !== expectedRe) return;
     switch (event.kind) {
       case "text":
-        store.appendText(event.delta);
+        store.appendText(event.delta, now());
         break;
       case "approval":
-        store.setWaitingApproval(event.summary);
+        store.setApproval(event);
         break;
       case "tool_call":
         store.addToolCall(event);
@@ -286,14 +284,16 @@ export function createChatSession(
         store.setTurnStatus(event.message, event.active_tool);
         break;
       case "done":
-        store.finishTurn(event.reason, now(), { usage: event.usage, maxSteps: event.max_steps });
+        store.finishTurn(event.reason, now(), {
+          usage: event.usage,
+          maxSteps: event.max_steps,
+          context: event.context,
+        });
         expectedRe = null;
-        // The first turn gives the conversation its title.
         refreshSessions();
         break;
       case "error":
         if (event.code === "busy" && store.activeId === event.re) {
-          // The host is still running an earlier turn this page did not know about: follow that one instead.
           store.refuseTurn(event.re);
           store.pushToast(event.message);
           store.adoptRunningTurn(null, null, now());
@@ -309,6 +309,27 @@ export function createChatSession(
     }
   }
 
+  /** Sends an answer for the active turn's pending approval; never retries on host error. */
+  function approve(answer: ApprovalAnswer, reason?: string) {
+    const waiting = selectPendingApproval(chat());
+    if (!waiting) return;
+    const { approval_id, digest } = waiting.event;
+    const trimmed = answer === "no" && reason ? reason.trim().slice(0, MAX_APPROVAL_REASON_CHARS) : "";
+    chat().answerApproval(answer, trimmed || null);
+    void request({
+      type: "approve",
+      approval_id,
+      answer,
+      ...(digest ? { digest } : {}),
+      ...(trimmed ? { reason: trimmed } : {}),
+    }).then((outcome) => {
+      if (!outcome.ok && outcome.code !== "dropped") {
+        chat().pushToast(outcome.message);
+        chat().clearApproval(approval_id);
+      }
+    });
+  }
+
   /** Sends a message; with no `apps` given it takes the ones picked in the composer. */
   function sendTurn(text: string, apps?: PickedApp[]) {
     const cleaned = text.trim();
@@ -317,7 +338,6 @@ export function createChatSession(
     const id = requestId("turn");
     expectedRe = id;
     chat().startTurn(id, cleaned, now(), picked);
-    // Send, Retry and pasted text all name their skills the same way: as `@name` in the text.
     connection.send({
       type: "turn",
       id,
@@ -331,6 +351,7 @@ export function createChatSession(
     start: connection.start,
     dispose: connection.dispose,
     sendTurn,
+    approve,
     stop: () => {
       chat().markStopping();
       connection.send({ type: "stop", id: requestId("stop") });

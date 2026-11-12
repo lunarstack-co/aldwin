@@ -1,11 +1,20 @@
 import { defaultSchema, type Options as SanitizeSchema } from "rehype-sanitize";
 
 /**
- * The sanitiser's default schema: no script, style, iframe or event handlers,
- * and only http, https, mailto and a few chat protocols in links. Raw HTML in
- * the markdown is dropped before it gets here.
+ * The sanitiser's default schema, plus `language-math` / `math-inline` /
+ * `math-display` classes on `code` so `remark-math` spans survive sanitisation
+ * before `rehype-katex` renders them. Raw HTML in markdown is dropped first.
  */
-export const sanitizeSchema: SanitizeSchema = defaultSchema;
+export const sanitizeSchema: SanitizeSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    code: [
+      ...(defaultSchema.attributes?.code ?? []),
+      ["className", "language-math", "math-inline", "math-display"],
+    ],
+  },
+};
 
 export const LINK_REL = "noopener noreferrer";
 

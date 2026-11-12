@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import difflib
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -10,8 +11,9 @@ from typing import Any
 
 from agentling import Tool
 
-from aldwin.core.persona import DEFAULT_PERSONA_CAP, write_persona
+from aldwin.core.persona import DEFAULT_PERSONA_CAP, read_persona, write_persona
 from aldwin.core.tools import ToolOutput
+from aldwin.core.tools import display as core_display
 
 AskFn = Callable[[str, str], Awaitable[bool]]
 
@@ -73,10 +75,21 @@ class SetPersonaTool(Tool):
         from aldwin.core.policy import ApprovalPreview
 
         cleaned, _err = self._validate_new_text(new_text)
+        proposed = cleaned if cleaned is not None else new_text
+        current = read_persona(self._home, cap=self._cap)
+        unified = "".join(
+            difflib.unified_diff(
+                current.splitlines(keepends=True),
+                proposed.splitlines(keepends=True),
+                fromfile="a/persona.md",
+                tofile="b/persona.md",
+            )
+        )
         return ApprovalPreview(
             summary="Update persona?",
-            detail=cleaned if cleaned is not None else new_text,
+            detail=proposed,
             mtime_ns=None,
+            display=core_display.diff(path="persona.md", unified=unified),
         )
 
     async def forward(self, new_text: str) -> str:  # type: ignore[override]

@@ -1,5 +1,0 @@
-{
-  "title": "Aldwin is waiting for your OK",
-  "body": "It wants to: {summary}. Approving actions isn't available in the web app yet, so this answer can't go on here. Stop it, or use Aldwin in the terminal for steps that need your OK.",
-  "stop": "Stop"
-}

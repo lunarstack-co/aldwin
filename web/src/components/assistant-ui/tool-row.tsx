@@ -2,14 +2,26 @@
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { CheckIcon, ChevronDownIcon, LoaderIcon, XCircleIcon } from "lucide-react";
+import dynamic from "next/dynamic";
 
+import { DisplayRenderer } from "@/components/assistant-ui/displays";
 import { CollapsibleContent, CollapsibleTrigger } from "@/components/assistant-ui/elements/collapsible-root";
 import { ToolFallbackRoot } from "@/components/assistant-ui/elements/tool-fallback.aui";
 import { Badge } from "@/components/ui/badge";
 import copy from "@/data/chat/tool-card.json";
+import { useDensity } from "@/hooks/use-density";
 import { cn } from "@/utils/cn";
 import type { ToolResult, ToolSource } from "@/utils/thread-messages";
 import { formatDuration } from "@/utils/time";
+
+const ApprovalCardLazy = dynamic(
+  () => import("./approval-card").then((m) => m.ApprovalCardImpl),
+  { ssr: false },
+);
+const ToolErrorLazy = dynamic(
+  () => import("./elements/tool-error").then((m) => m.ToolError),
+  { ssr: false },
+);
 
 function isToolResult(value: unknown): value is ToolResult {
   return typeof value === "object" && value !== null && "summary" in value;
@@ -36,17 +48,37 @@ function Detail({ label, children, mono = true }: { label: string; children: str
   );
 }
 
-/** One tool call: what ran, where it came from, how it went, and the details on request. */
+/** One tool call: inline approval, rich display or tool failure when present, plain disclosure otherwise. */
 export const ToolRow: ToolCallMessagePartComponent = ({ toolName, argsText, result, isError, artifact }) => {
+  const [density] = useDensity();
   const detail = isToolResult(result) ? result : null;
   const source = isToolSource(artifact) ? artifact : null;
   const state = result === undefined ? "running" : isError ? "failed" : "ok";
+
+  if (density === "detail" && source?.approval) {
+    return (
+      <div data-testid="tool-card" data-state={state} className="min-w-0 py-1">
+        <ApprovalCardLazy approval={source.approval} resultDisplay={detail?.display} />
+      </div>
+    );
+  }
+
+  const hasDisplay = Boolean(detail?.display && detail.display.kind !== "grant");
+  const showToolFailure = state === "failed" && !hasDisplay;
+  const richContent = hasDisplay || showToolFailure;
+
   const Icon = state === "running" ? LoaderIcon : state === "failed" ? XCircleIcon : CheckIcon;
   const label = state === "running" ? copy.running : state === "failed" ? copy.failed : copy.ok;
-  const hasDetail = Boolean(argsText || detail?.summary || detail?.preview || source?.reason);
+  const hasDetail = richContent || Boolean(argsText || detail?.summary || detail?.preview || source?.reason);
 
   return (
-    <ToolFallbackRoot data-testid="tool-card" data-state={state} className="min-w-0">
+    <ToolFallbackRoot
+      key={richContent ? "rich" : "plain"}
+      defaultOpen={richContent}
+      data-testid="tool-card"
+      data-state={state}
+      className="min-w-0"
+    >
       <CollapsibleTrigger
         disabled={!hasDetail}
         className="group/trigger text-muted-foreground hover:text-foreground enabled:cursor-pointer flex w-full min-w-0 items-center gap-2 py-1.5 text-start text-sm transition-colors max-md:min-h-10"
@@ -82,20 +114,35 @@ export const ToolRow: ToolCallMessagePartComponent = ({ toolName, argsText, resu
         ) : null}
       </CollapsibleTrigger>
       <CollapsibleContent className="overflow-hidden">
-        <dl className="flex flex-col gap-2 pb-2 ps-6">
-          {source?.reason ? (
-            <Detail label={copy.reason} mono={false}>
-              {source.reason}
-            </Detail>
-          ) : null}
-          {argsText ? <Detail label={copy.arguments}>{argsText}</Detail> : null}
-          {detail?.summary ? (
-            <Detail label={copy.result} mono={false}>
-              {detail.summary}
-            </Detail>
-          ) : null}
-          {detail?.preview ? <Detail label={copy.preview}>{detail.preview}</Detail> : null}
-        </dl>
+        {hasDisplay && detail?.display ? (
+          <div className="pb-2 ps-6">
+            <DisplayRenderer display={detail.display} />
+          </div>
+        ) : showToolFailure ? (
+          <div className="pb-2 ps-6" data-testid="tool-failure">
+            <ToolErrorLazy
+              name={toolName}
+              target={detail?.summary ?? ""}
+              message={detail?.preview || detail?.summary || ""}
+              className="max-w-full"
+            />
+          </div>
+        ) : (
+          <dl className="flex flex-col gap-2 pb-2 ps-6">
+            {source?.reason ? (
+              <Detail label={copy.reason} mono={false}>
+                {source.reason}
+              </Detail>
+            ) : null}
+            {argsText ? <Detail label={copy.arguments}>{argsText}</Detail> : null}
+            {detail?.summary ? (
+              <Detail label={copy.result} mono={false}>
+                {detail.summary}
+              </Detail>
+            ) : null}
+            {detail?.preview ? <Detail label={copy.preview}>{detail.preview}</Detail> : null}
+          </dl>
+        )}
       </CollapsibleContent>
     </ToolFallbackRoot>
   );

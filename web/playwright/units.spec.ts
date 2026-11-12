@@ -3,17 +3,19 @@ import { expect, test } from "@playwright/test";
 
 import { RECONNECT } from "../src/constants/chat";
 import { conversationHref, settingsHref } from "../src/constants/routes";
-import { lastUserText, useChatStore } from "../src/state/chat-store";
+import { joinParagraph, lastUserText, useChatStore } from "../src/state/chat-store";
 import { isConversationId } from "../src/utils/conversation-id";
 import { readDensity, isDensity } from "../src/utils/density";
 import { displayTitle, filterSessions, groupSessions, shouldCallSessionsNew } from "../src/utils/history";
 import { allowsProtocol, allowsTag } from "../src/utils/markdown";
 import { pageTitle } from "../src/utils/page-title";
 import { markFor } from "../src/components/brand/brand-mark";
+import { codeLanguages, resolveCodeLanguage } from "../src/components/assistant-ui/elements/shiki-bundle";
 import { changedLimits, sectionOf } from "../src/utils/settings";
 import { searchSkills, skillFormatter, skillsFromText, visibleSkills } from "../src/utils/skills";
 import { turnsToMessages } from "../src/utils/thread-messages";
 import { formatDuration } from "../src/utils/time";
+import { planCarriesOver, planVisibility } from "../src/utils/todos";
 import { outcomeOfClose, retryDelay, socketUrl } from "../src/utils/ws";
 import { createConnection, type SocketLike } from "../src/utils/ws/connection";
 import { ApiError } from "../src/utils/api";
@@ -262,4 +264,165 @@ test("only connected apps that are on and have tools can be picked", async () =>
   ]);
   expect(searchApps(apps, "git").map((a) => a.name)).toEqual(["github"]);
   expect(searchApps(apps, "").length).toBe(2);
+});
+
+test("approval store transitions request -> running -> done and clears on turn end", () => {
+  const store = useChatStore.getState();
+  store.clearTranscript();
+  store.startTurn("t_app", "run ls", 1000);
+  store.addToolCall({
+    v: 2,
+    type: "event",
+    re: "t_app",
+    channel: "web",
+    sender: "host",
+    kind: "tool_call",
+    call_id: "c1",
+    name: "run_command",
+    args_preview: "ls",
+    summary: "",
+  });
+  store.setApproval({
+    v: 2,
+    type: "event",
+    re: "t_app",
+    channel: "web",
+    sender: "host",
+    kind: "approval",
+    approval_id: "ap_1",
+    call_id: "c1",
+    tool: "run_command",
+    tier: "ask",
+    summary: "Run ls",
+    digest: "sha256:abc",
+  });
+  expect(useChatStore.getState().turns[0].approval?.state).toBe("request");
+
+  store.answerApproval("yes");
+  expect(useChatStore.getState().turns[0].approval?.state).toBe("running");
+
+  store.addToolResult({
+    v: 2,
+    type: "event",
+    re: "t_app",
+    channel: "web",
+    sender: "host",
+    kind: "tool_result",
+    call_id: "c1",
+    ok: true,
+    summary: "exit 0",
+    preview: "",
+    duration_ms: 10,
+  });
+  expect(useChatStore.getState().turns[0].approval?.state).toBe("done");
+
+  store.finishTurn("answered", 2000);
+  expect(useChatStore.getState().turns[0].approval).toBeNull();
+  expect(useChatStore.getState().turns[0].approvalsByCallId.c1?.state).toBe("done");
+});
+
+test("approval arriving before its tool_call attaches once the row arrives", () => {
+  const store = useChatStore.getState();
+  store.clearTranscript();
+  store.startTurn("t_pre", "edit", 1000);
+  store.setApproval({
+    v: 2,
+    type: "event",
+    re: "t_pre",
+    channel: "web",
+    sender: "host",
+    kind: "approval",
+    approval_id: "ap_pre",
+    call_id: "c1",
+    tool: "edit_file",
+    tier: "diff",
+    summary: "Edit notes.md",
+    digest: "sha256:pre",
+  });
+  store.addToolCall({
+    v: 2,
+    type: "event",
+    re: "t_pre",
+    channel: "web",
+    sender: "host",
+    kind: "tool_call",
+    call_id: "c1",
+    name: "edit_file",
+    args_preview: "notes.md",
+    summary: "",
+  });
+
+  const [, assistant] = turnsToMessages(useChatStore.getState().turns);
+  const parts = assistant.content as unknown as { artifact?: { approval?: { event: { approval_id: string } } } }[];
+  expect(parts[0].artifact?.approval?.event.approval_id).toBe("ap_pre");
+});
+
+test("todo status mapping, context threshold, day labels and message timing", async () => {
+  const { mapTodoStatus } = await import("../src/utils/todos");
+  const { contextTone } = await import("../src/utils/context");
+  const { computeMessageTiming, formatDayLabel } = await import("../src/utils/time");
+
+  expect(mapTodoStatus("pending")).toBe("pending");
+  expect(mapTodoStatus("in_progress")).toBe("active");
+  expect(mapTodoStatus("done")).toBe("done");
+  expect(mapTodoStatus("dropped")).toBe("cancelled");
+
+  expect(contextTone(108_800, 128_000)).toBe("normal");
+  expect(contextTone(108_801, 128_000)).toBe("amber");
+
+  const now = new Date("2026-11-12T12:00:00Z");
+  expect(formatDayLabel("2026-11-12T09:00:00Z", { now, locale: "en-GB" })).toBe("Today");
+  expect(formatDayLabel("2026-11-11T09:00:00Z", { now, locale: "en-GB" })).toBe("Yesterday");
+  expect(formatDayLabel("2026-11-09T09:00:00Z", { now, locale: "en-GB" })).toBe("9 Nov 2026");
+
+  const timing = computeMessageTiming(1000, 1800, 5800, 200);
+  expect(timing?.firstTokenSeconds).toBe("0.8 s");
+  expect(timing?.tokensPerSecond).toBe("50 tok/s");
+});
+
+test("code fences resolve to a bundled grammar or plain text", () => {
+  expect(resolveCodeLanguage("python")).toBe("python");
+  expect(resolveCodeLanguage(" PY ")).toBe("python");
+  expect(resolveCodeLanguage("bash")).toBe("shellscript");
+  expect(resolveCodeLanguage("yml")).toBe("yaml");
+  expect(resolveCodeLanguage("golang")).toBe("go");
+  expect(resolveCodeLanguage("cobol")).toBe("text");
+  expect(resolveCodeLanguage("")).toBe("text");
+  expect(resolveCodeLanguage("constructor")).toBe("text");
+  expect(Object.keys(codeLanguages)).toHaveLength(36);
+});
+
+test("text after a tool call starts a new paragraph", () => {
+  expect(joinParagraph("I'll search first.", "The latest release")).toBe("I'll search first.\n\nThe latest release");
+  expect(joinParagraph("Done.\n", " Next")).toBe("Done.\n\nNext");
+  expect(joinParagraph("", "First words")).toBe("First words");
+  const store = useChatStore.getState();
+  store.clearTranscript();
+  store.startTurn("t1", "q", 1);
+  store.appendText("I'll search, then check the source.", 2);
+  store.addToolCall({ v: 2, type: "event", re: "t1", kind: "tool_call", call_id: "c1", name: "web_search", args_preview: "", summary: "" } as never);
+  store.appendText("The latest", 3);
+  store.appendText(" release", 4);
+  expect(useChatStore.getState().turns.at(-1)?.answer).toBe("I'll search, then check the source.\n\nThe latest release");
+});
+
+test("the plan shows for this turn's work or a carried-over answer, never for stopped or older work", () => {
+  const open = [{ status: "done" as const }, { status: "pending" as const }];
+  const finished = [{ status: "done" as const }, { status: "dropped" as const }];
+  expect(planVisibility([], true, true, true)).toBe("hidden");
+  expect(planVisibility(finished, true, true, false)).toBe("shown");
+  expect(planVisibility(finished, true, false, true)).toBe("hidden");
+  expect(planVisibility(open, true, false, true)).toBe("shown");
+  expect(planVisibility(open, true, false, false)).toBe("hidden");
+  expect(planVisibility(open, false, false, true)).toBe("shown");
+  expect(planVisibility(open, false, false, false)).toBe("hidden");
+
+  const answered = { id: "t1", status: "answered" };
+  const stopped = { id: "t1", status: "stopped" };
+  expect(planCarriesOver("t1", answered)).toBe(true);
+  expect(planCarriesOver("t1", stopped)).toBe(false);
+  expect(planCarriesOver("t0", answered)).toBe(false);
+  expect(planCarriesOver(null, answered)).toBe(true);
+  expect(planCarriesOver(null, undefined)).toBe(true);
+  expect(planCarriesOver(null, stopped)).toBe(false);
 });

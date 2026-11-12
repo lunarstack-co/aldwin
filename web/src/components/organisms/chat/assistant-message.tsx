@@ -2,10 +2,13 @@
 
 import { ActionBarPrimitive, AuiIf, MessagePrimitive, useAuiState } from "@assistant-ui/react";
 import { CheckIcon, CopyIcon, RotateCcwIcon } from "lucide-react";
+import dynamic from "next/dynamic";
+import { useEffect } from "react";
 
+import { preloadDisplays } from "@/components/assistant-ui/displays";
 import { MarkdownText } from "@/components/assistant-ui/elements/markdown-text";
 import { ToolRow } from "@/components/assistant-ui/tool-row";
-import { ThinkingIndicator, TurnFooter, TurnOutcome } from "@/components/assistant-ui/turn";
+import { ThinkingIndicator, TurnFooter, TurnOutcome, useMessageTurn } from "@/components/assistant-ui/turn";
 import { DetailToolGroup, WorkChip } from "@/components/assistant-ui/work";
 import { Mark } from "@/components/brand/mark";
 import { Button } from "@/components/ui/button";
@@ -13,6 +16,14 @@ import actions from "@/data/chat/message-actions.json";
 import copy from "@/data/chat/transcript.json";
 import { useDensity } from "@/hooks/use-density";
 import { cn } from "@/utils/cn";
+import { unattachedTurnApproval } from "@/utils/thread-messages";
+import { formatClockTime } from "@/utils/time";
+
+const ApprovalCardLazy = dynamic(
+  () =>
+    import("@/components/assistant-ui/approval-card").then((m) => m.ApprovalCardImpl),
+  { ssr: false },
+);
 
 // The runtime's own placeholder for a running message with no words yet is a lone dot; the thinking line covers that wait.
 const Nothing = () => null;
@@ -64,8 +75,34 @@ function Actions() {
 /** The answer to one question: the work behind it, the text, how it ended, and what to do next. */
 export function AssistantMessage() {
   const [density] = useDensity();
+  const turn = useMessageTurn();
   const status = useAuiState((s) => s.message.status?.type ?? "complete");
   const hasText = useAuiState((s) => s.message.parts.some((p) => p.type === "text" && p.text !== ""));
+  const hasAnswer = !turn?.discarded && (hasText || Boolean(turn?.answer));
+  const clockTime = formatClockTime(turn?.assistantAt);
+
+  const hasWork = Boolean(turn && (turn.tools.length > 0 || turn.approval));
+  useEffect(() => {
+    if (!hasWork) return;
+    preloadDisplays();
+    void import("@/components/assistant-ui/approval-card");
+  }, [hasWork]);
+
+  const unattached = turn ? unattachedTurnApproval(turn) : null;
+  // In clean density a card stands in for the folded work only while the turn runs; afterwards the chip holds it.
+  const cleanApprovals =
+    density === "clean" && turn && status === "running"
+      ? [
+          ...turn.tools
+            .map((row) => ({
+              approval: turn.approvalsByCallId[row.callId],
+              resultDisplay: row.display,
+            }))
+            .filter((item): item is { approval: NonNullable<typeof item.approval>; resultDisplay: typeof item.resultDisplay } => Boolean(item.approval)),
+          ...(unattached ? [{ approval: unattached, resultDisplay: null }] : []),
+        ]
+      : [];
+
   return (
     <MessagePrimitive.Root
       className="group/turn flex gap-3"
@@ -80,10 +117,33 @@ export function AssistantMessage() {
         ) : (
           <MessagePrimitive.Parts components={cleanParts} />
         )}
+        {density === "clean"
+          ? cleanApprovals.map(({ approval, resultDisplay }) => (
+              <ApprovalCardLazy
+                key={approval.event.approval_id}
+                approval={approval}
+                resultDisplay={resultDisplay}
+              />
+            ))
+          : unattached ? (
+              <ApprovalCardLazy approval={unattached} />
+            ) : null}
         <ThinkingIndicator />
         <TurnOutcome />
         <TurnFooter />
-        {status !== "running" && hasText ? <Actions /> : null}
+        <div className="flex items-center gap-2 empty:hidden">
+          {status !== "running" && hasAnswer ? <Actions /> : null}
+          {status !== "running" && clockTime && turn?.assistantAt && !turn.discarded ? (
+            <time
+              dateTime={turn.assistantAt}
+              tabIndex={0}
+              data-testid="message-time"
+              className="text-muted-foreground ms-auto shrink-0 font-mono text-xs tabular-nums opacity-0 transition-opacity outline-none group-hover/turn:opacity-100 group-focus-within/turn:opacity-100 focus:opacity-100"
+            >
+              {clockTime}
+            </time>
+          ) : null}
+        </div>
       </div>
     </MessagePrimitive.Root>
   );

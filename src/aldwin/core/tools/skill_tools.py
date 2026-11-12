@@ -24,6 +24,7 @@ from aldwin.core.skills import (
     default_skill_text,
 )
 from aldwin.core.tools import ToolOutput
+from aldwin.core.tools import display as core_display
 
 NAME_RE: Final[re.Pattern[str]] = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 TOOLS_LINE_RE: Final[re.Pattern[str]] = re.compile(r"^\s*tools\s*:", re.MULTILINE)
@@ -192,7 +193,7 @@ class CreateSkillTool(Tool):
         name: str,
         description: str,
         instructions: str,
-    ) -> tuple[Path, str, str, str, int | None, str]:
+    ) -> tuple[Path, str, str, str, int | None, str, str]:
         """Return target, file text, summary, detail, mtime_ns, kind."""
         name, description, instructions = validate_create_skill_args(
             name, description, instructions
@@ -207,12 +208,13 @@ class CreateSkillTool(Tool):
         if existing_user:
             mtime_ns = target.stat().st_mtime_ns
             old_text = target.read_text(encoding="utf-8")
-            detail = _unified_diff(
+            diff_str = _unified_diff(
                 old_text,
                 new_text,
                 fromfile=f"a/{name}/{SKILL_FILENAME}",
                 tofile=f"b/{name}/{SKILL_FILENAME}",
             )
+            detail = diff_str
             added, removed = _count_diff_stats(detail)
             summary = f"Update skill {name} (+{added} −{removed})"
             kind = "updated"
@@ -220,26 +222,32 @@ class CreateSkillTool(Tool):
             packaged = default_skill_text(
                 name, version=self._version, model=self._model
             )
-            diff = _unified_diff(
+            diff_str = _unified_diff(
                 packaged,
                 new_text,
                 fromfile=f"a/default/{name}/{SKILL_FILENAME}",
                 tofile=f"b/{name}/{SKILL_FILENAME}",
             )
-            added, removed = _count_diff_stats(diff)
+            added, removed = _count_diff_stats(diff_str)
             summary = f"Replace default skill {name} (+{added} −{removed})"
             detail = (
                 f'This replaces the default "{name}" skill. '
                 f"Delete ~/.aldwin/skills/{name}/ to restore it.\n"
-                f"{diff}"
+                f"{diff_str}"
             )
             kind = "replaces default"
         else:
             summary = f"New skill {name} ({line_count} lines)"
             detail = new_text
+            diff_str = _unified_diff(
+                "",
+                new_text,
+                fromfile="/dev/null",
+                tofile=f"b/{name}/{SKILL_FILENAME}",
+            )
             kind = "new"
 
-        return target, new_text, summary, detail, mtime_ns, kind
+        return target, new_text, summary, detail, mtime_ns, kind, diff_str
 
     def prepare_approval(
         self,
@@ -248,13 +256,18 @@ class CreateSkillTool(Tool):
         instructions: str,
     ) -> ApprovalPreview:
         """Validate and build Diff preview; never writes."""
-        _target, _text, summary, detail, mtime_ns, _kind = self._prepare_state(
-            name, description, instructions
+        _target, _text, summary, detail, mtime_ns, _kind, diff_str = (
+            self._prepare_state(name, description, instructions)
         )
+        clean_name = name.strip()
         return ApprovalPreview(
             summary=summary,
             detail=detail,
             mtime_ns=mtime_ns,
+            display=core_display.diff(
+                path=f"skills/{clean_name}/{SKILL_FILENAME}",
+                unified=diff_str,
+            ),
         )
 
     async def forward(  # type: ignore[override]
@@ -264,7 +277,7 @@ class CreateSkillTool(Tool):
         instructions: str,
     ) -> ToolOutput:
         started = time.monotonic()
-        target, text, _summary, _detail, _mtime, kind = self._prepare_state(
+        target, text, _summary, _detail, _mtime, kind, _diff_str = self._prepare_state(
             name, description, instructions
         )
         try:
