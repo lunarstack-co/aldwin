@@ -15,6 +15,7 @@ from agentling.tools import ToolCallError
 
 from aldwin.core.policy import ApprovalPreview, PolicySession
 from aldwin.core.tools import ToolOutput
+from aldwin.core.tools import display as core_display
 from aldwin.core.workspace import Workspace, WorkspaceError, format_outside_display
 
 MAX_WRITE_BYTES: Final[int] = 1_048_576
@@ -393,6 +394,7 @@ class EditFileTool(Tool):
             summary=summary,
             detail=state.diff,
             mtime_ns=state.mtime_ns,
+            display=core_display.diff(path=state.display, unified=state.diff),
         )
 
     async def forward(  # type: ignore[override]
@@ -418,7 +420,13 @@ class EditFileTool(Tool):
         clause = _plus_minus_clause(state.added, state.removed)
         text = f"edited {state.display} {clause}"
         summary = f"Edit {state.display} · +{state.added} {_MINUS}{state.removed}"
-        return ToolOutput(text, summary=summary, ok=True, duration_ms=elapsed_ms)
+        return ToolOutput(
+            text,
+            summary=summary,
+            ok=True,
+            duration_ms=elapsed_ms,
+            display=core_display.diff(path=state.display, unified=state.diff),
+        )
 
 
 class WriteFileTool(Tool):
@@ -530,6 +538,7 @@ class WriteFileTool(Tool):
             summary=state.summary,
             detail=state.diff,
             mtime_ns=state.mtime_ns,
+            display=core_display.diff(path=state.display, unified=state.diff),
         )
 
     async def forward(  # type: ignore[override]
@@ -559,7 +568,13 @@ class WriteFileTool(Tool):
             clause = _plus_minus_clause(state.added, state.removed)
             text = f"wrote {state.display} {clause}"
             summary = f"Write {state.display} · +{state.added} {_MINUS}{state.removed}"
-        return ToolOutput(text, summary=summary, ok=True, duration_ms=elapsed_ms)
+        return ToolOutput(
+            text,
+            summary=summary,
+            ok=True,
+            duration_ms=elapsed_ms,
+            display=core_display.diff(path=state.display, unified=state.diff),
+        )
 
 
 def build_edit_tools(

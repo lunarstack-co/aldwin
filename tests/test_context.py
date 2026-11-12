@@ -318,3 +318,43 @@ def test_context_window_trimming_notice(aldwin_home: Path) -> None:
     # Subsequent call does not emit duplicate notice
     _ = ctx(messages)
     assert len(notices) == 1
+
+
+def test_on_context_reports_all_seven_keys_and_matches_assembled_lengths(
+    aldwin_home: Path,
+) -> None:
+    """`on_context` reports all 7 keys summing to assembled message lengths."""
+    from aldwin.core.home import read_base_instructions
+
+    ensure_home(aldwin_home)
+    reported: list[dict[str, int]] = []
+    base_file = read_base_instructions().rstrip()
+    skill_catalog_tail = "\n\n<available_skills>\n- files\n</available_skills>"
+
+    ctx = build_context(
+        aldwin_home,
+        LimitsConfig(),
+        connectors_block=lambda: "<connectors>\nlinear\n</connectors>",
+        on_context=reported.append,
+    )
+    messages = [
+        ChatMessage(role="system", content=base_file + skill_catalog_tail),
+        ChatMessage(role="user", content="Hello Aldwin"),
+        ChatMessage(role="assistant", content="Hello there!"),
+    ]
+    assembled = ctx(messages)
+
+    assert len(reported) == 1
+    counts = reported[0]
+    assert set(counts.keys()) == {
+        "instructions",
+        "skills",
+        "persona",
+        "memory",
+        "environment",
+        "connectors",
+        "conversation",
+    }
+    assert counts["instructions"] == len(base_file)
+    assert counts["skills"] == len(skill_catalog_tail)
+    assert sum(counts.values()) == sum(len(m.content or "") for m in assembled)

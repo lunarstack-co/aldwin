@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Final
 from agentling import Tool
 
 from aldwin.core.tools import AskFn, ToolOutput
+from aldwin.core.tools import display as core_display
 
 if TYPE_CHECKING:
     from aldwin.core.policy import ApprovalPreview
@@ -487,6 +488,7 @@ class RunCommandTool(Tool):
             summary=summary,
             detail=detail,
             mtime_ns=None,
+            display=core_display.terminal(command=command, cwd=str(work_dir)),
         )
 
     async def forward(  # type: ignore[override]
@@ -563,7 +565,9 @@ class RunCommandTool(Tool):
 
         elapsed_ms = max(0, int((time.monotonic() - exec_started) * 1000))
         exit_code = proc.returncode if proc.returncode is not None else -1
-        decoded = stdout_bytes.decode("utf-8", errors="replace").rstrip("\n")
+        # stderr is merged into stdout so errors stay next to the lines they follow.
+        raw_output = stdout_bytes.decode("utf-8", errors="replace")
+        decoded = raw_output.rstrip("\n")
         shown = decoded if self._wrapped_by_policy else truncate_command_output(decoded)
         full_output = f"exit {exit_code}\n{shown}" if shown else f"exit {exit_code}"
         return ToolOutput(
@@ -571,6 +575,13 @@ class RunCommandTool(Tool):
             summary=f"exit {exit_code}",
             ok=(exit_code == 0),
             duration_ms=elapsed_ms,
+            display=core_display.terminal(
+                command=command,
+                cwd=str(work_dir),
+                stdout=raw_output,
+                exit_code=exit_code,
+                duration_ms=elapsed_ms,
+            ),
         )
 
 

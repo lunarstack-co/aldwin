@@ -896,3 +896,192 @@ def test_apps_used_round_trips_and_old_turns_have_no_apps() -> None:
     old = parse_request('{"v": 2, "type": "turn", "id": "req_1", "text": "hi"}')
     assert isinstance(old, TurnRequest)
     assert old.apps == []
+
+
+def _display_models() -> list[Any]:
+    from aldwin.protocol import (
+        DeniedDisplay,
+        DiffDisplay,
+        DiffLine,
+        FileEntry,
+        FilesDisplay,
+        GrantDisplay,
+        MemoryChange,
+        MemoryDisplay,
+        PageDisplay,
+        SearchDisplay,
+        SearchHit,
+        TableColumn,
+        TableDisplay,
+        TerminalDisplay,
+    )
+
+    return [
+        TerminalDisplay(
+            command="ls -la",
+            cwd="/ws",
+            stdout="total 8\n",
+            stderr="",
+            exit_code=0,
+            duration_ms=14,
+            truncated=False,
+        ),
+        DiffDisplay(
+            path="notes.md",
+            additions=1,
+            deletions=1,
+            lines=[
+                DiffLine(kind="context", text="title"),
+                DiffLine(kind="removed", text="old"),
+                DiffLine(kind="added", text="new"),
+            ],
+            truncated=False,
+        ),
+        FilesDisplay(
+            root="/ws",
+            entries=[
+                FileEntry(path="src", kind="folder"),
+                FileEntry(path="README.md", kind="file", additions=3, deletions=1),
+            ],
+            truncated=False,
+        ),
+        SearchDisplay(
+            query="python asyncio",
+            results=[
+                SearchHit(
+                    title="asyncio docs",
+                    url="https://docs.python.org/3/library/asyncio.html",
+                    snippet="Asynchronous I/O.",
+                )
+            ],
+        ),
+        PageDisplay(
+            url="https://example.com/post",
+            title="Example Post",
+            site="example.com",
+            description="Short summary.",
+        ),
+        TableDisplay(
+            columns=[
+                TableColumn(key="name", label="Name"),
+                TableColumn(key="count", label="Count"),
+            ],
+            rows=[{"name": "alpha", "count": "3"}],
+            truncated=False,
+        ),
+        MemoryDisplay(
+            changes=[
+                MemoryChange(text="Prefers dark mode", change="added"),
+                MemoryChange(text="Lives in London", change="replaced"),
+            ]
+        ),
+        DeniedDisplay(
+            rule="blocked_command",
+            message="This command is blocked by safety rules.",
+        ),
+        GrantDisplay(
+            scope="folder",
+            reach=["/Users/me/Documents/tax"],
+        ),
+    ]
+
+
+@pytest.mark.parametrize("display", _display_models(), ids=lambda d: d.kind)
+def test_every_display_kind_round_trips_json(display: Any) -> None:
+    """Every branch of the `Display` union round-trips on its own and on events."""
+    from pydantic import TypeAdapter
+
+    from aldwin.protocol import Display, validate_display
+
+    adapter: TypeAdapter[Any] = TypeAdapter(Display)
+    reparsed = adapter.validate_json(display.model_dump_json())
+    assert reparsed == display
+    assert reparsed.kind == display.kind
+    assert validate_display(display.model_dump()) == display
+
+    res_ev = ToolResultEvent(re="req_1", call_id="c1", ok=True, display=display)
+    assert parse_event(res_ev.model_dump_json()) == res_ev
+
+    ap_ev = ApprovalEvent(
+        re="req_1",
+        approval_id="ap_1",
+        call_id="c1",
+        summary="Approve?",
+        display=display,
+    )
+    assert parse_event(ap_ev.model_dump_json()) == ap_ev
+
+
+def test_unknown_display_kind_is_rejected() -> None:
+    """An unknown `Display.kind` fails discriminated-union validation."""
+    from pydantic import TypeAdapter
+
+    from aldwin.protocol import Display
+
+    adapter: TypeAdapter[Any] = TypeAdapter(Display)
+    with pytest.raises(ValidationError) as exc_info:
+        adapter.validate_python({"kind": "chart"})
+    assert "chart" in str(exc_info.value) or "kind" in str(exc_info.value)
+
+
+def test_display_ignores_extra_fields() -> None:
+    """Display models ignore unknown fields for forward compatibility."""
+    from pydantic import TypeAdapter
+
+    from aldwin.protocol import Display, TerminalDisplay
+
+    adapter: TypeAdapter[Any] = TypeAdapter(Display)
+    parsed = adapter.validate_python(
+        {"kind": "terminal", "command": "pwd", "colour": "red"}
+    )
+    assert isinstance(parsed, TerminalDisplay)
+    assert parsed.command == "pwd"
+    assert not hasattr(parsed, "colour")
+    assert "colour" not in parsed.model_dump()
+
+
+def test_old_tool_result_approval_and_done_shapes_parse_without_new_fields() -> None:
+    """Older v2 events without `display`, `call_id` or `context` still parse."""
+    tr = parse_event(
+        '{"v":2,"type":"event","re":"r1","kind":"tool_result","call_id":"c1","ok":true}'
+    )
+    assert isinstance(tr, ToolResultEvent)
+    assert tr.display is None
+
+    ap = parse_event(
+        '{"v":2,"type":"event","re":"r1","kind":"approval","approval_id":"a1","summary":"Run?"}'
+    )
+    assert isinstance(ap, ApprovalEvent)
+    assert ap.call_id is None
+    assert ap.display is None
+
+    dn = parse_event(
+        '{"v":2,"type":"event","re":"r1","kind":"done","reason":"answered"}'
+    )
+    assert isinstance(dn, DoneEvent)
+    assert dn.context is None
+
+
+def test_done_event_context_usage_round_trips() -> None:
+    """`DoneEvent.context` round-trips with all 7 prompt breakdown segments."""
+    from aldwin.protocol import ContextSegment, ContextUsage
+
+    usage = ContextUsage(
+        limit=128_000,
+        used=5_000,
+        segments=[
+            ContextSegment(key="instructions", label="Instructions", tokens=1_000),
+            ContextSegment(key="skills", label="Skills", tokens=200),
+            ContextSegment(key="persona", label="Persona", tokens=100),
+            ContextSegment(key="memory", label="Memory", tokens=0),
+            ContextSegment(key="environment", label="Environment", tokens=50),
+            ContextSegment(key="connectors", label="Apps", tokens=0),
+            ContextSegment(key="conversation", label="Conversation", tokens=2_000),
+            ContextSegment(key="tools", label="Tool definitions", tokens=1_650),
+        ],
+    )
+    ev = DoneEvent(re="req_1", reason="answered", context=usage)
+    parsed = parse_event(ev.model_dump_json())
+    assert parsed == ev
+    assert isinstance(parsed, DoneEvent)
+    assert parsed.context == usage

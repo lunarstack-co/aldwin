@@ -17,6 +17,7 @@ from bs4 import BeautifulSoup
 
 from aldwin.core.policy import PolicySession
 from aldwin.core.tools import ToolOutput
+from aldwin.core.tools import display as core_display
 from aldwin.core.tools.files import format_size
 from aldwin.core.workspace import Workspace, WorkspaceError
 
@@ -239,7 +240,7 @@ def _sheet_to_markdown(rows: list[list[Any]], *, total_rows: int) -> str:
     return "\n".join(lines)
 
 
-def _read_xlsx(path: Path, sheet: str | None) -> tuple[str, str]:
+def _read_xlsx(path: Path, sheet: str | None) -> tuple[str, str, dict[str, Any] | None]:
     try:
         from openpyxl import load_workbook
     except ImportError as exc:
@@ -296,14 +297,21 @@ def _read_xlsx(path: Path, sheet: str | None) -> tuple[str, str]:
 
     total_data = max(0, len(merged) - 1)
     table = _sheet_to_markdown(merged, total_rows=len(merged))
+    table_disp = (
+        core_display.table(headers=merged[0], rows=merged[1:])
+        if merged
+        else core_display.table(headers=[], rows=[])
+    )
     header = f"Sheets: {', '.join(names)}"
     body = f"{header}\n\n{table}\n" if table else f"{header}\n"
     shown = min(MAX_TABLE_ROWS, total_data)
     suffix = f"sheet {chosen} · {shown} of {total_data:,} rows"
-    return body, suffix
+    return body, suffix, table_disp
 
 
-def _read_csv(path: Path, *, delimiter: str | None = None) -> tuple[str, str]:
+def _read_csv(
+    path: Path, *, delimiter: str | None = None
+) -> tuple[str, str, dict[str, Any]]:
     raw = path.read_bytes()
     try:
         text = raw.decode("utf-8")
@@ -322,8 +330,13 @@ def _read_csv(path: Path, *, delimiter: str | None = None) -> tuple[str, str]:
     rows = [list(row) for row in reader]
     total_data = max(0, len(rows) - 1)
     table = _sheet_to_markdown(rows, total_rows=len(rows))
+    table_disp = (
+        core_display.table(headers=rows[0], rows=rows[1:])
+        if rows
+        else core_display.table(headers=[], rows=[])
+    )
     shown = min(MAX_TABLE_ROWS, total_data)
-    return table + "\n", f"{shown} of {total_data} rows"
+    return table + "\n", f"{shown} of {total_data} rows", table_disp
 
 
 def _read_docx(path: Path) -> tuple[str, str]:
@@ -374,14 +387,14 @@ def _read_html(path: Path) -> tuple[str, str]:
     return text, f"{_word_count(text):,} words"
 
 
-def convert_document(
+def _convert_document_with_display(
     path: Path,
     *,
     pages: str | None = None,
     sheet: str | None = None,
     cancel: asyncio.Event | None = None,
-) -> tuple[str, str]:
-    """Convert `path` to markdown and a one-line CLI summary suffix."""
+) -> tuple[str, str, dict[str, Any] | None]:
+    """Convert `path` to `(markdown_body, summary_suffix, optional_display)`."""
     ext = path.suffix.lower()
     if ext not in SUPPORTED_EXTENSIONS:
         raise ToolCallError(
@@ -391,18 +404,39 @@ def convert_document(
     if size > MAX_DOCUMENT_BYTES:
         raise ToolCallError(f"too large: {format_size(size)} (limit 50 MB)")
     if ext == ".pdf":
-        return _extract_pdf_pages(path, pages_spec=pages, cancel=cancel)
+        body, suffix = _extract_pdf_pages(path, pages_spec=pages, cancel=cancel)
+        return body, suffix, None
     if ext == ".docx":
-        return _read_docx(path)
+        body, suffix = _read_docx(path)
+        return body, suffix, None
     if ext == ".pptx":
-        return _read_pptx(path)
+        body, suffix = _read_pptx(path)
+        return body, suffix, None
     if ext == ".xlsx":
         return _read_xlsx(path, sheet)
     if ext in {".csv", ".tsv"}:
         return _read_csv(path, delimiter="\t" if ext == ".tsv" else None)
     if ext in {".html", ".htm"}:
-        return _read_html(path)
+        body, suffix = _read_html(path)
+        return body, suffix, None
     raise ToolCallError(f"unsupported type {ext}; supported: {_SUPPORTED_LIST}")
+
+
+def convert_document(
+    path: Path,
+    *,
+    pages: str | None = None,
+    sheet: str | None = None,
+    cancel: asyncio.Event | None = None,
+) -> tuple[str, str]:
+    """Convert `path` to markdown and a one-line CLI summary suffix."""
+    body, suffix, _disp = _convert_document_with_display(
+        path,
+        pages=pages,
+        sheet=sheet,
+        cancel=cancel,
+    )
+    return body, suffix
 
 
 class ReadDocumentTool(Tool):
@@ -463,8 +497,8 @@ class ReadDocumentTool(Tool):
 
         cancel = asyncio.Event()
 
-        def _run() -> tuple[str, str]:
-            return convert_document(
+        def _run() -> tuple[str, str, dict[str, Any] | None]:
+            return _convert_document_with_display(
                 target,
                 pages=pages,
                 sheet=sheet,
@@ -473,7 +507,7 @@ class ReadDocumentTool(Tool):
 
         try:
             async with asyncio.timeout(DOC_TIMEOUT_SECONDS):
-                body, suffix = await asyncio.to_thread(_run)
+                body, suffix, table_disp = await asyncio.to_thread(_run)
         except TimeoutError as exc:
             cancel.set()
             raise ToolCallError(f"timed out after {int(DOC_TIMEOUT_SECONDS)}s") from exc
@@ -482,7 +516,7 @@ class ReadDocumentTool(Tool):
             raise
 
         summary = f"Read {display} · {suffix}"
-        return ToolOutput(body, summary=summary, ok=True)
+        return ToolOutput(body, summary=summary, ok=True, display=table_disp)
 
 
 def build_document_tools(

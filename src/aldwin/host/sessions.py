@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,9 +27,9 @@ MAX_PREVIEW_CHARS: Final[int] = 120
 _SESSION_ID_RE: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 
 
-def _utc_now_iso() -> str:
+def utc_now_iso() -> str:
     """Return the current UTC timestamp in ISO-8601 format."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.fromtimestamp(time.time(), tz=timezone.utc).isoformat()
 
 
 def _local_date_str() -> str:
@@ -149,7 +150,7 @@ def _normalise_todo_payload(raw: Any) -> list[dict[str, str]]:
 
 
 def _normalise_turns_payload(raw: Any) -> list[dict[str, Any]]:
-    """Parse session `turns` into `[{text, skills}]` (skills names only)."""
+    """Parse session `turns` into `[{text, skills, ...}]` (skills names only)."""
     if not isinstance(raw, list):
         return []
     items: list[dict[str, Any]] = []
@@ -162,7 +163,17 @@ def _normalise_turns_payload(raw: Any) -> list[dict[str, Any]]:
             return []
         if not isinstance(skills, list) or not all(isinstance(s, str) for s in skills):
             return []
-        items.append({"text": text, "skills": list(skills)})
+        item: dict[str, Any] = {"text": text, "skills": list(skills)}
+        apps = entry.get("apps")
+        if isinstance(apps, list) and all(isinstance(a, str) for a in apps):
+            item["apps"] = list(apps)
+        at = entry.get("at")
+        if isinstance(at, str) and at:
+            item["at"] = at
+        done_at = entry.get("done_at")
+        if isinstance(done_at, str) and done_at:
+            item["done_at"] = done_at
+        items.append(item)
     return items
 
 
@@ -181,7 +192,7 @@ class SessionStore:
 
     def create_new(self, model: str = "gpt-4o") -> StoredSession:
         """Create and persist a fresh empty session file without touching old ones."""
-        now = _utc_now_iso()
+        now = utc_now_iso()
         session_id = f"{_local_date_str()}_{uuid4().hex[:8]}"
         path = self.sessions_dir / f"{session_id}.json"
         full_model = model if "/" in model else f"openai/{model}"
@@ -214,7 +225,7 @@ class SessionStore:
         """
         stored.memory = memory
         if touch:
-            stored.meta.updated_at = _utc_now_iso()
+            stored.meta.updated_at = utc_now_iso()
         stored.meta.interrupted = interrupted
         if todo is not None:
             stored.todo = list(todo)
@@ -382,15 +393,25 @@ class SessionStore:
 
         items: list[HistoryItem] = []
         turn_idx = 0
+        active_turn: dict[str, Any] | None = None
         for step in memory.steps:
             if isinstance(step, TaskStep):
                 text = step.task
-                if turns is not None and turn_idx < len(turns):
-                    stored = turns[turn_idx].get("text")
+                active_turn = (
+                    turns[turn_idx]
+                    if (turns is not None and turn_idx < len(turns))
+                    else None
+                )
+                user_at: str | None = None
+                if isinstance(active_turn, dict):
+                    stored = active_turn.get("text")
                     if isinstance(stored, str):
                         text = stored
+                    raw_at = active_turn.get("at")
+                    if isinstance(raw_at, str) and raw_at:
+                        user_at = raw_at
                 turn_idx += 1
-                items.append(HistoryItem(role="user", text=text))
+                items.append(HistoryItem(role="user", text=text, at=user_at))
             elif isinstance(step, ActionStep):
                 for result in step.tool_results:
                     if result.name == "final_answer" and not result.is_error:
@@ -407,7 +428,14 @@ class SessionStore:
                     )
                     items.append(HistoryItem(role="tool", text=line))
             elif isinstance(step, FinalStep):
-                items.append(HistoryItem(role="assistant", text=step.answer))
+                done_at: str | None = None
+                if isinstance(active_turn, dict):
+                    raw_done = active_turn.get("done_at")
+                    if isinstance(raw_done, str) and raw_done:
+                        done_at = raw_done
+                items.append(
+                    HistoryItem(role="assistant", text=step.answer, at=done_at)
+                )
 
         ua_indices = [
             idx for idx, item in enumerate(items) if item.role in ("user", "assistant")

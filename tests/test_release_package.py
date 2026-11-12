@@ -24,8 +24,8 @@ from aldwin.cli.main import app
 from aldwin.core.home import STARTER_ASSETS
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-# 3 MiB leaves room for the bundled web UI and its fonts.
-MAX_DIST_BYTES = 3_145_728
+# 4 MiB leaves room for the bundled web UI, its fonts and its lazily loaded renderers.
+MAX_DIST_BYTES = 4_194_304
 MAX_GIF_BYTES = 5_242_880  # 5 MB NFR GIF size cap
 
 EXPECTED_WHEEL_ASSETS = (
@@ -171,10 +171,10 @@ def test_docs_extra_declared() -> None:
     assert names == {"python-docx", "openpyxl", "reportlab"}
 
 
-def test_build_produces_sdist_and_wheel_under_3mib(
+def test_build_produces_sdist_and_wheel_under_4mib(
     built_distributions: tuple[Path, Path],
 ) -> None:
-    """TC-01, TC-16: sdist and wheel stay under the 3 MiB budget."""
+    """TC-01, TC-16: sdist and wheel stay under the 4 MiB budget."""
     wheel_path, sdist_path = built_distributions
     assert wheel_path.name == "aldwin-0.0.5-py3-none-any.whl"
     assert sdist_path.name == "aldwin-0.0.5.tar.gz"

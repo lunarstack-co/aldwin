@@ -16,6 +16,8 @@ from pydantic import (
     model_validator,
 )
 
+from aldwin.protocol.display import ContextUsage, Display
+
 PROTOCOL_VERSION: Final[int] = 2
 VERSION: Final[int] = PROTOCOL_VERSION
 MIN_SUPPORTED_VERSION: Final[int] = 1
@@ -505,6 +507,7 @@ class ToolResultEvent(EventBase):
     summary: str = ""
     preview: str = ""
     duration_ms: int = Field(default=0, ge=0)
+    display: Display | None = None
 
 
 class ApprovalEvent(EventBase):
@@ -512,6 +515,7 @@ class ApprovalEvent(EventBase):
 
     kind: Literal["approval"] = "approval"
     approval_id: str = Field(min_length=1)
+    call_id: str | None = None
     tool: str = ""
     tier: ApprovalTier = "ask"
     summary: str
@@ -524,6 +528,7 @@ class ApprovalEvent(EventBase):
     connector_title: str | None = None
     remote_tool: str | None = None
     reason: str | None = None
+    display: Display | None = None
 
 
 class TodoUpdatedEvent(EventBase):
@@ -611,6 +616,7 @@ class DoneEvent(EventBase):
     reason: DoneReason
     usage: TokenUsage | None = None
     max_steps: int | None = None
+    context: ContextUsage | None = None
 
 
 class ModelEntry(BaseModel):

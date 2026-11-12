@@ -39,6 +39,15 @@ from aldwin.core.home import (
     home_dir,
 )
 from aldwin.core.tools import ToolOutput, summarize_tool_result
+from aldwin.core.tools.display import (
+    denied as denied_display,
+)
+from aldwin.core.tools.display import (
+    grant as grant_display,
+)
+from aldwin.core.tools.display import (
+    terminal as terminal_display,
+)
 from aldwin.core.workspace import (
     ResolvedPath,
     Workspace,
@@ -103,6 +112,8 @@ class ApprovalRequest:
     risky: tuple[str, ...]
     digest: str
     connector: str | None = None
+    call_id: str | None = None
+    display: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +134,7 @@ class ApprovalPreview:
     detail: str | None = None
     mtime_ns: int | None = None
     risky: tuple[str, ...] = ()
+    display: dict[str, Any] | None = None
 
 
 PolicyAskFn = Callable[[ApprovalRequest], Awaitable[ApprovalAnswer]]
@@ -702,6 +714,7 @@ class PolicySession:
         self.step_batch_evaluated: bool = False
         self.step_batch_lock: asyncio.Lock = asyncio.Lock()
         self.active_call_ids: list[tuple[str, str]] = []
+        self._displays: dict[str, dict[str, Any]] = {}
 
     @property
     def home(self) -> Path:
@@ -731,7 +744,17 @@ class PolicySession:
     def reset_turn(self) -> None:
         """Reset per-turn denial counter and step batch state."""
         self.turn_denials = 0
+        self._displays.clear()
         self.clear_step_calls()
+
+    def record_display(self, call_id: str, display: Any) -> None:
+        """Store a raw display dict for `call_id`; non-dict values are ignored."""
+        if isinstance(display, dict):
+            self._displays[call_id] = display
+
+    def take_display(self, call_id: str) -> dict[str, Any] | None:
+        """Pop and return the recorded display dict for `call_id`, if any."""
+        return self._displays.pop(call_id, None)
 
     def enqueue_step_call(
         self,
@@ -1421,6 +1444,71 @@ def _tool_call_error_summary(message: str, *, limit: int = 120) -> str:
     return f"{collapsed[: limit - 1]}…"
 
 
+def _format_denial_details(
+    decision: Decision,
+    *,
+    is_edit: bool = False,
+    user_reason: str | None = None,
+    answer_source: Source | None = None,
+) -> tuple[str, str, dict[str, Any] | None]:
+    """Return `(model_text, row_summary, denied_display)` for a denied tool call."""
+    effective_source = answer_source or decision.source
+    if effective_source == "no_approver":
+        return DENIAL_TEXT["no_approver"], "not run: no approver", None
+
+    if effective_source == "user":
+        rule_key = "user_edit" if is_edit else "user"
+        base = DENIAL_TEXT[rule_key]
+        model_text = base
+        if user_reason and user_reason.strip():
+            trimmed_reason = user_reason.strip()[:MAX_REASON_CHARS]
+            model_text = f"{base}\nUser's reason: {trimmed_reason}"
+        return (
+            model_text,
+            "declined",
+            denied_display(rule=rule_key, message=base),
+        )
+
+    if effective_source == "rule":
+        reason = decision.reason
+        if reason.startswith("blocked command:"):
+            rule_name = reason.removeprefix("blocked command:").strip()
+            msg = DENIAL_TEXT["blocked_command"].format(rule=rule_name)
+            return (
+                msg,
+                f"blocked: {rule_name}",
+                denied_display(rule="blocked_command", message=msg),
+            )
+        if reason.endswith("is inside .git"):
+            path_part = (
+                reason.removeprefix("blocked:").removesuffix("is inside .git").strip()
+            )
+            msg = DENIAL_TEXT["blocked_git"].format(path=path_part)
+            return (
+                msg,
+                reason,
+                denied_display(rule="blocked_git", message=msg),
+            )
+        path_part = (
+            reason.removeprefix("blocked:").removesuffix("may contain secrets").strip()
+        )
+        msg = DENIAL_TEXT["blocked_path"].format(path=path_part)
+        return (
+            msg,
+            reason,
+            denied_display(rule="blocked_path", message=msg),
+        )
+
+    if decision.reason == "pattern must stay inside the search folder":
+        text = (
+            "Not run: the search pattern must stay inside its folder. "
+            "This can't be approved."
+        )
+        return text, "blocked: pattern", None
+
+    return DENIAL_TEXT["policy_error"], "blocked: safety check failed", None
+
+
 def format_denial_text(
     decision: Decision,
     *,
@@ -1429,49 +1517,28 @@ def format_denial_text(
     answer_source: Source | None = None,
 ) -> tuple[str, str]:
     """Return `(model_text, row_summary)` for a denied tool call."""
-    effective_source = answer_source or decision.source
-    if effective_source == "no_approver":
-        return DENIAL_TEXT["no_approver"], "not run: no approver"
+    model_text, row_summary, _ = _format_denial_details(
+        decision,
+        is_edit=is_edit,
+        user_reason=user_reason,
+        answer_source=answer_source,
+    )
+    return model_text, row_summary
 
-    if effective_source == "user":
-        base = DENIAL_TEXT["user_edit"] if is_edit else DENIAL_TEXT["user"]
-        if user_reason and user_reason.strip():
-            trimmed_reason = user_reason.strip()[:MAX_REASON_CHARS]
-            base = f"{base}\nUser's reason: {trimmed_reason}"
-        return base, "declined"
 
-    if effective_source == "rule":
-        reason = decision.reason
-        if reason.startswith("blocked command:"):
-            rule_name = reason.removeprefix("blocked command:").strip()
-            return (
-                DENIAL_TEXT["blocked_command"].format(rule=rule_name),
-                f"blocked: {rule_name}",
-            )
-        if reason.endswith("is inside .git"):
-            path_part = (
-                reason.removeprefix("blocked:").removesuffix("is inside .git").strip()
-            )
-            return (
-                DENIAL_TEXT["blocked_git"].format(path=path_part),
-                reason,
-            )
-        path_part = (
-            reason.removeprefix("blocked:").removesuffix("may contain secrets").strip()
-        )
-        return (
-            DENIAL_TEXT["blocked_path"].format(path=path_part),
-            reason,
-        )
-
-    if decision.reason == "pattern must stay inside the search folder":
-        text = (
-            "Not run: the search pattern must stay inside its folder. "
-            "This can't be approved."
-        )
-        return text, "blocked: pattern"
-
-    return DENIAL_TEXT["policy_error"], "blocked: safety check failed"
+def _approval_display(
+    preview: ApprovalPreview,
+    decision: Decision,
+    *,
+    connector: str | None = None,
+) -> dict[str, Any] | None:
+    """Choose the approval request's display: tool preview first, else grant."""
+    if isinstance(preview.display, dict):
+        return preview.display
+    if connector is None and decision.grantable and decision.grant_key:
+        scope, _, reach = decision.grant_key.partition(":")
+        return grant_display(scope=scope, reach=[reach])
+    return None
 
 
 def _is_edit_tool_name(tool_name: str) -> bool:
@@ -1615,10 +1682,12 @@ class PolicyWrappedTool(Tool):
             short_cmd = " ".join(cmd.split())
             if len(short_cmd) > 60:
                 short_cmd = f"{short_cmd[:59]}…"
+            cwd_str = str(primary_path or self._session.workspace.root)
             return ApprovalPreview(
                 summary=f"Run command: {short_cmd}",
                 detail=cmd,
                 mtime_ns=mtime_ns,
+                display=terminal_display(command=cmd, cwd=cwd_str),
             )
 
         return ApprovalPreview(
@@ -1686,7 +1755,10 @@ class PolicyWrappedTool(Tool):
                 source=decision.source,
                 reason=decision.reason,
             )
-            denial_msg, row_summary = format_denial_text(decision, is_edit=is_edit)
+            denial_msg, row_summary, denial_disp = _format_denial_details(
+                decision, is_edit=is_edit
+            )
+            self._session.record_display(call_id, denial_disp)
             final_msg, row_summary = self._session.record_denial(
                 base_text=denial_msg,
                 base_summary=row_summary,
@@ -1747,6 +1819,8 @@ class PolicyWrappedTool(Tool):
             risky=merged_risky,
             digest=digest,
             connector=self._connector,
+            call_id=call_id,
+            display=_approval_display(preview, decision, connector=self._connector),
         )
         ans = await self._ask(req)
         if ans.answer == "yes_session" and decision.grantable and decision.grant_key:
@@ -1763,12 +1837,13 @@ class PolicyWrappedTool(Tool):
                 source=ans.source,
                 reason=ans.reason or decision.reason,
             )
-            denial_msg, row_summary = format_denial_text(
+            denial_msg, row_summary, denial_disp = _format_denial_details(
                 decision,
                 is_edit=is_edit,
                 user_reason=ans.reason,
                 answer_source=ans.source,
             )
+            self._session.record_display(call_id, denial_disp)
             final_msg, row_summary = self._session.record_denial(
                 base_text=denial_msg,
                 base_summary=row_summary,
@@ -1920,6 +1995,7 @@ class PolicyWrappedTool(Tool):
                 else elapsed_ms
             )
             raw_text = str(raw_output)
+            self._session.record_display(call_id, raw_output.display)
         else:
             raw_text = str(raw_output)
             ok, summary = summarize_tool_result(self.name, raw_text, is_error=False)
@@ -2008,6 +2084,10 @@ class PolicyWrappedTool(Tool):
             risky=reask_risky,
             digest=current_digest,
             connector=self._connector,
+            call_id=call_id,
+            display=_approval_display(
+                current_preview, decision, connector=self._connector
+            ),
         )
         ans = await self._ask(reask_req)
         if ans.answer == "no":
@@ -2021,12 +2101,13 @@ class PolicyWrappedTool(Tool):
                 source=ans.source,
                 reason=ans.reason or "changed before run",
             )
-            denial_msg, row_summary = format_denial_text(
+            denial_msg, row_summary, denial_disp = _format_denial_details(
                 decision,
                 is_edit=is_edit,
                 user_reason=ans.reason,
                 answer_source=ans.source,
             )
+            self._session.record_display(call_id, denial_disp)
             final_msg, row_summary = self._session.record_denial(
                 base_text=denial_msg,
                 base_summary=row_summary,
@@ -2151,12 +2232,13 @@ async def evaluate_step_batch(
                     session,
                     schema=wrapped.parameters,
                 )
-                denial_msg, row_summary = format_denial_text(
+                denial_msg, row_summary, denial_disp = _format_denial_details(
                     dec,
                     is_edit=is_edit,
                     user_reason=batch_rejected_ans.reason,
                     answer_source=batch_rejected_ans.source,
                 )
+                session.record_display(item.call_id, denial_disp)
                 final_msg, row_summary = session.record_denial(
                     base_text=denial_msg,
                     base_summary=row_summary,
@@ -2192,12 +2274,13 @@ async def evaluate_step_batch(
                 for prev_id, prev_out in session.step_preapproved.items():
                     if prev_id != item.call_id and prev_out.denied_text is None:
                         prev_tool = call_tool_map.get(prev_id, "")
-                        prev_msg, prev_sum = format_denial_text(
+                        prev_msg, prev_sum, prev_disp = _format_denial_details(
                             prev_out.decision,
                             is_edit=_is_edit_tool_name(prev_tool),
                             user_reason=batch_rejected_ans.reason,
                             answer_source=batch_rejected_ans.source,
                         )
+                        session.record_display(prev_id, prev_disp)
                         prev_out.denied_text = prev_msg
                         prev_out.denied_summary = prev_sum
 

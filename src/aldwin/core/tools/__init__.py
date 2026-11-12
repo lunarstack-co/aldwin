@@ -55,6 +55,7 @@ class ToolOutput(str):
     summary: str
     ok: bool
     duration_ms: int | None
+    display: dict[str, Any] | None
 
     def __new__(
         cls,
@@ -63,11 +64,13 @@ class ToolOutput(str):
         summary: str = "",
         ok: bool = True,
         duration_ms: int | None = None,
+        display: dict[str, Any] | None = None,
     ) -> ToolOutput:
         instance = super().__new__(cls, content)
         instance.summary = summary
         instance.ok = ok
         instance.duration_ms = duration_ms
+        instance.display = display
         return instance
 
     def __str__(self) -> str:
@@ -79,6 +82,7 @@ class ToolOutput(str):
             summary=getattr(self, "summary", ""),
             ok=getattr(self, "ok", True),
             duration_ms=getattr(self, "duration_ms", None),
+            display=getattr(self, "display", None),
         )
 
     def __add__(self, other: str) -> ToolOutput:
@@ -87,6 +91,7 @@ class ToolOutput(str):
             summary=self.summary,
             ok=self.ok,
             duration_ms=self.duration_ms,
+            display=self.display,
         )
 
 

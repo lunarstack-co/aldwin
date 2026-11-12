@@ -20,6 +20,7 @@ from aldwin.core.settings import (
     update_config_search_provider,
 )
 from aldwin.core.tools import ToolOutput
+from aldwin.core.tools import display as core_display
 
 if TYPE_CHECKING:
     from aldwin.core.tools.web_search.hosted import HostedSearchProvider
@@ -696,14 +697,24 @@ class WebSearchTool(Tool):
                 "No results found.",
                 summary="0 results",
                 ok=True,
+                display=core_display.search(query=cleaned_query, results=[]),
             )
 
         formatted: list[str] = []
-        for idx, item in enumerate(results[:limit], start=1):
+        display_hits: list[dict[str, str]] = []
+        for idx, item in enumerate(results, start=1):
             title = " ".join(item.title.split()) or item.url.strip()
             url = item.url.strip()
             snippet = truncate_snippet(item.snippet)
-            formatted.append(f"{idx}. {title} - {url}\n   {snippet}")
+            display_hits.append(
+                {
+                    "title": title,
+                    "url": url,
+                    "snippet": snippet,
+                }
+            )
+            if idx <= limit:
+                formatted.append(f"{idx}. {title} - {url}\n   {snippet}")
 
         count = len(formatted)
         summary = "1 result" if count == 1 else f"{count} results"
@@ -711,6 +722,9 @@ class WebSearchTool(Tool):
             "\n".join(formatted),
             summary=summary,
             ok=True,
+            display=core_display.search(
+                query=cleaned_query, results=display_hits[:limit]
+            ),
         )
 
 

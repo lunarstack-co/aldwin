@@ -29,6 +29,7 @@ from aldwin.core.memory_index import (
 )
 from aldwin.core.policy import ApprovalPreview, looks_like_secret
 from aldwin.core.tools import ToolOutput
+from aldwin.core.tools import display as core_display
 
 MEMORY_TOOL_NAMES: Final[frozenset[str]] = frozenset({"remember", "recall", "forget"})
 _SECRET_REFUSAL: Final[str] = (
@@ -243,6 +244,10 @@ class RememberTool(Tool):
             summary=f"Update note ({state.day})",
             detail=state.diff,
             mtime_ns=state.mtime_ns,
+            display=core_display.diff(
+                path=f"memory/notes/{state.day}.md",
+                unified=state.diff,
+            ),
         )
 
     async def forward(  # type: ignore[override]
@@ -269,6 +274,7 @@ class RememberTool(Tool):
                 summary="Remember · updated",
                 ok=True,
                 duration_ms=elapsed_ms,
+                display=core_display.memory([(state.new_text, "replaced")]),
             )
 
         _refuse_secrets(text)
@@ -296,7 +302,13 @@ class RememberTool(Tool):
         default_memory_index(_home(self._home)).sync()
         elapsed_ms = max(0, int((time.monotonic() - started) * 1000))
         summary = "Remember · saved" if status == "saved" else status
-        return ToolOutput(status, summary=summary, ok=True, duration_ms=elapsed_ms)
+        return ToolOutput(
+            status,
+            summary=summary,
+            ok=True,
+            duration_ms=elapsed_ms,
+            display=core_display.memory([(cleaned, "added")]),
+        )
 
 
 class RecallTool(Tool):
@@ -464,10 +476,21 @@ class ForgetTool(Tool):
             # Diff-asks then). ToolCallError carries the informational text so
             # the model sees the ids and the "call forget with the id…" line.
             raise ToolCallError(resolved)
+        note_path = f"memory/notes/{resolved.day}.md"
+        removed_line = f"[{resolved.day}] {resolved.text}  (id {resolved.note_id})\n"
+        unified = "".join(
+            difflib.unified_diff(
+                [removed_line],
+                [],
+                fromfile=f"a/{note_path}",
+                tofile=f"b/{note_path}",
+            )
+        )
         return ApprovalPreview(
             summary=resolved.summary,
             detail=resolved.detail,
             mtime_ns=resolved.mtime_ns,
+            display=core_display.diff(path=note_path, unified=unified),
         )
 
     async def forward(self, query: str) -> ToolOutput:  # type: ignore[override]
@@ -491,6 +514,7 @@ class ForgetTool(Tool):
             summary="Forget · 1 note removed",
             ok=True,
             duration_ms=elapsed_ms,
+            display=core_display.memory([(resolved.text, "removed")]),
         )
 
 

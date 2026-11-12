@@ -49,12 +49,13 @@ async def test_client_history_and_new_conversation_lifecycle(
         first_session_path = host.stored_session.path
         hist = await client.history(limit=20)
         assert hist.interrupted is False
-        assert hist.messages == [
-            HistoryItem(role="user", text="Hello 1"),
-            HistoryItem(role="assistant", text="First reply."),
-            HistoryItem(role="user", text="Hello 2"),
-            HistoryItem(role="assistant", text="Second reply."),
+        assert [(m.role, m.text) for m in hist.messages] == [
+            ("user", "Hello 1"),
+            ("assistant", "First reply."),
+            ("user", "Hello 2"),
+            ("assistant", "Second reply."),
         ]
+        assert all(m.at is not None for m in hist.messages)
 
         await client.new_conversation()
         assert host.stored_session.path != first_session_path
@@ -67,10 +68,11 @@ async def test_client_history_and_new_conversation_lifecycle(
         async for _ev in client.turn("Hello fresh"):
             pass
         updated_hist = await client.history(limit=20)
-        assert updated_hist.messages == [
-            HistoryItem(role="user", text="Hello fresh"),
-            HistoryItem(role="assistant", text="Fresh session reply."),
+        assert [(m.role, m.text) for m in updated_hist.messages] == [
+            ("user", "Hello fresh"),
+            ("assistant", "Fresh session reply."),
         ]
+        assert all(m.at is not None for m in updated_hist.messages)
     finally:
         await client.close()
         await host.stop_host()

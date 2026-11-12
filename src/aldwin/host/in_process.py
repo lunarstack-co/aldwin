@@ -1063,12 +1063,14 @@ def _shell_approve(on_approval: ShellApprovalHandler) -> Any:
     import uuid
 
     from aldwin.core.policy import ApprovalAnswer, ApprovalRequest
+    from aldwin.host.display import to_display
     from aldwin.protocol import ApprovalEvent
 
     async def approve(request: ApprovalRequest) -> ApprovalAnswer:
         event = ApprovalEvent(
             re="shell",
             approval_id=uuid.uuid4().hex,
+            call_id=request.call_id,
             tool=request.tool,
             tier=request.tier,
             summary=request.summary,
@@ -1077,6 +1079,7 @@ def _shell_approve(on_approval: ShellApprovalHandler) -> Any:
             digest=request.digest,
             risky=list(request.risky),
             connector=request.connector,
+            display=to_display(request.display, tool=request.tool),
         )
         answer, reason = await on_approval(event)
         if answer == "yes":

@@ -224,3 +224,35 @@ Events not tied to a request, such as `connector.status` and a `notice` when a c
 
 - `connector`: a user error, with the message to show as is (`Connector URL must use https:// (got <url>)`, `A connector named <name> already exists`, `That address isn't an MCP server (got text/html).`, `Couldn't reach <host>: <reason>.`, `The server refused the token (401).`).
 - `auth_required`: the server answered 401 and no token was given (`<host> needs a token.`). Ask for a token and retry `connectors.add` with it. Also sent when a sign-in is needed and no one can answer it.
+
+---
+
+## Tool displays, approval `call_id` and `context` usage
+
+`v2` adds optional structured payloads (`aldwin.protocol.display`) so a door can render purpose-built views without parsing tool text. Older `v2` doors ignore these fields (`ConfigDict(extra="ignore")`).
+
+### Additive event fields
+
+- `ToolResultEvent.display: Display | None = None`: optional structured display for the finished tool call.
+- `ApprovalEvent.call_id: str | None = None`: the `call_id` of the `tool_call` waiting for approval, so a door can show the approval inline on that row.
+- `ApprovalEvent.display: Display | None = None`: optional structured preview (`terminal`, `diff` or `grant`) for the pending approval.
+- `DoneEvent.context: ContextUsage | None = None`: prompt token usage and per-segment breakdown (`limit`, `used`, `segments: list[ContextSegment]` with `key`, `label`, `tokens`). Sent when the active model's context window is known, using the last step's `input_tokens`.
+- `HistoryItem.at: str | None = None`: ISO 8601 UTC timestamp on `user` (`at`) and `assistant` (`done_at`) rows when recorded on the saved turn.
+
+### `Display` kinds and size caps
+
+`Display` is a discriminated union on `kind`. Every string in a display is stripped of ANSI escapes, control bytes and bidi overrides and passed through secret redaction (`‹redacted›`) before the host sends it. Invalid display payloads are dropped with a warning and never block a turn.
+
+| `kind` | Model | Fields | Host size caps |
+|---|---|---|---|
+| `terminal` | `TerminalDisplay` | `command`, `cwd`, `stdout`, `stderr`, `exit_code: int \| None`, `duration_ms`, `truncated` | At most `400` lines (`TERMINAL_MAX_LINES`) and `65536` bytes (`64 KB`, `TERMINAL_MAX_BYTES`) per stream (`stdout`, `stderr`). |
+| `diff` | `DiffDisplay` | `path`, `additions`, `deletions`, `lines: list[{kind: "context" \| "added" \| "removed", text}]`, `truncated` | At most `600` lines (`DIFF_MAX_LINES`). |
+| `files` | `FilesDisplay` | `root`, `entries: list[{path, kind: "file" \| "folder", additions?, deletions?}]`, `truncated` | At most `300` entries (`FILES_MAX`). |
+| `search` | `SearchDisplay` | `query`, `results: list[{title, url, snippet}]`, `truncated` | At most `10` results (`SEARCH_MAX`). |
+| `page` | `PageDisplay` | `url`, `title`, `site`, `description` | Metadata summary only. |
+| `table` | `TableDisplay` | `columns: list[{key, label}]`, `rows: list[dict[str, str]]`, `truncated` | At most `200` rows (`TABLE_MAX_ROWS`) and `20` columns (`TABLE_MAX_COLS`). |
+| `memory` | `MemoryDisplay` | `changes: list[{text, change: "added" \| "replaced" \| "removed"}]` | One entry per changed note. |
+| `denied` | `DeniedDisplay` | `rule`, `message` | Policy rule or user refusal key and message. |
+| `grant` | `GrantDisplay` | `scope: "file" \| "folder" \| "tool"`, `reach: list[str]` | Resolved path or tool reach on grantable approvals. |
+
+Whenever a capped list or stream is cut, `truncated` is `true`.

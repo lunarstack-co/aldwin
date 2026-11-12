@@ -110,6 +110,9 @@ def coerce_policy_ask(ask: AnyAskFn | None) -> PolicyAskFn:
         required_positional = [
             p for p in params if p.default is inspect.Parameter.empty
         ]
+        # A callable that already takes the request needs no legacy adapter.
+        if params and "ApprovalRequest" in str(params[0].annotation):
+            return _adapted
         if len(required_positional) >= 2 or len(params) >= 2:
             from typing import cast
 
@@ -332,6 +335,7 @@ def build_agent(
     connectors_block: Callable[[], str] | None = None,
     session_context: SessionContext | None = None,
     notice_emitter: Callable[[str], None] | None = None,
+    on_context: Callable[[dict[str, int]], None] | None = None,
 ) -> Agent:
     """Assemble Aldwin's `Agent` from `config`, `secrets`, and `ask`."""
     import aldwin
@@ -472,6 +476,7 @@ def build_agent(
         context_window=ctx_window,
         notice_emitter=notice_emitter,
         model_id=model_ref.model if "model_ref" in locals() else None,
+        on_context=on_context,
     )
 
     agent = Agent(
