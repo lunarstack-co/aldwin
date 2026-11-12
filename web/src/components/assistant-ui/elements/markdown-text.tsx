@@ -4,40 +4,204 @@ import "@assistant-ui/react-markdown/styles/dot.css";
 
 import {
   type CodeHeaderProps,
+  escapeCurrencyDollars,
   MarkdownTextPrimitive,
   type MarkdownTextPrimitiveProps,
   memoizeMarkdownComponents,
+  normalizeMathDelimiters,
+  type SyntaxHighlighterProps as FenceHighlighterProps,
   useIsMarkdownCodeBlock,
 } from "@assistant-ui/react-markdown";
+import { INTERNAL, useAuiState } from "@assistant-ui/react";
+import { CheckIcon, CopyIcon } from "lucide-react";
+import { type FC, memo, useEffect, useState } from "react";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
-import { type FC, memo } from "react";
-import { useAuiState } from "@assistant-ui/react";
-import { CheckIcon, CopyIcon } from "lucide-react";
 
 import { TooltipIconButton } from "@/components/assistant-ui/elements/tooltip-icon-button";
-import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import copy from "@/data/chat/markdown.json";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { cn } from "@/utils/cn";
 import { LINK_REL, sanitizeSchema } from "@/utils/markdown";
 
-const remarkPlugins: MarkdownTextPrimitiveProps["remarkPlugins"] = [remarkGfm];
-const rehypePlugins: MarkdownTextPrimitiveProps["rehypePlugins"] = [[rehypeSanitize, sanitizeSchema]];
+type ShikiModule = typeof import("./shiki-highlighter");
+type MermaidModule = typeof import("./mermaid-diagram");
+
+/** Loads a renderer once per page and re-renders its callers when it lands. */
+function lazyModule<T>(load: () => Promise<T>): () => T | null {
+  let loaded: T | null = null;
+  let pending: Promise<T> | null = null;
+  return function useLoaded() {
+    const [mod, setMod] = useState<T | null>(loaded);
+    useEffect(() => {
+      if (mod) return;
+      let live = true;
+      pending ??= load().then((m) => (loaded = m));
+      void pending.then((m) => {
+        if (live) setMod(m);
+      });
+      return () => {
+        live = false;
+      };
+    }, [mod]);
+    return mod;
+  };
+}
+
+const useShiki = lazyModule<ShikiModule>(() => import("./shiki-highlighter"));
+const useMermaid = lazyModule<MermaidModule>(() => import("./mermaid-diagram"));
+
+type LoadedMathPlugins = {
+  remarkPlugins: NonNullable<MarkdownTextPrimitiveProps["remarkPlugins"]>;
+  rehypePlugins: NonNullable<MarkdownTextPrimitiveProps["rehypePlugins"]>;
+};
+
+let cachedMathPlugins: LoadedMathPlugins | null = null;
+let mathLoadPromise: Promise<LoadedMathPlugins> | null = null;
+
+function ensureMathPlugins(): Promise<LoadedMathPlugins> {
+  if (cachedMathPlugins) return Promise.resolve(cachedMathPlugins);
+  if (!mathLoadPromise) {
+    mathLoadPromise = Promise.all([
+      import("remark-math"),
+      import("rehype-katex"),
+      import("katex/dist/katex.min.css"),
+    ]).then(([remarkMathMod, rehypeKatexMod]) => {
+      cachedMathPlugins = {
+        remarkPlugins: [remarkGfm, remarkMathMod.default],
+        rehypePlugins: [
+          [rehypeSanitize, sanitizeSchema],
+          rehypeKatexMod.default,
+        ],
+      };
+      return cachedMathPlugins;
+    });
+  }
+  return mathLoadPromise;
+}
+
+const baseRemarkPlugins: NonNullable<MarkdownTextPrimitiveProps["remarkPlugins"]> = [remarkGfm];
+const baseRehypePlugins: NonNullable<MarkdownTextPrimitiveProps["rehypePlugins"]> = [
+  [rehypeSanitize, sanitizeSchema],
+];
+
+function expandSingleLineDisplayMath(text: string): string {
+  // Split around fenced code blocks so code fences are never rewritten.
+  const segments = text.split(/(^```[\s\S]*?^```|^~~~[\s\S]*?^~~~)/gm);
+  return segments
+    .map((seg, idx) =>
+      idx % 2 === 1
+        ? seg
+        : seg.replace(
+            /\$\$([^\n$]+?)\$\$/g,
+            (_match, inner: string) => `\n$$\n${inner.trim()}\n$$\n`,
+          ),
+    )
+    .join("");
+}
+
+const preprocessMath = (text: string) =>
+  expandSingleLineDisplayMath(escapeCurrencyDollars(normalizeMathDelimiters(text)));
+
+type FenceNode = FenceHighlighterProps["node"];
+
+/**
+ * Whether a code block is still being revealed. The text animates in behind the message, so this follows the
+ * revealed text's status, and a block counts as closed only once its own closing fence line is on screen.
+ */
+function useIsFenceStreaming(node: FenceNode, code: string): boolean {
+  const revealing = INTERNAL.useSmoothStatus().type === "running";
+  if (!revealing) return false;
+  const start = node?.position?.start?.line;
+  const end = node?.position?.end;
+  if (start === undefined || end === undefined) return true;
+  const codeLines = code === "" ? 0 : code.replace(/\n$/, "").split("\n").length;
+  // An open block whose text ends in a newline also reaches the next line, but only at its first column.
+  const closed = end.line - start >= codeLines + 1 && end.column > 1;
+  return !closed;
+}
+
+// Throttles highlighting while a block streams, so colour arrives with the text.
+const STREAMING_HIGHLIGHT_DELAY_MS = 120;
+
+const CodeFenceHighlighter: FC<FenceHighlighterProps> = ({
+  node,
+  components: { Pre, Code },
+  language,
+  code,
+}) => {
+  const fenceStreaming = useIsFenceStreaming(node, code);
+  const shiki = useShiki();
+  if (!language || !shiki) {
+    return (
+      <Pre>
+        <Code>{code}</Code>
+      </Pre>
+    );
+  }
+  return (
+    <shiki.SyntaxHighlighter
+      language={language}
+      code={code}
+      delay={fenceStreaming ? STREAMING_HIGHLIGHT_DELAY_MS : 0}
+    />
+  );
+};
+
+const MermaidFenceHighlighter: FC<FenceHighlighterProps> = ({ node, code }) => {
+  const fenceStreaming = useIsFenceStreaming(node, code);
+  const mermaid = useMermaid();
+  // A half-written diagram would flash its source or a parse error, so it waits behind one placeholder.
+  if (!mermaid) return <DiagramPlaceholder />;
+  return <mermaid.MermaidDiagram code={code} streaming={fenceStreaming} />;
+};
+
+function DiagramPlaceholder() {
+  return (
+    <div
+      data-slot="mermaid-skeleton"
+      aria-label={copy.mermaidDrawing}
+      className="bg-muted flex h-32 animate-pulse items-center justify-center rounded-b-lg motion-reduce:animate-none"
+    />
+  );
+}
+
+const componentsByLanguage: MarkdownTextPrimitiveProps["componentsByLanguage"] = {
+  mermaid: {
+    SyntaxHighlighter: MermaidFenceHighlighter,
+  },
+};
 
 const MarkdownTextImpl: FC = () => {
   const streaming = useAuiState((s) => s.part.status.type === "running");
+  const rawText = useAuiState((s) => (s.part.type === "text" ? s.part.text : ""));
+  const hasMathSyntax =
+    rawText.includes("$") || rawText.includes("\\(") || rawText.includes("\\[");
+  const [mathPlugins, setMathPlugins] = useState<LoadedMathPlugins | null>(cachedMathPlugins);
 
-  // Raw HTML is dropped before parsing, and the sanitiser removes anything its
-  // schema does not list, so an answer can never run script or load a frame.
-  // Images render as links, so an answer cannot make the browser fetch a URL.
+  useEffect(() => {
+    if (!hasMathSyntax || mathPlugins) return;
+    let active = true;
+    void ensureMathPlugins().then((loaded) => {
+      if (active) setMathPlugins(loaded);
+    });
+    return () => {
+      active = false;
+    };
+  }, [hasMathSyntax, mathPlugins]);
+
+  const activePlugins = hasMathSyntax && mathPlugins ? mathPlugins : null;
+
   return (
     <div data-testid="assistant-message" aria-busy={streaming || undefined}>
       <MarkdownTextPrimitive
         skipHtml
-        remarkPlugins={remarkPlugins}
-        rehypePlugins={rehypePlugins}
+        preprocess={activePlugins ? preprocessMath : undefined}
+        remarkPlugins={activePlugins ? activePlugins.remarkPlugins : baseRemarkPlugins}
+        rehypePlugins={activePlugins ? activePlugins.rehypePlugins : baseRehypePlugins}
         className="aui-md"
         components={defaultComponents}
+        componentsByLanguage={componentsByLanguage}
         defer
       />
     </div>
@@ -119,7 +283,7 @@ const defaultComponents = memoizeMarkdownComponents({
   h6: ({ className, ...props }) => (
     <h6
       className={cn(
-        "aui-md-h6 mt-3 mb-1 text-sm font-medium first:mt-0 last:mb-0",
+        "aui-md-h6 mt-3 sm:mt-3 mb-1 text-sm font-medium first:mt-0 last:mb-0",
         className,
       )}
       {...props}
@@ -265,4 +429,5 @@ const defaultComponents = memoizeMarkdownComponents({
     );
   },
   CodeHeader,
+  SyntaxHighlighter: CodeFenceHighlighter,
 });

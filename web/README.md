@@ -103,6 +103,22 @@ Typing `/` in the composer, or pressing its apps button, opens a menu of the app
 - **Appearance** (theme and how much of each chat to show) stays in the browser.
 - **Connector sign-in** follows the host's `connector.auth`: browser, paste or token. The sign-in page opens only when the user clicks it, and the panel closes when the host's time runs out.
 
+### Approvals
+
+An `approval` event shows a card on the tool row it belongs to (matched by `call_id`; without one, at the end of the turn): `components/assistant-ui/approval-card.tsx`, built on the registry's Approval card and Permission grant. The body is the event's `display` (a terminal block for a command, a code diff for an edit, the folder or tool for a grant), or `detail` as text. Allow sends `yes`, Always allow in this chat (only when `grantable`) sends `yes_session`, and Deny opens an optional reason of up to 280 characters; every answer carries the event's `digest`. While a card waits, the message box is locked and the "Aldwin needs your OK" pill scrolls to it. Nothing is answered without a click: Esc does nothing and Stop goes through `stop`. The pending approval stays in the store across a dropped socket, so the card can still be answered within the host's grace period; a hard refresh loses it. An `unknown_approval` or digest error shows the host's message and clears the card.
+
+### Tool displays
+
+A tool result can carry a typed `display` (see `docs/protocol.md`). `components/assistant-ui/displays/` maps each kind to an element, loaded on first use: terminal, diff, files, search, page, table, memory and denied. Rows without a display keep the plain row; a failed tool without one shows Tool failure. In Detail density displays open inside the row, and terminal output or diffs longer than 20 lines fold behind Show all; in Clean density they stay in the work chip. Display text is rendered as text, links open in a new tab with `noopener noreferrer`, and nothing loads images from other sites. Displays are live only: after a reload, past rows are plain.
+
+### Turn details
+
+A stopped answer shows Stopped run with its partial text: Continue sends "Continue", Discard hides it in this view only. Messages from different days get day separators, and each message shows its time on hover and focus (the host's `at` on history rows). The ring next to the model picker shows how full the model's context was on the last answer (`done.context`) and opens a breakdown; it is hidden until the host sends one and turns amber above 85%. Detail density adds time to first token and tokens per second under each answer. The view menu's Conversation JSON opens the saved conversation from `GET /v1/conversations/{id}` with Copy.
+
+### Code, diagrams and maths
+
+Fenced code is highlighted by Shiki with the JavaScript engine, after the block stops streaming. Only the languages in `components/assistant-ui/elements/shiki-bundle.ts` are bundled, each loaded when it first appears; other languages show as plain code, because the full grammar set adds megabytes to the package. ` ```mermaid ` blocks render with `beautiful-mermaid` and fall back to the source when they don't parse. `$…$` and `$$…$$` render with KaTeX; currency dollars stay text. All three load on first use.
+
 The composer's model picker is the registry `model-selector` (cmdk), grouped by provider. Until it is first opened it is a plain button, so the chat page does not load the list; a change goes to the host with `set_model` and applies everywhere, the terminal included. Brand marks are bundled as path data in their brands' colours (black and white marks follow the text colour); names without a mark get a generic icon, and nothing is fetched from outside.
 
 ## Design system

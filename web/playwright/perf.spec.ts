@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { gzipSync } from "node:zlib";
 
-import { expect, openChat, send, test } from "./fixtures/test";
+import { expect, openChat, send, setDensity, test } from "./fixtures/test";
 
 const OUT = join(__dirname, "..", "out");
 // Per page, not the whole folder: no page loads every chunk.
@@ -16,7 +16,7 @@ function htmlFiles(dir: string): string[] {
   });
 }
 
-test("no page loads more than 560 KiB of gzipped JS", ({ browserName }) => {
+test("no page loads more than 560 KiB of gzipped JS and heavy renderers stay out of initial chunks", ({ browserName }) => {
   test.skip(browserName !== "chromium", "reads the export from disk, so one browser is enough");
   const over = htmlFiles(OUT).flatMap((page) => {
     const scripts = new Set(readFileSync(page, "utf8").match(/\/_next\/static\/chunks\/[^"'\\\s]+?\.js/g) ?? []);
@@ -24,6 +24,19 @@ test("no page loads more than 560 KiB of gzipped JS", ({ browserName }) => {
     return bytes > PAGE_JS_BUDGET ? [`${relative(OUT, page)}: ${Math.round(bytes / 1024)} KiB`] : [];
   });
   expect(over).toEqual([]);
+
+  const indexHtml = readFileSync(join(OUT, "index.html"), "utf8");
+  const initialScripts = [...new Set(indexHtml.match(/\/_next\/static\/chunks\/[^"'\\\s]+?\.js/g) ?? [])];
+  const initialText = initialScripts.map((src) => readFileSync(join(OUT, src), "utf8")).join("\n");
+  for (const heavyMarker of [
+    "katex-mathml",
+    "data-aui-mermaid-svg",
+    "assistant-ui:highlight-lines",
+    "data-slot=\"approval-card\"",
+    "data-slot=\"data-table\"",
+  ]) {
+    expect(initialText).not.toContain(heavyMarker);
+  }
 });
 
 test("fifty deltas a second has no long tasks @timing", async ({ page, host, browserName }) => {
@@ -54,4 +67,51 @@ test("chat paints within a second @timing", async ({ page, browserName }) => {
   }
   times.sort((a, b) => a - b);
   expect(times[1]).toBeLessThan(1000);
+});
+
+test("rendering a 600-line diff produces no long task over 200 ms @timing", async ({
+  page,
+  host,
+  browserName,
+}) => {
+  test.skip(browserName !== "chromium", "long task timing is Chromium-only");
+  await page.addInitScript(() => {
+    const w = window as unknown as { __diffLong: number[] };
+    w.__diffLong = [];
+    new PerformanceObserver((list) =>
+      list.getEntries().forEach((e) => w.__diffLong.push(e.duration)),
+    ).observe({ type: "longtask", buffered: true });
+  });
+  await openChat(page);
+  await setDensity(page, "detail");
+  await send(page, "big diff");
+  host.toolCall({ call_id: "c_big", name: "write_file" });
+  await page.evaluate(() => {
+    (window as unknown as { __diffLong: number[] }).__diffLong = [];
+  });
+  host.emitToolResult({
+    call_id: "c_big",
+    ok: true,
+    summary: "Write big.py",
+    display: {
+      kind: "diff",
+      path: "big.py",
+      additions: 600,
+      deletions: 0,
+      lines: Array.from({ length: 600 }, (_, i) => ({
+        kind: "added" as const,
+        text: `def fn_${i}(): return ${i}`,
+      })),
+      truncated: false,
+    },
+  });
+  host.done();
+  const diff = page.getByTestId("display-diff");
+  await expect(diff).toBeVisible();
+  await diff.getByRole("button", { name: /Show all/ }).click();
+  await expect(diff).toContainText("def fn_599");
+  const longTasks = await page.evaluate(
+    () => (window as unknown as { __diffLong: number[] }).__diffLong,
+  );
+  expect(longTasks.filter((d) => d > 200)).toEqual([]);
 });

@@ -6,5 +6,11 @@
   "maxSteps": "Stopped after reaching the step limit for one turn.",
   "scrollToBottom": "Scroll to the newest message",
   "maxStepsCount": "Stopped after reaching the step limit of {count} steps.",
-  "footer": "{input} in · {output} out · {seconds} s"
+  "footer": "{input} in · {output} out · {seconds} s",
+  "continue": "Continue",
+  "discard": "Discard",
+  "today": "Today",
+  "yesterday": "Yesterday",
+  "ttft": "first token",
+  "speed": "speed"
 }

@@ -145,16 +145,18 @@ test("nothing opens while disconnected", async ({ page, host }) => {
   await expect(page.getByTestId("history-row").first()).toBeDisabled();
 });
 
-test("never answers an approval, says the answer is waiting, and offers Stop @cross", async ({ page, host }) => {
+test("never auto-answers an approval, locks the composer, and offers Stop @cross", async ({ page, host }) => {
   await openChat(page);
   await send(page, "write it");
-  host.approval({ summary: "Write file" });
-  const notice = page.getByTestId("approval-notice");
-  await expect(notice).toContainText("It wants to: Write file.");
-  await expect(notice).toContainText("isn't available in the web app yet");
+  host.toolCall({ call_id: "c1", name: "write_file" });
+  host.approval({ call_id: "c1", tool: "write_file", summary: "Write file" });
+  const card = page.getByTestId("approval-card");
+  await expect(card).toContainText("Write file");
+  await expect(page.getByTestId("approval-pill")).toHaveText("Aldwin needs your OK");
+  await expect(page.getByTestId(ids.input)).toBeDisabled();
   await page.waitForTimeout(500);
   expect(host.sentOfType("approve")).toHaveLength(0);
-  await notice.getByRole("button", { name: "Stop" }).click();
+  await page.getByTestId(ids.stop).click();
   await expect.poll(() => host.sentOfType("stop").length).toBe(1);
-  await expect(notice).toHaveCount(0);
+  await expect(card).toHaveCount(0);
 });

@@ -2,12 +2,13 @@
 
 import { AuiIf, ComposerPrimitive, useAui } from "@assistant-ui/react";
 import { ArrowUp, AtSign, Blocks, Square } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useEffect, useId, useRef, type KeyboardEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import copy from "@/data/chat/composer.json";
 import appsCopy from "@/data/chat/apps-menu.json";
-import { useChatStore } from "@/state/chat-store";
+import { selectPendingApproval, useChatStore } from "@/state/chat-store";
 import { cn } from "@/utils/cn";
 
 import { AppsPopover } from "./apps-popover";
@@ -16,6 +17,14 @@ import { ModelPicker } from "./model-picker";
 import { PickedAppList } from "./picked-apps";
 import { SearchPicker } from "./search-picker";
 import { SkillsPopover } from "./skills-popover";
+
+// Loaded once the host has reported context usage, so the composer does not carry it up front.
+const ContextRing = dynamic(() => import("./context-ring").then((m) => m.ContextRing), { ssr: false });
+
+function ContextSlot() {
+  const hasContext = useChatStore((s) => s.context !== null && s.context.limit > 0);
+  return hasContext ? <ContextRing /> : null;
+}
 
 /**
  * Where the user types. `@` opens the skills menu and `/` the connected apps; Send becomes Stop while an
@@ -34,6 +43,8 @@ export function Composer({
   const aui = useAui();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const active = useChatStore((s) => s.turns.find((t) => t.id === s.activeId) ?? null);
+  const approvalWaiting = useChatStore((s) => selectPendingApproval(s) !== null);
+  const inputLocked = disabled || approvalWaiting;
   const stopping = active?.status === "stopping";
   const draft = useChatStore((s) => s.draft);
   const pickedApps = useChatStore((s) => s.pickedApps);
@@ -68,7 +79,7 @@ export function Composer({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Escape" && active !== null && !stopping) {
+    if (event.key === "Escape" && active !== null && !stopping && !approvalWaiting) {
       event.preventDefault();
       aui.composer().cancel();
     }
@@ -96,6 +107,7 @@ export function Composer({
         <ComposerPrimitive.Input
           ref={inputRef}
           data-testid="composer-input"
+          disabled={inputLocked}
           // The skills menu makes this a combobox; the menu sets aria-expanded to true while it is open.
           role="combobox"
           aria-autocomplete="list"
@@ -118,7 +130,7 @@ export function Composer({
         <Button
           variant="ghost"
           size="icon-sm"
-          disabled={disabled}
+          disabled={inputLocked}
           onClick={() => startTrigger("@")}
           aria-label={copy.skills}
           title={copy.skills}
@@ -130,7 +142,7 @@ export function Composer({
         <Button
           variant="ghost"
           size="icon-sm"
-          disabled={disabled}
+          disabled={inputLocked}
           onClick={() => startTrigger("/")}
           aria-label={appsCopy.button}
           title={appsCopy.button}
@@ -141,6 +153,7 @@ export function Composer({
         </Button>
         <ModelPicker placement="composer" fallback={model} disabled={disabled || active !== null} />
         <SearchPicker disabled={disabled} />
+        <ContextSlot />
         <span aria-hidden className="flex-1" />
         <AuiIf condition={(s) => !s.composer.canCancel}>
           <ComposerPrimitive.Send

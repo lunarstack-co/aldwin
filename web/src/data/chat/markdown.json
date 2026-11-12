@@ -1,4 +1,6 @@
 {
   "copyCode": "Copy code",
-  "copied": "Copied"
+  "copied": "Copied",
+  "mermaidError": "Diagram could not be rendered.",
+  "mermaidDrawing": "Drawing the diagram"
 }

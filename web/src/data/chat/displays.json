@@ -1,0 +1,33 @@
+{
+  "truncated": "Showing the first {count}",
+  "showAll": "Show all {count} lines",
+  "showLess": "Show less",
+  "terminal": {
+    "exitCode": "Exit code {code}",
+    "copy": "Copy output"
+  },
+  "files": {
+    "empty": "Empty folder",
+    "header": "{root} · {count} items",
+    "headerOne": "{root} · 1 item"
+  },
+  "search": {
+    "searching": "Searching",
+    "none": "No sources found",
+    "one": "Read 1 source",
+    "many": "Read {count} sources"
+  },
+  "table": {
+    "empty": "No rows"
+  },
+  "memory": {
+    "header": "Memory updated",
+    "added": "Added",
+    "replaced": "Replaced",
+    "removed": "Removed"
+  },
+  "denied": {
+    "title": "Blocked by safety rule",
+    "userTitle": "Declined by you"
+  }
+}

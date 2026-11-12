@@ -31,7 +31,7 @@ test("controls, surfaces and the thread use the right radius", async ({ page, ho
   await expect(page.getByTestId("composer-send")).toHaveCSS("border-radius", /9999px|3.35544e\+07px/);
   await expect(page.getByTestId("composer")).toHaveCSS("border-radius", "16px");
   await page.getByTestId("composer-input").press("Enter");
-  await expect(page.getByTestId("user-message").locator("div").first()).toHaveCSS("border-radius", "16px");
+  await expect(page.getByTestId("user-bubble")).toHaveCSS("border-radius", "16px");
   await page.getByTestId("density-toggle").click();
   await expect(page.locator("[data-slot=dropdown-menu-content]")).toHaveCSS("border-radius", "10px");
 });

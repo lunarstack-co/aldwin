@@ -40,7 +40,7 @@ test("first send docks the composer and lays out bubbles @cross", async ({ page,
   const viewport = page.viewportSize()!;
   const box = (await page.getByTestId("composer").boundingBox())!;
   expect(viewport.height - (box.y + box.height)).toBeLessThan(48);
-  const bubble = page.getByTestId("user-message").locator("> div");
+  const bubble = page.getByTestId("user-bubble");
   await expect(bubble).toHaveCSS("border-radius", "16px");
   const column = (await page.getByTestId("transcript").locator("section").boundingBox())!;
   const bubbleBox = (await bubble.boundingBox())!;

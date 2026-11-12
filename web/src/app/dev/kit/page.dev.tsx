@@ -25,8 +25,29 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { SkillText } from "@/components/organisms/chat/user-message";
+import { ApprovalCard } from "@/components/assistant-ui/elements/approval-card";
+import { CodeDiff } from "@/components/assistant-ui/elements/code-diff";
+import { ContextBreakdown } from "@/components/assistant-ui/elements/context-breakdown";
+import { ContextDisplay } from "@/components/assistant-ui/elements/context-display";
+import { DataTable } from "@/components/assistant-ui/elements/data-table";
+import { DaySeparator } from "@/components/assistant-ui/elements/day-separator";
+import { FileTree } from "@/components/assistant-ui/elements/file-tree";
+import { GuardrailNotice } from "@/components/assistant-ui/elements/guardrail-notice";
+import { LinkPreview } from "@/components/assistant-ui/elements/link-preview";
+import { MemoryChips } from "@/components/assistant-ui/elements/memory-chips";
+import { MermaidDiagram } from "@/components/assistant-ui/elements/mermaid-diagram";
+import { MessageTiming } from "@/components/assistant-ui/elements/message-timing";
+import { PermissionGrant } from "@/components/assistant-ui/elements/permission-grant";
+import { SyntaxHighlighter } from "@/components/assistant-ui/elements/shiki-highlighter";
+import { StoppedRun } from "@/components/assistant-ui/elements/stopped-run";
+import { TerminalBlock } from "@/components/assistant-ui/elements/terminal-block";
+import { TodoList } from "@/components/assistant-ui/elements/todo-list";
+import { ToolError } from "@/components/assistant-ui/elements/tool-error";
+import { WebSearch } from "@/components/assistant-ui/elements/web-search";
 import markdownCopy from "@/data/chat/markdown.json";
 import copy from "@/data/dev/kit.json";
+import transcriptCopy from "@/data/chat/transcript.json";
+import approvalCopy from "@/data/chat/approval.json";
 
 function Item({ name, children }: { name: string; children: ReactNode }) {
   return (
@@ -100,6 +121,63 @@ function Gallery() {
           <TabsList><TabsTrigger value="one">{s.tab}</TabsTrigger><TabsTrigger value="two">{s.tab}</TabsTrigger></TabsList>
           <TabsContent value="one">{s.dialog}</TabsContent>
         </Tabs>
+      </Item>
+      <Item name="approval-card">
+        <ApprovalCard state="request" title={approvalCopy.titles.run_command} subtitle="ls -la" onAllowOnce={() => {}} onDeny={() => {}} />
+      </Item>
+      <Item name="permission-grant">
+        <PermissionGrant capability="Read files in ~/Documents" requester="Aldwin" reach={["~/Documents"]} scope="pending" onGrant={() => {}} />
+      </Item>
+      <Item name="terminal-block">
+        <TerminalBlock command="echo hi" lines={["hi"]} visibleCount={1} done exitCode={0} durationMs={12} />
+      </Item>
+      <Item name="code-diff">
+        <CodeDiff filename="notes.md" additions={1} deletions={1} lines={[{ kind: "removed", text: "old" }, { kind: "added", text: "new" }]} cycle={1} />
+      </Item>
+      <Item name="file-tree">
+        <FileTree nodes={[{ path: "src", name: "src", depth: 0, kind: "folder" }, { path: "src/app.ts", name: "app.ts", depth: 1, kind: "file" }]} visibleCount={2} totalAdditions={0} totalDeletions={0} />
+      </Item>
+      <Item name="web-search">
+        <WebSearch query="aldwin" results={[{ title: "Aldwin", domain: "askaldwin.com", url: "https://askaldwin.com" }]} visibleResults={1} searching={false} cycle={1} />
+      </Item>
+      <Item name="link-preview">
+        <LinkPreview href="https://askaldwin.com" title="Aldwin" siteName="askaldwin.com" description="Local assistant." />
+      </Item>
+      <Item name="data-table">
+        <DataTable columns={[{ key: "name", label: "Name", sortable: true }]} rows={[{ name: "Ada" }]} />
+      </Item>
+      <Item name="memory-chips">
+        <MemoryChips chips={[{ id: "m1", text: "Likes tea", change: "added", label: "Added" }]} />
+      </Item>
+      <Item name="guardrail-notice">
+        <GuardrailNotice title="Blocked" policy="blocked_command" explanation="Command refused." alternatives={[]} />
+      </Item>
+      <Item name="tool-error">
+        <ToolError name="read_file" target="missing.txt" message="not found" />
+      </Item>
+      <Item name="todo-list">
+        <TodoList items={[{ id: "t1", text: "Write tests", status: "active" }]} />
+      </Item>
+      <Item name="stopped-run">
+        <StoppedRun words={["Partial", "answer"]} reason="stopped" onContinue={() => {}} onDiscard={() => {}} />
+      </Item>
+      <Item name="day-separator">
+        <DaySeparator messages={[{ id: "d1", day: "Today", time: "10:00", role: "user", text: "Hi" }]} />
+      </Item>
+      <Item name="context-breakdown">
+        <ContextBreakdown limit={128000} segments={[{ label: "Instructions", tokens: 1000, tint: "bg-blue-500" }]} />
+      </Item>
+      <Item name="context-display">
+        <ContextDisplay.Ring modelContextWindow={128000} usage={{ inputTokens: 4000, outputTokens: 200 }} />
+      </Item>
+      <Item name="message-timing">
+        <MessageTiming stats={[{ label: transcriptCopy.ttft, value: "0.8 s" }, { label: "speed", value: "50 tok/s" }]} />
+      </Item>
+      <Item name="shiki-highlighter">
+        <SyntaxHighlighter language="python" code="x = 1" />
+      </Item>
+      <Item name="mermaid-diagram">
+        <MermaidDiagram code="graph TD; A-->B" />
       </Item>
     </div>
   );

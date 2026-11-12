@@ -8,6 +8,16 @@ export type HelloRequest = RequestBase & { type: "hello"; v_min: number; v_max: 
 /** `apps` names the connected apps (connector names, such as `linear`) the user picked with `/` for this message. */
 export type TurnRequest = RequestBase & { type: "turn"; text: string; skills: string[]; apps?: string[] };
 export type StopRequest = RequestBase & { type: "stop" };
+export type ApprovalAnswer = "yes" | "yes_session" | "no";
+export type ApprovalTier = "ask" | "diff";
+export type GrantScope = "file" | "folder" | "tool";
+export type ApproveRequest = RequestBase & {
+  type: "approve";
+  approval_id: string;
+  answer: ApprovalAnswer;
+  digest?: string | null;
+  reason?: string | null;
+};
 export type HistoryRequest = RequestBase & { type: "history"; limit: number };
 export type StatusRequest = RequestBase & { type: "status" };
 export type SessionsNewRequest = RequestBase & { type: "sessions.new" };
@@ -53,6 +63,7 @@ export type Request =
   | HelloRequest
   | TurnRequest
   | StopRequest
+  | ApproveRequest
   | HistoryRequest
   | StatusRequest
   | SessionsNewRequest
@@ -178,6 +189,125 @@ export type SessionMeta = {
   interrupted: boolean;
 };
 
+export type TerminalDisplay = {
+  kind: "terminal";
+  command: string;
+  cwd: string;
+  stdout: string;
+  stderr: string;
+  exit_code: number | null;
+  duration_ms: number;
+  truncated: boolean;
+};
+
+export type DiffLine = {
+  kind: "context" | "added" | "removed";
+  text: string;
+};
+
+export type DiffDisplay = {
+  kind: "diff";
+  path: string;
+  additions: number;
+  deletions: number;
+  lines: DiffLine[];
+  truncated: boolean;
+};
+
+export type FileEntry = {
+  path: string;
+  kind: "file" | "folder";
+  additions?: number | null;
+  deletions?: number | null;
+};
+
+export type FilesDisplay = {
+  kind: "files";
+  root: string;
+  entries: FileEntry[];
+  truncated: boolean;
+};
+
+export type SearchHit = {
+  title: string;
+  url: string;
+  snippet: string;
+};
+
+export type SearchDisplay = {
+  kind: "search";
+  query: string;
+  results: SearchHit[];
+  truncated?: boolean;
+};
+
+export type PageDisplay = {
+  kind: "page";
+  url: string;
+  title: string;
+  site: string;
+  description: string;
+};
+
+export type TableColumn = {
+  key: string;
+  label: string;
+};
+
+export type TableDisplay = {
+  kind: "table";
+  columns: TableColumn[];
+  rows: Record<string, string>[];
+  truncated: boolean;
+};
+
+export type MemoryChange = {
+  text: string;
+  change: "added" | "replaced" | "removed";
+};
+
+export type MemoryDisplay = {
+  kind: "memory";
+  changes: MemoryChange[];
+};
+
+export type DeniedDisplay = {
+  kind: "denied";
+  rule: string;
+  message: string;
+};
+
+export type GrantDisplay = {
+  kind: "grant";
+  scope: GrantScope;
+  reach: string[];
+};
+
+export type Display =
+  | TerminalDisplay
+  | DiffDisplay
+  | FilesDisplay
+  | SearchDisplay
+  | PageDisplay
+  | TableDisplay
+  | MemoryDisplay
+  | DeniedDisplay
+  | GrantDisplay;
+
+export type DisplayKind = Display["kind"];
+
+export type ContextSegment = {
+  key: string;
+  label: string;
+  tokens: number;
+};
+
+export type ContextUsage = {
+  limit: number;
+  used: number;
+  segments: ContextSegment[];
+};
+
 type EventBase = { v: number; type: "event"; re: string; channel: string; sender: string };
 
 export type TextEvent = EventBase & { kind: "text"; delta: string };
@@ -199,6 +329,7 @@ export type ToolResultEvent = EventBase & {
   summary: string;
   preview: string;
   duration_ms: number;
+  display?: Display | null;
 };
 export type HistoryEvent = EventBase & {
   kind: "history";
@@ -222,6 +353,7 @@ export type DoneEvent = EventBase & {
   reason: DoneReason;
   usage?: TokenUsage | null;
   max_steps?: number | null;
+  context?: ContextUsage | null;
 };
 export type TodoUpdatedEvent = EventBase & {
   kind: "todo.updated";
@@ -267,12 +399,24 @@ export type ConnectorAuthEvent = EventBase & {
   expires_in: number;
 };
 export type ErrorEvent = EventBase & { kind: "error"; code: string; message: string };
-/** The host asks before an action. The web cannot answer yet; it shows that the turn is waiting. */
+/** The host asks before an action; the browser answers with `approve`. */
 export type ApprovalEvent = EventBase & {
   kind: "approval";
   approval_id: string;
+  call_id?: string | null;
+  tool?: string;
+  tier?: ApprovalTier;
   summary: string;
+  detail?: string;
+  grantable?: boolean;
+  grant_scope?: GrantScope | null;
+  digest?: string;
+  risky?: string[];
+  connector?: string | null;
   connector_title?: string | null;
+  remote_tool?: string | null;
+  reason?: string | null;
+  display?: Display | null;
 };
 /** Events the chat screen leaves alone. */
 export type UnhandledEvent = EventBase & {

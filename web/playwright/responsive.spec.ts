@@ -1,4 +1,4 @@
-import { expect, openChat, send, session, test } from "./fixtures/test";
+import { expect, openChat, send, session, setDensity, test } from "./fixtures/test";
 
 const WIDTHS = [320, 390, 768, 1024, 1280, 1920, 2560];
 const ROUTES = ["/", "/c/?id=a", "/onboarding/name/", "/404.html"];
@@ -235,4 +235,72 @@ test("on phones an empty chat keeps the composer at the bottom; wider screens ce
   else expect(gapBelow).toBeGreaterThan(height / 5);
   // The greeting stays above the composer, in view.
   await expect(page.getByTestId("empty-home")).toBeInViewport();
+});
+
+test("approval cards, permission grants and displays fit 320 px and phones without sideways scroll @cross", async ({
+  page,
+  host,
+}) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  await openChat(page);
+  await setDensity(page, "detail");
+  await send(page, "phone check");
+
+  host.toolCall({ call_id: "c_cmd", name: "run_command" });
+  host.emitApproval({
+    approval_id: "ap_phone",
+    call_id: "c_cmd",
+    tool: "run_command",
+    summary: "Run long command",
+    risky: ["recursive delete"],
+    display: {
+      kind: "terminal",
+      command: `rm -rf ${"/very_long_folder_segment".repeat(6)}`,
+      cwd: "/workspace",
+      stdout: "",
+      stderr: "",
+      exit_code: null,
+      duration_ms: 0,
+      truncated: false,
+    },
+  });
+  await expect(page.getByTestId("approval-card")).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+  ).toBe(true);
+
+  await page.getByTestId("approval-card").getByRole("button", { name: "Allow", exact: true }).click();
+  host.emitToolResult({
+    call_id: "c_cmd",
+    ok: true,
+    summary: "exit 0",
+    display: {
+      kind: "terminal",
+      command: "ls",
+      cwd: "/ws",
+      stdout: "done\n",
+      stderr: "",
+      exit_code: 0,
+      duration_ms: 5,
+      truncated: false,
+    },
+  });
+
+  host.toolCall({ call_id: "c_grant", name: "read_file" });
+  host.emitApproval({
+    approval_id: "ap_grant_p",
+    call_id: "c_grant",
+    tool: "read_file",
+    summary: "Read files in ~/Documents/tax",
+    grantable: true,
+    display: {
+      kind: "grant",
+      scope: "folder",
+      reach: ["~/Documents/tax/2026/very/deep/nested/folder/path/for/mobile"],
+    },
+  });
+  await expect(page.locator('[data-approval-id="ap_grant_p"]')).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+  ).toBe(true);
 });

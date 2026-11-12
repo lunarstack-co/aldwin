@@ -1,0 +1,11 @@
+{
+  "menuItem": "Conversation JSON",
+  "title": "Conversation JSON",
+  "description": "Saved session file on disk for this conversation.",
+  "loading": "Loading conversation JSON...",
+  "notFound": "This conversation has not been saved to disk yet, or could not be found.",
+  "error": "Could not load the conversation JSON.",
+  "copy": "Copy",
+  "copied": "Copied",
+  "close": "Close"
+}

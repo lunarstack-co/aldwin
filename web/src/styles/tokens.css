@@ -21,6 +21,11 @@
   --accent: oklch(0.97 0.004 var(--tint));
   --accent-foreground: oklch(0.205 0.006 var(--tint));
   --destructive: oklch(0.577 0.245 27.325);
+  /* Aldwin's own: diff lines, tinted rows with a strong sign so the text stays readable. */
+  --diff-added: oklch(0.93 0.06 150);
+  --diff-added-mark: oklch(0.5 0.14 150);
+  --diff-removed: oklch(0.93 0.05 22);
+  --diff-removed-mark: oklch(0.55 0.2 25);
   --border: oklch(0.922 0.005 var(--tint));
   --input: oklch(0.922 0.005 var(--tint));
   --ring: oklch(0.708 0.006 var(--tint));
@@ -58,6 +63,10 @@
   --accent: oklch(0.275 0.004 var(--tint));
   --accent-foreground: oklch(0.985 0.002 var(--tint));
   --destructive: oklch(0.704 0.191 22.216);
+  --diff-added: oklch(0.32 0.07 150 / 70%);
+  --diff-added-mark: oklch(0.8 0.16 150);
+  --diff-removed: oklch(0.32 0.08 22 / 70%);
+  --diff-removed-mark: oklch(0.76 0.15 22);
   --border: oklch(0.985 0.002 var(--tint) / 10%);
   --input: oklch(0.985 0.002 var(--tint) / 15%);
   --ring: oklch(0.556 0.004 var(--tint));
