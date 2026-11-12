@@ -1,0 +1,25 @@
+{
+  "current": "Model in use",
+  "providers": "Providers",
+  "local": "On this computer",
+  "status": {
+    "ok": "Connected",
+    "invalid_key": "Key not accepted",
+    "no_access": "Key can't use models",
+    "unreachable": "Can't reach it",
+    "not_running": "Not running",
+    "not_configured": "Not set up"
+  },
+  "addKey": "Add key",
+  "replaceKey": "Replace key",
+  "keyLabel": "{title} API key",
+  "saveKey": "Connect",
+  "fromEnv": "This key comes from your computer's settings (an environment variable), so it can't be changed here.",
+  "disconnect": "Disconnect",
+  "addServer": "Add a server",
+  "addServerLede": "Connect an AI program that speaks the OpenAI format, such as LM Studio on this computer or a server you run elsewhere.",
+  "loadError": "Couldn't load the providers.",
+  "empty": "No providers yet. Add a key or a server below.",
+  "currentHint": "The AI model Aldwin answers with. You can also change it from the message box in a chat.",
+  "keyHint": "An API key is a long password from your {title} account. Aldwin checks it works before saving it, and only ever shows the last few characters."
+}

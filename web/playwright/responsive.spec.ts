@@ -196,3 +196,43 @@ test("reduced motion stops every animation and keeps Working and Stop", async ({
   );
   expect(moving).toEqual([]);
 });
+
+test("Settings fits a phone with big targets @cross", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  for (const section of ["providers", "search", "skills", "tools", "advanced", "appearance"]) {
+    await openChat(page, `/settings/?section=${section}`);
+    await expect(page.locator(`[data-testid=settings-${section}]`)).not.toContainText("Loading");
+    const wide = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+    expect(wide, `${section} scrolls sideways`).toBe(false);
+    const small = await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>("[data-testid=settings-hub] :is(button, a, [role=button], [role=switch], input, summary)")]
+        .filter((el) => {
+          const r = el.getBoundingClientRect();
+          const folded = el.closest("details:not([open])") !== null && el.tagName !== "SUMMARY";
+          return r.width > 0 && r.height > 0 && !folded && !el.closest(".sr-only") && getComputedStyle(el).visibility !== "hidden";
+        })
+        .filter((el) => el.getAttribute("aria-hidden") !== "true" && !(el instanceof HTMLInputElement && el.type === "checkbox"))
+        // A switch's label is its target.
+        .filter((el) => !(el.getAttribute("role") === "switch" && (el.closest("label")?.getBoundingClientRect().height ?? 0) >= 40))
+        // The show-key toggle sits inside its 40px field, which is the target.
+        .filter((el) => !(el.hasAttribute("aria-pressed") && el.parentElement?.querySelector("input") !== null))
+        // Inline text links sit in a sentence; everything else needs a 40px target.
+        .filter((el) => el.getBoundingClientRect().height < 40 && !(el.tagName === "A" && !el.className.includes("inline-flex") && !el.closest("nav")))
+        .map((el) => `${el.tagName}[${el.getAttribute("aria-label") ?? el.textContent?.trim().slice(0, 20)}] ${Math.round(el.getBoundingClientRect().height)}`),
+    );
+    expect(small, section).toEqual([]);
+  }
+});
+
+test("on phones an empty chat keeps the composer at the bottom; wider screens centre it @cross", async ({ page }) => {
+  await openChat(page);
+  const composer = page.getByTestId("composer");
+  await expect(composer).toBeVisible();
+  const { height, width } = page.viewportSize() ?? { height: 720, width: 1280 };
+  const box = (await composer.boundingBox())!;
+  const gapBelow = height - (box.y + box.height);
+  if (width < 768) expect(gapBelow).toBeLessThan(48);
+  else expect(gapBelow).toBeGreaterThan(height / 5);
+  // The greeting stays above the composer, in view.
+  await expect(page.getByTestId("empty-home")).toBeInViewport();
+});

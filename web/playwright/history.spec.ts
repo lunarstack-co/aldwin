@@ -59,11 +59,11 @@ test("the rail does not show the user's name", async ({ page }) => {
   await expect(page.getByTestId("rail")).not.toContainText("Ada");
 });
 
-test("settings waits for its screen while @ is live", async ({ page }) => {
+test("settings is a link and @ is live", async ({ page }) => {
   await openChat(page);
-  await expect(page.getByTestId("settings")).toBeDisabled();
+  await expect(page.getByTestId("settings").filter({ visible: true })).toHaveAttribute("href", "/settings/");
   await expect(page.getByTestId("composer-skills")).toBeEnabled();
-  await expect(page.getByTestId("composer-model")).toHaveText("Model: openai/gpt-4o");
+  await expect(page.getByTestId("model-picker-composer")).toHaveAccessibleName("Model: GPT-4o");
 });
 
 test("no rename archive or delete", async ({ page, host }) => {

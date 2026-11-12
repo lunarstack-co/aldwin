@@ -7,9 +7,12 @@ import { createDirectiveText } from "@/components/assistant-ui/elements/directiv
 import { useMessageTurn } from "@/components/assistant-ui/turn";
 import { Badge } from "@/components/ui/badge";
 import copy from "@/data/chat/transcript.json";
+import appsCopy from "@/data/chat/apps-menu.json";
 import skillsCopy from "@/data/chat/skills-menu.json";
 import { skillFormatter } from "@/utils/skills";
 import { fill } from "@/utils/text";
+
+import { PickedAppList } from "./picked-apps";
 
 // `@name` in a sent message shows as a chip, read the same way the composer wrote it.
 export const SkillText = createDirectiveText(skillFormatter, { fallbackIcon: AtSign });
@@ -41,6 +44,23 @@ function SkillsUsed() {
   );
 }
 
+/** The apps picked for this turn as chips, and a line for each the host could not use. */
+function AppsPicked() {
+  const turn = useMessageTurn();
+  if (!turn || turn.pickedApps.length === 0) return null;
+  const title = (name: string) => turn.pickedApps.find((a) => a.name === name)?.title ?? name;
+  return (
+    <div className="flex max-w-[80%] flex-col items-end gap-1 text-xs" data-testid="apps-picked">
+      <PickedAppList apps={turn.pickedApps} className="justify-end" />
+      {turn.appsUsed?.dropped.map(({ name, reason }) => (
+        <p key={name} className="text-muted-foreground" data-app-dropped={reason}>
+          {fill(reason === "limit" ? appsCopy.droppedLimit : appsCopy.droppedUnknown, { app: title(name) })}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 /** What the user asked, kept to the right so the answer column reads clean. */
 export function UserMessage() {
   return (
@@ -51,6 +71,7 @@ export function UserMessage() {
       >
         <MessagePrimitive.Parts components={{ Text: SkillText }} />
       </div>
+      <AppsPicked />
       <SkillsUsed />
     </MessagePrimitive.Root>
   );

@@ -2,13 +2,15 @@
 import { expect, test } from "@playwright/test";
 
 import { RECONNECT } from "../src/constants/chat";
-import { conversationHref } from "../src/constants/routes";
+import { conversationHref, settingsHref } from "../src/constants/routes";
 import { lastUserText, useChatStore } from "../src/state/chat-store";
 import { isConversationId } from "../src/utils/conversation-id";
 import { readDensity, isDensity } from "../src/utils/density";
 import { displayTitle, filterSessions, groupSessions, shouldCallSessionsNew } from "../src/utils/history";
 import { allowsProtocol, allowsTag } from "../src/utils/markdown";
 import { pageTitle } from "../src/utils/page-title";
+import { markFor } from "../src/components/brand/brand-mark";
+import { changedLimits, sectionOf } from "../src/utils/settings";
 import { searchSkills, skillFormatter, skillsFromText, visibleSkills } from "../src/utils/skills";
 import { turnsToMessages } from "../src/utils/thread-messages";
 import { formatDuration } from "../src/utils/time";
@@ -203,4 +205,61 @@ test("skill formatter writes and reads @name", () => {
     { kind: "text", text: " now" },
   ]);
   expect(skillFormatter.parse("plain")).toEqual([{ kind: "text", text: "plain" }]);
+});
+
+test("settings addresses and sections", () => {
+  expect(settingsHref()).toBe("/settings/");
+  expect(settingsHref("skills")).toBe("/settings/?section=skills");
+  expect(sectionOf("search")).toBe("search");
+  expect(sectionOf("nope")).toBe("providers");
+  expect(sectionOf(null)).toBe("providers");
+});
+
+test("only changed limits are sent", () => {
+  const saved = { context_exchanges: 20, profile_chars: 4000, notes_chars: 4000, notes_days: 7, persona_chars: 2000, max_steps: 15, web_searches: 5, connector_tools: 40 };
+  expect(changedLimits(saved, { ...saved, max_steps: 20 })).toEqual({ max_steps: 20 });
+  expect(changedLimits(saved, saved)).toEqual({});
+});
+
+test("brand marks by host name, none for unknown names", () => {
+  expect(markFor("openai")?.title).toBe("OpenAI");
+  expect(markFor("Tavily")?.title).toBe("Tavily");
+  expect(markFor("linear")?.title).toBe("Linear");
+  expect(markFor("acme")).toBeNull();
+});
+
+test("only connected apps that are on and have tools can be picked", async () => {
+  const { pickableApps, searchApps } = await import("../src/utils/apps");
+  const tool = (name: string, effective: "auto" | "ask" | "off" = "auto") => ({
+    name,
+    model_name: `mcp__x__${name}`,
+    title: null,
+    description: "",
+    read_only: true,
+    setting: null,
+    effective,
+  });
+  const base = {
+    url: null,
+    auth: "none" as const,
+    trust_read_only_hints: true,
+    error: null,
+    retry_in_s: null,
+    transport: "http" as const,
+    command: null,
+    note: null,
+  };
+  const apps = pickableApps([
+    { ...base, name: "linear", title: "Linear", enabled: true, status: "connected", tools: [tool("a"), tool("b", "off")] },
+    { ...base, name: "github", title: "GitHub", enabled: true, status: "connected", tools: [tool("c")] },
+    { ...base, name: "empty", title: "Empty", enabled: true, status: "connected", tools: [tool("d", "off")] },
+    { ...base, name: "off", title: "Off", enabled: false, status: "disabled", tools: [tool("e")] },
+    { ...base, name: "notion", title: "Notion", enabled: true, status: "needs_auth", tools: [tool("f")] },
+  ]);
+  expect(apps).toEqual([
+    { name: "linear", title: "Linear", toolCount: 1 },
+    { name: "github", title: "GitHub", toolCount: 1 },
+  ]);
+  expect(searchApps(apps, "git").map((a) => a.name)).toEqual(["github"]);
+  expect(searchApps(apps, "").length).toBe(2);
 });

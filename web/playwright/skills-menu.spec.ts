@@ -226,12 +226,14 @@ test("skill text from files stays plain text", async ({ page, host }) => {
   expect(dialogs).toEqual([]);
 });
 
-test("Manage in Settings sits disabled until Settings exists", async ({ page }) => {
+test("Manage skills opens the Skills section @cross", async ({ page }) => {
   await openChat(page);
   await typeInComposer(page, "@");
   const manage = page.getByTestId("skills-manage");
-  await expect(manage).toHaveText("Manage in Settings…");
-  await expect(manage).toBeDisabled();
+  await expect(manage).toHaveText("Manage skills");
+  await manage.click();
+  await expect(page).toHaveURL(/\/settings\/\?section=skills$/);
+  await expect(page.locator("#settings-section-title")).toHaveText("Skills");
 });
 
 test("the menu works while a turn is running", async ({ page, host }) => {

@@ -14,6 +14,10 @@
       "title": "Conversation",
       "description": "A saved conversation with Aldwin, kept on this computer."
     },
+    "settings": {
+      "title": "Settings",
+      "description": "Choose Aldwin's model, search, skills, connected apps, limits and look."
+    },
     "connect": {
       "title": "Connect a model",
       "description": "Choose the model Aldwin uses: an API key, a local model, or another OpenAI-compatible server."

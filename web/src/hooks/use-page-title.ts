@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 
-import { isConversationPage } from "@/constants/routes";
+import { isConversationPage, isHomePage } from "@/constants/routes";
 import appCopy from "@/data/app.json";
 import { useChatStore } from "@/state/chat-store";
 import { pageTitle } from "@/utils/page-title";
@@ -15,6 +15,8 @@ import { pageTitle } from "@/utils/page-title";
 export function usePageTitle(): void {
   const pathname = usePathname();
   const onConversation = isConversationPage(pathname);
+  // Pages other than the chat keep the static title their metadata gives them.
+  const onChat = onConversation || isHomePage(pathname);
   const currentId = useChatStore((s) => s.currentSessionId);
   const title = useChatStore((s) => s.sessions.find((x) => x.id === s.currentSessionId)?.title ?? "");
   const firstUserText = useChatStore((s) => s.turns.find((t) => t.userText)?.userText ?? "");
@@ -23,7 +25,7 @@ export function usePageTitle(): void {
 
   useEffect(() => {
     // A new chat keeps its static title until its first message names it.
-    if (!onConversation && !hasTurns) return;
+    if (!onChat || (!onConversation && !hasTurns)) return;
     const wanted = pageTitle({
       title,
       firstUserText,
@@ -38,5 +40,5 @@ export function usePageTitle(): void {
     });
     observer.observe(document.head, { subtree: true, childList: true, characterData: true });
     return () => observer.disconnect();
-  }, [onConversation, hasTurns, currentId, title, firstUserText, running, pathname]);
+  }, [onChat, onConversation, hasTurns, currentId, title, firstUserText, running, pathname]);
 }

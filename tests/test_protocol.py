@@ -16,9 +16,11 @@ from aldwin.protocol import (
     VERSION,
     ApprovalEvent,
     ApproveRequest,
+    AppsUsedEvent,
     ConnectorInfo,
     ConnectorsAddRequest,
     DoneEvent,
+    DroppedApp,
     DroppedSkill,
     ErrorEvent,
     Event,
@@ -380,6 +382,7 @@ def test_protocol_v2_messages_round_trip() -> None:
         ),
         SkillsListRequest(id="req_sl"),
         TodoGetRequest(id="req_tg"),
+        TurnRequest(id="req_t3", text="File it", apps=["linear"]),
     ]
     for req in v2_requests:
         parsed_req = parse_request(req.model_dump_json())
@@ -880,3 +883,16 @@ def test_status_event_old_shape_still_parses() -> None:
     assert isinstance(parsed, StatusEvent)
     assert (parsed.message, parsed.turn_streamed_chunks) == ("x", 0)
     assert parsed.active_tool is None and parsed.partial_text is None
+
+
+def test_apps_used_round_trips_and_old_turns_have_no_apps() -> None:
+    """`apps.used` round-trips; a turn without `apps` gets an empty list."""
+    event = AppsUsedEvent(
+        re="req_1",
+        names=["linear"],
+        dropped=[DroppedApp(name="slack", reason="unknown")],
+    )
+    assert parse_event(event.model_dump_json()) == event
+    old = parse_request('{"v": 2, "type": "turn", "id": "req_1", "text": "hi"}')
+    assert isinstance(old, TurnRequest)
+    assert old.apps == []

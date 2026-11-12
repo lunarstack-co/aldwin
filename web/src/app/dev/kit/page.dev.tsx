@@ -1,5 +1,6 @@
 "use client";
 
+import { Search } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Mark } from "@/components/brand/mark";
@@ -8,10 +9,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { CodeBlock } from "@/components/ui/code-block";
+import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { DotMatrix } from "@/components/ui/dot-matrix";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Kbd } from "@/components/ui/kbd";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -50,6 +53,22 @@ function Gallery() {
       <Item name="field"><Field id="kit-field" label={s.input}><Input id="kit-field" /></Field></Item>
       <Item name="textarea"><Textarea placeholder={s.input} /></Item>
       <Item name="label"><Label>{s.input}</Label></Item>
+      <Item name="input-group">
+        <InputGroup className="max-w-72">
+          <InputGroupInput placeholder={s.search} aria-label={s.search} />
+          <InputGroupAddon><Search aria-hidden /></InputGroupAddon>
+        </InputGroup>
+      </Item>
+      <Item name="command">
+        <Command className="max-w-72 border">
+          <CommandInput placeholder={s.search} aria-label={s.search} />
+          <CommandList>
+            <CommandGroup heading={s.group}>
+              <CommandItem>{s.model}</CommandItem>
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </Item>
       <Item name="directive-text"><SkillText text={s.skillText} /></Item>
       <Item name="badge"><Badge>{s.badge}</Badge><Badge variant="outline">{s.badge}</Badge></Item>
       <Item name="callout">

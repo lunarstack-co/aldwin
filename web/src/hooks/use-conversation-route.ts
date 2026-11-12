@@ -3,17 +3,12 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef } from "react";
 
-import { ROUTES, conversationHref, isConversationPage } from "@/constants/routes";
+import { ROUTES, chatHref, conversationHref, isConversationPage, isHomePage } from "@/constants/routes";
 import copy from "@/data/chat/route.json";
 import { useChatStore } from "@/state/chat-store";
 import { useConnectionStore } from "@/state/connection-store";
 import { isConversationId } from "@/utils/conversation-id";
 import type { ChatSession } from "@/utils/ws/session";
-
-/** Where the address bar should be when the host has `currentId` open. */
-function hrefFor(currentId: string | null, hasTurns: boolean): string {
-  return currentId !== null && hasTurns ? conversationHref(currentId) : ROUTES.home;
-}
 
 /**
  * Keeps the address bar and the open conversation in step. The URL leads:
@@ -33,6 +28,8 @@ export function useConversationRoute(session: ChatSession): void {
   const hasTurns = useChatStore((s) => s.turns.length > 0);
 
   const onConversation = isConversationPage(pathname);
+  // Other pages, such as Settings, leave the open conversation alone.
+  const onHome = isHomePage(pathname);
   const routeId = onConversation ? params.get("id") : null;
 
   // The id this tab last asked the host to open; a later navigation replaces it.
@@ -69,7 +66,7 @@ export function useConversationRoute(session: ChatSession): void {
       if (!opened) {
         refused.current = routeId;
         const state = useChatStore.getState();
-        router.replace(hrefFor(state.currentSessionId, state.turns.length > 0));
+        router.replace(chatHref(state.currentSessionId, state.turns.length > 0));
       }
     });
   }, [open, onConversation, routeId, currentId, session, router]);
@@ -78,16 +75,16 @@ export function useConversationRoute(session: ChatSession): void {
   useEffect(() => {
     const previous = lastPath.current;
     lastPath.current = pathname;
-    if (!open || onConversation || previous === null || previous === pathname) return;
+    if (!open || !onHome || previous === null || previous === pathname) return;
     if (!useChatStore.getState().turns.length) return;
     leaving.current = true;
     session.newChat((started) => {
       if (started) return;
       leaving.current = false;
       const state = useChatStore.getState();
-      router.replace(hrefFor(state.currentSessionId, state.turns.length > 0));
+      router.replace(chatHref(state.currentSessionId, state.turns.length > 0));
     });
-  }, [pathname, open, onConversation, session, router]);
+  }, [pathname, open, onHome, session, router]);
 
   // Host to URL: once a conversation on `/` has turns and an id, give it its address.
   useEffect(() => {
@@ -96,8 +93,8 @@ export function useConversationRoute(session: ChatSession): void {
       if (!hasTurns) leaving.current = false;
       return;
     }
-    if (!onConversation && hasTurns && currentId !== null) {
+    if (onHome && hasTurns && currentId !== null) {
       router.replace(conversationHref(currentId));
     }
-  }, [open, onConversation, hasTurns, currentId, router]);
+  }, [open, onHome, hasTurns, currentId, router]);
 }

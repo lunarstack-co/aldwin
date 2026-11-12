@@ -1,0 +1,11 @@
+{
+  "label": "Model: {model}",
+  "choose": "Choose a model",
+  "search": "Search models",
+  "empty": "No matching models",
+  "loading": "Loading models…",
+  "loadError": "Couldn't load the models.",
+  "none": "No AI provider is set up yet. Add one in Settings to choose a model.",
+  "addProvider": "Add a provider",
+  "manage": "Manage models"
+}

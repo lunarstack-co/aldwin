@@ -20,7 +20,7 @@ test("every ui component renders in both themes", async ({ page }) => {
   const files = readdirSync(join(__dirname, "..", "src", "components", "ui"))
     .filter((name) => name.endsWith(".tsx"))
     .map((name) => name.replace(/\.tsx$/, ""));
-  const overlays = ["combobox", "dialog", "dropdown-menu", "select", "sheet", "sonner", "tooltip"];
+  const overlays = ["combobox", "dialog", "dropdown-menu", "popover", "select", "sheet", "sonner", "tooltip"];
   expect(files.filter((name) => !overlays.includes(name) && !shown.includes(name))).toEqual([]);
   await expect(page.getByRole("region", { name: "Light" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Dark" })).toHaveClass(/dark/);

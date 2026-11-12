@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Field, hintId } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import copy from "@/data/onboarding/server-form.json";
+import { useUnsavedChanges } from "@/hooks/use-unsaved-changes";
 
 import { SecretInput } from "../secret-input";
 
@@ -13,13 +14,17 @@ import { SecretInput } from "../secret-input";
 export function ServerForm({
   busy,
   onSubmit,
+  onCancel,
 }: {
   busy: boolean;
   onSubmit: (name: string, address: string, key: string) => void;
+  /** Shown as a Cancel button beside Connect when given. */
+  onCancel?: () => void;
 }) {
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [key, setKey] = useState("");
+  useUnsavedChanges(onCancel !== undefined && (name !== "" || address !== "" || key !== ""));
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -54,9 +59,16 @@ export function ServerForm({
       <Field id="server-key" label={copy.apiKey}>
         <SecretInput id="server-key" value={key} onChange={(event) => setKey(event.target.value)} />
       </Field>
-      <Button type="submit" disabled={busy} className="self-start max-md:h-10">
-        {copy.submit}
-      </Button>
+      <div className="flex gap-2">
+        <Button type="submit" disabled={busy} className="max-md:h-10">
+          {copy.submit}
+        </Button>
+        {onCancel ? (
+          <Button type="button" variant="ghost" onClick={onCancel} className="max-md:h-10">
+            {copy.cancel}
+          </Button>
+        ) : null}
+      </div>
     </form>
   );
 }

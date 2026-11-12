@@ -197,3 +197,52 @@ test("no usage hides the footer", async ({ page, host }) => {
   await expect(page.getByTestId("assistant-message")).toContainText("Answer.");
   await expect(page.getByTestId("turn-footer")).toHaveCount(0);
 });
+
+test("hovering an earlier answer shows its actions without moving anything @cross", async ({ page, host }) => {
+  host.answerNext("First answer.");
+  await openChat(page);
+  await send(page, "q1");
+  await expect(page.getByTestId("message-actions")).toHaveCount(1);
+  host.answerNext("Second answer.");
+  await send(page, "q2");
+  const bars = page.getByTestId("message-actions");
+  await expect(bars).toHaveCount(2);
+  const earlier = bars.first();
+  const canHover = await page.evaluate(() => matchMedia("(hover: hover)").matches);
+  // Touch screens cannot hover, so the bar stays visible there and there is nothing to reveal.
+  if (!canHover) {
+    await expect(earlier).toHaveCSS("opacity", "1");
+    return;
+  }
+  await expect(earlier).toHaveCSS("opacity", "0");
+  await expect(bars.last()).toHaveCSS("opacity", "1");
+  // Hover scrolls the answer into view, so compare layout, not viewport positions.
+  const layout = () =>
+    page.evaluate(() => {
+      const first = document.querySelector("[data-testid=turn]")!.getBoundingClientRect();
+      const below = [...document.querySelectorAll("[data-testid=user-message]")].at(-1)!.getBoundingClientRect();
+      return { gap: below.top - first.top, height: first.height };
+    });
+  // After a send the newest question is scrolled to the top; wait for that, then scroll back up to the first answer.
+  const transcript = page.getByTestId("transcript");
+  // That scroll is smooth, so wait until it has stopped moving before scrolling back.
+  const settled = () =>
+    transcript.evaluate(async (el) => {
+      const first = el.scrollTop;
+      await new Promise((done) => setTimeout(done, 200));
+      return first > 0 && el.scrollTop === first;
+    });
+  await expect.poll(settled).toBe(true);
+  await transcript.evaluate((el) => el.scrollTo({ top: 0 }));
+  await expect.poll(() => transcript.evaluate((el) => el.scrollTop)).toBe(0);
+  await expect(page.getByTestId("turn").first()).toBeInViewport();
+  const before = await layout();
+  const box = (await page.getByTestId("turn").first().boundingBox())!;
+  await page.mouse.move(box.x + 20, box.y + box.height / 2);
+  await expect(earlier).toHaveCSS("opacity", "1");
+  expect(await layout()).toEqual(before);
+  // Keyboard users reach the buttons too: focus reveals the bar.
+  await page.mouse.move(0, 0);
+  await earlier.getByTestId("copy-answer").focus();
+  await expect(earlier).toHaveCSS("opacity", "1");
+});

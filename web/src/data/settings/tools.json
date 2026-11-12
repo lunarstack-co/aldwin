@@ -1,0 +1,33 @@
+{
+  "connected": "Your apps",
+  "status": {
+    "connecting": "Connecting",
+    "connected": "Connected",
+    "failed": "Couldn't connect",
+    "disabled": "Off",
+    "needs_auth": "Needs you to sign in"
+  },
+  "tools": "{count} tools",
+  "oneTool": "1 tool",
+  "use": "Use {title}",
+  "authenticate": "Authenticate",
+  "remove": "Remove",
+  "removeTitle": "Remove {title}?",
+  "removeBody": "Aldwin stops using its tools and forgets its sign-in. You can add it again later.",
+  "add": "Add",
+  "added": "Added",
+  "addUrl": "Can't find it? Add it by address",
+  "urlLabel": "Server address",
+  "urlHint": "For other apps: the MCP server address from the app's help pages, for example https://mcp.example.com/mcp.",
+  "badUrl": "Enter a full address that starts with https:// or http://.",
+  "none": "No apps connected yet. Use Add an app to connect one.",
+  "loadError": "Couldn't load the connected apps.",
+  "toolsHint": "Each app gives Aldwin tools, small actions like reading an issue or creating a page.",
+  "useHint": "Turn off to stop Aldwin using {title} without removing it.",
+  "addApp": "Add an app",
+  "addTitle": "Add an app",
+  "addLede": "Pick an app Aldwin knows how to connect to, or search for one.",
+  "searchLabel": "Search apps",
+  "noMatch": "No app matches \"{query}\". If it has an MCP server, add it by address below.",
+  "adding": "Adding {title}…"
+}

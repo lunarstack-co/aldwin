@@ -885,3 +885,19 @@ async def test_off_disable_and_remove_drop_loaded_tools(
         assert "find_connector_tools" in agent_session.tools
     finally:
         await mgr.aclose()
+
+
+# --- apps the user picks ----------------------------------------------------
+
+
+async def test_a_connected_app_can_be_picked_and_others_are_dropped(
+    manager: ConnectorManager, agent_session: AgentSession
+) -> None:
+    manager.attach(agent_session)
+    assert manager.pick_apps(["fixture"]) == ([], [("fixture", "unknown")])
+    await manager.add(
+        ConnectorConfig(name="fixture", url=FIXTURE_URL), token=None, dry_run=False
+    )
+    picked, dropped = manager.pick_apps(["fixture", "fixture", "nope"])
+    assert [name for name, _title in picked] == ["fixture"]
+    assert dropped == [("nope", "unknown")]

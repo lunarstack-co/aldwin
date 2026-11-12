@@ -4,17 +4,19 @@ import { cn } from "@/utils/cn";
 
 import { Label } from "./label";
 
-/** A label above its control, with an optional hint the control is described by. */
+/** A label above its control, with an optional hint and error the control is described by. */
 export function Field({
   id,
   label,
   hint,
+  error,
   className,
   children,
 }: {
   id: string;
   label: string;
   hint?: string;
+  error?: string;
   className?: string;
   children: ReactNode;
 }) {
@@ -27,10 +29,17 @@ export function Field({
           {hint}
         </p>
       ) : null}
+      {error ? (
+        <p id={`${id}-error`} role="alert" className="text-destructive text-xs">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
 
-export function hintId(id: string, hint: string | undefined): ComponentProps<"input">["aria-describedby"] {
-  return hint ? `${id}-hint` : undefined;
+/** The ids a control should be described by: its hint, and its error while there is one. */
+export function hintId(id: string, hint: string | undefined, error?: string): ComponentProps<"input">["aria-describedby"] {
+  const ids = [hint ? `${id}-hint` : null, error ? `${id}-error` : null].filter(Boolean);
+  return ids.length > 0 ? ids.join(" ") : undefined;
 }

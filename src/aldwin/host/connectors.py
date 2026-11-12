@@ -87,6 +87,7 @@ from aldwin.core.connectors.oauth_messages import (
     no_sign_in_needed,
     nothing_waiting,
 )
+from aldwin.core.connectors.picks import PickDrop, resolve_picked_apps
 from aldwin.core.connectors.policy import connector_policy
 from aldwin.core.connectors.proposal import (
     ConnectorProposal,
@@ -796,6 +797,18 @@ class ConnectorManager:
         self._offer()
         loaded = [t for t in tools if t.model_name in self._loaded]
         return LoadResult(loaded=loaded, evicted=evicted, skipped=skipped)
+
+    def pick_apps(
+        self, names: Sequence[str]
+    ) -> tuple[list[tuple[str, str]], list[tuple[str, PickDrop]]]:
+        """Check the apps the user picked for this message: only connectors that
+        are connected and offer tools count. Returns `(name, title)` pairs."""
+        connected = {
+            name: live.config.display_title
+            for name, live in self._live.items()
+            if live.tools
+        }
+        return resolve_picked_apps(names, connected)
 
     def note_tool_used(self, model_name: str) -> None:
         """Keep a tool the model just called away from the eviction end."""

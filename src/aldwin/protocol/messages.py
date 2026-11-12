@@ -133,6 +133,15 @@ class DroppedSkill(BaseModel):
     reason: DroppedReason
 
 
+class DroppedApp(BaseModel):
+    """One picked app the host could not use: not connected, or past the cap."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    reason: DroppedReason
+
+
 class RequestBase(BaseModel):
     """Envelope shared by all requests sent from a door to the host."""
 
@@ -153,11 +162,13 @@ class HelloRequest(RequestBase):
 
 
 class TurnRequest(RequestBase):
-    """Start a turn with user text and optional `@`-picked skills."""
+    """Start a turn with user text, `@`-picked skills and picked connected apps."""
 
     type: Literal["turn", "user.message"] = "turn"
     text: str
     skills: list[str] = Field(default_factory=list)
+    # Connector names (such as `linear`) the user wants used for this message.
+    apps: list[str] = Field(default_factory=list)
 
 
 class StopRequest(RequestBase):
@@ -539,6 +550,14 @@ class SkillsUsedEvent(EventBase):
     dropped: list[DroppedSkill] = Field(default_factory=list)
 
 
+class AppsUsedEvent(EventBase):
+    """Resolved picked connected apps for the current turn."""
+
+    kind: Literal["apps.used"] = "apps.used"
+    names: list[str] = Field(default_factory=list)
+    dropped: list[DroppedApp] = Field(default_factory=list)
+
+
 class SkillBodyEvent(EventBase):
     """Effective `SKILL.md` body for `/skills show <name>`."""
 
@@ -795,6 +814,7 @@ Event = Annotated[
     | TodoUpdatedEvent
     | SkillsEvent
     | SkillsUsedEvent
+    | AppsUsedEvent
     | SkillBodyEvent
     | NoticeEvent
     | HistoryEvent

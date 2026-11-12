@@ -51,7 +51,13 @@ export type Turn = {
   maxSteps: number | null;
   /** What the host made of the `@` skills on this turn; `null` when none were picked. */
   skillsUsed: { names: string[]; dropped: DroppedSkill[] } | null;
+  /** Connected apps picked with `/` for this turn, and what the host made of them. */
+  pickedApps: PickedApp[];
+  appsUsed: { names: string[]; dropped: DroppedSkill[] } | null;
 };
+
+/** A connected app the user picked with `/`; `name` is its connector name, as the host knows it. */
+export type PickedApp = { name: string; title: string };
 
 export type Todos = { items: TodoItem[]; done: number; total: number };
 
@@ -82,6 +88,14 @@ type ChatState = {
   /** Text to put back in the composer, after the host refused to start it. */
   draft: string | null;
   skills: SkillsCatalog;
+  /** What the running turn waits on the user to approve, which the web cannot answer yet; `null` when nothing. */
+  waitingApproval: string | null;
+  setWaitingApproval: (summary: string | null) => void;
+  /** Apps picked for the message being written; they go with the next send. */
+  pickedApps: PickedApp[];
+  pickApp: (app: PickedApp) => void;
+  unpickApp: (name: string) => void;
+  setAppsUsed: (turnId: string, names: string[], dropped: DroppedSkill[]) => void;
   setTodos: (todos: Todos) => void;
   pushToast: (message: string) => void;
   dropToast: (id: number) => void;
@@ -89,7 +103,7 @@ type ChatState = {
   setHistoryView: (view: HistoryView) => void;
   setNotice: (notice: SessionNotice | null) => void;
   setSessions: (items: SessionMeta[], current: SessionMeta | null) => void;
-  startTurn: (id: string, text: string, now: number) => void;
+  startTurn: (id: string, text: string, now: number, apps?: PickedApp[]) => void;
   /** Take back a turn the host refused because another is running, keeping its text as a draft. */
   refuseTurn: (id: string) => void;
   clearDraft: () => void;
@@ -137,6 +151,8 @@ function newTurn(id: string, userText: string, now: number, status: TurnStatus):
     usage: null,
     maxSteps: null,
     skillsUsed: null,
+    pickedApps: [],
+    appsUsed: null,
   };
 }
 
@@ -195,6 +211,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   interrupted: false,
   draft: null,
   skills: { status: "idle", items: [] },
+  pickedApps: [],
+  waitingApproval: null,
+  setWaitingApproval: (summary) => set({ waitingApproval: summary }),
 
   setHistoryView: (view) => set({ historyView: view }),
   setNotice: (notice) => set({ notice }),
@@ -207,25 +226,42 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setSessions: (items, current) =>
     set({ sessions: items, currentSessionId: current?.id ?? null, sessionsLoaded: true }),
 
-  startTurn: (id, text, now) =>
+  startTurn: (id, text, now, apps = []) =>
     set((state) => ({
-      turns: [...state.turns, newTurn(id, text, now, "streaming")],
+      turns: [...state.turns, { ...newTurn(id, text, now, "streaming"), pickedApps: apps }],
+      pickedApps: [],
       activeId: id,
       notice: null,
       interrupted: false,
+      waitingApproval: null,
     })),
 
   refuseTurn: (id) =>
-    set((state) => ({
-      turns: state.turns.filter((t) => t.id !== id),
-      activeId: state.activeId === id ? null : state.activeId,
-      draft: state.turns.find((t) => t.id === id)?.userText ?? null,
-    })),
+    set((state) => {
+      const refused = state.turns.find((t) => t.id === id);
+      return {
+        turns: state.turns.filter((t) => t.id !== id),
+        activeId: state.activeId === id ? null : state.activeId,
+        draft: refused?.userText ?? null,
+        // The apps go back with the text, so sending again keeps them.
+        pickedApps: refused?.pickedApps ?? state.pickedApps,
+      };
+    }),
 
   clearDraft: () => set({ draft: null }),
 
   setSkillsStatus: (status) => set((state) => ({ skills: { ...state.skills, status } })),
   setSkills: (items) => set({ skills: { status: "ready", items } }),
+  pickApp: (app) =>
+    set((state) =>
+      state.pickedApps.some((a) => a.name === app.name) ? state : { pickedApps: [...state.pickedApps, app] },
+    ),
+  unpickApp: (name) => set((state) => ({ pickedApps: state.pickedApps.filter((a) => a.name !== name) })),
+  setAppsUsed: (turnId, names, dropped) =>
+    set((state) => ({
+      turns: state.turns.map((t) => (t.id === turnId ? { ...t, appsUsed: { names, dropped } } : t)),
+    })),
+
   setSkillsUsed: (turnId, names, dropped) =>
     set((state) => ({
       turns: state.turns.map((t) => (t.id === turnId ? { ...t, skillsUsed: { names, dropped } } : t)),
@@ -284,6 +320,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       })),
       activeId: null,
       notice: null,
+      waitingApproval: null,
     })),
 
   failTurn: (message, now, code) =>
@@ -291,6 +328,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ...updateActive(state, (t) => ({ ...t, status: "error", error: message, errorCode: code ?? null, endedAt: now })),
       activeId: null,
       notice: null,
+      waitingApproval: null,
     })),
 
   loadHistory: (items, interrupted = false) => {
@@ -321,13 +359,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return { turns: [...state.turns, turn], activeId: id };
     }),
 
-  clearTranscript: () => set({ turns: [], activeId: null, notice: null, todos: NO_TODOS, interrupted: false }),
+  clearTranscript: () =>
+    set({ turns: [], activeId: null, notice: null, todos: NO_TODOS, interrupted: false, waitingApproval: null }),
 }));
 
-/** The text Retry sends again as a new turn: the last thing the user asked. */
-export function lastUserText(turns: Turn[]): string | null {
+/** The turn Retry sends again as a new turn: the last thing the user asked, with its picked apps. */
+export function lastUserTurn(turns: Turn[]): Turn | null {
   for (let i = turns.length - 1; i >= 0; i -= 1) {
-    if (turns[i].userText) return turns[i].userText;
+    if (turns[i].userText) return turns[i];
   }
   return null;
+}
+
+export function lastUserText(turns: Turn[]): string | null {
+  return lastUserTurn(turns)?.userText ?? null;
 }

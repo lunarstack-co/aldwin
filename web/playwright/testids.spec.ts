@@ -2,7 +2,7 @@ import { expect, openChat, send, test } from "./fixtures/test";
 
 const KEPT = [
   "aldwin-chat-shell", "aldwin-gates-clear", "assistant-message", "composer", "composer-input",
-  "composer-model", "composer-send", "composer-skills", "composer-stop", "connection-status", "copy-answer",
+  "model-picker-composer", "composer-send", "composer-skills", "composer-stop", "connection-status", "copy-answer",
   "copy-error", "density-toggle", "empty-home", "error-row", "history-eyebrow", "message-actions", "new-chat",
   "retry-error", "retry-turn", "see-all", "settings", "tool-card", "tool-group", "transcript", "turn", "user-message",
 ];

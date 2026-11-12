@@ -1,0 +1,10 @@
+{
+  "dropped": "The connection to Aldwin dropped before it answered. Try again.",
+  "retry": "Try again",
+  "loading": "Loading…",
+  "save": "Save",
+  "saving": "Saving…",
+  "saved": "Saved",
+  "cancel": "Cancel",
+  "checking": "Checking…"
+}

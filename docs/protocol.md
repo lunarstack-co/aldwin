@@ -79,7 +79,7 @@ Every message is a Pydantic v2 model with `model_config = ConfigDict(extra="igno
 4. **Stop (`FR-8`):** On `stop`, the host resolves any pending approvals as `"no"` (`False`), calls `session.interrupt()`, cancels the turn task, flushes any partial streamed text into the session, saves atomically to disk, emits `done(re=turn_id, reason="stopped")`, and replies `done(re=stop_id, reason="ok")`.
 5. **Forward compatibility (`FR-1`):** Unknown fields are ignored in both directions (`ConfigDict(extra="ignore")`).
 
-The tables above list the original `v1` messages. `v2` also has the skills and todo messages (`skills.list`, `skills.show`, `todo.get`; `skills`, `skills.used`, `skill.body`, `todo.updated`, `notice`), defined in `aldwin/protocol/messages.py`.
+The tables above list the original `v1` messages. `v2` also has the skills and todo messages (`skills.list`, `skills.show`, `todo.get`; `skills`, `skills.used`, `skill.body`, `todo.updated`, `notice`), defined in `aldwin/protocol/messages.py`. A `turn` may also name connected apps in `apps` (connector names such as `linear`); the host tells the model the user wants those apps used for that message, and answers with `apps.used`, which lists the apps it used and any it dropped (`unknown` when the app is not connected, or `limit` past three).
 
 ---
 

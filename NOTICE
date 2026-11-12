@@ -13,3 +13,10 @@ The web UI (web/) includes or is built from third-party work:
   (web/src/assets/fonts/public-sans/OFL.txt)
 - JetBrains Mono, Copyright 2020 The JetBrains Mono Project Authors, SIL Open Font License 1.1
   (web/src/assets/fonts/jetbrains-mono/OFL.txt)
+- Brand marks in web/src/components/brand/logos/marks.ts:
+  - from LobeHub Icons (@lobehub/icons-static-svg), Copyright (c) LobeHub, MIT License:
+    OpenAI, Anthropic, Gemini, OpenRouter, DeepSeek, Ollama, LM Studio, Mistral, Groq, xAI,
+    Tavily, Brave, Exa, Perplexity, Firecrawl, SearXNG, GitHub, Notion, Figma
+  - from Simple Icons (simple-icons), CC0 1.0 Universal: Linear, Atlassian, Todoist, Sentry, Dropbox
+  Brand colours come from the same sources. Each mark is a trademark of its owner and is shown
+  only to name that owner's product.

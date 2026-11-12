@@ -7,3 +7,6 @@ export const THEME_COLORS = {
   light: "#fcfcfb",
   dark: "#0f0f0e",
 } as const;
+
+/** The theme choices; next-themes keeps the pick in this browser only. */
+export const THEMES = ["light", "dark", "system"] as const;

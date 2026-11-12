@@ -1,0 +1,8 @@
+{
+  "label": "Web search: {name}",
+  "none": "No web search",
+  "heading": "Search the web with",
+  "empty": "No search engine is connected yet.",
+  "manage": "Manage search",
+  "loading": "Loading…"
+}

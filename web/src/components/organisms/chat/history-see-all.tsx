@@ -113,12 +113,16 @@ export function HistorySeeAll({
             </p>
           ) : (
             sections.map((section) => (
-              <div key={section.id} className="mb-4 flex flex-col gap-1" data-testid={`history-group-${section.id}`}>
-                <h2 className="text-muted-foreground px-2 text-xs font-medium">{section.label}</h2>
+              <div key={section.id} className="mb-6 flex flex-col gap-1" data-testid={`history-group-${section.id}`}>
+                {/* Dates read as quiet labels, apart from the titles under them. */}
+                <h2 className="text-muted-foreground px-2 pb-1 text-[11px] font-medium tracking-wider uppercase">
+                  {section.label}
+                </h2>
                 <HistoryList
                   ids={section.items.map((s) => s.id)}
                   disabled={disabled}
                   testId="see-all-row"
+                  tone="page"
                 />
               </div>
             ))
