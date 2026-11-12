@@ -17,6 +17,13 @@ function withLinear(host: { connectors: { items: ReturnType<typeof connectorFixt
   host.connectors.items.push(connectorFixture("linear", "Linear", { tools: github.tools.slice(0, 2) }));
 }
 
+// Enter only picks once the menu lists the app; a slow machine can otherwise send the keystroke first.
+async function pickApp(page: Page, query: string, name: RegExp) {
+  await typeInComposer(page, query);
+  await expect(menu(page).getByRole("option", { name })).toBeVisible();
+  await page.keyboard.press("Enter");
+}
+
 test("typing / lists only connected apps, with their marks @cross", async ({ page, host }) => {
   withLinear(host);
   await openChat(page);
@@ -43,8 +50,7 @@ test("picking an app makes a chip, clears /, and sends the app with the message 
   withLinear(host);
   host.answerNext("Done.");
   await openChat(page);
-  await typeInComposer(page, "/lin");
-  await page.keyboard.press("Enter");
+  await pickApp(page, "/lin", /Linear/);
   await expect(input(page)).toHaveValue("");
   await expect(chips(page).locator('[data-picked-app="linear"]')).toHaveText("Linear");
   await expect(chips(page).locator('svg[data-brand="linear"]')).toBeVisible();
@@ -59,8 +65,7 @@ test("picking an app makes a chip, clears /, and sends the app with the message 
 
 test("a chip can be removed before sending", async ({ page, host }) => {
   await openChat(page);
-  await typeInComposer(page, "/git");
-  await page.keyboard.press("Enter");
+  await pickApp(page, "/git", /GitHub/);
   await page.getByRole("button", { name: "Remove GitHub" }).click();
   await expect(chips(page)).toHaveCount(0);
   await typeInComposer(page, "hi");
@@ -87,8 +92,7 @@ test("with no connected apps the menu says so", async ({ page, host }) => {
 test("an app that is no longer connected says so under the message", async ({ page, host }) => {
   host.answerNext("ok");
   await openChat(page);
-  await typeInComposer(page, "/git");
-  await page.keyboard.press("Enter");
+  await pickApp(page, "/git", /GitHub/);
   host.connectors.items = host.connectors.items.map((c) => (c.name === "github" ? { ...c, enabled: false } : c));
   await typeInComposer(page, "go");
   await page.keyboard.press("Enter");
@@ -98,8 +102,7 @@ test("an app that is no longer connected says so under the message", async ({ pa
 test("Retry sends the same apps again", async ({ page, host }) => {
   host.answerNext("first");
   await openChat(page);
-  await typeInComposer(page, "/git");
-  await page.keyboard.press("Enter");
+  await pickApp(page, "/git", /GitHub/);
   await typeInComposer(page, "Open an issue");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("message-actions")).toBeVisible();
@@ -125,8 +128,7 @@ test("a / that names no app is plain text, and Enter sends it @cross", async ({ 
 
 test("a message refused as busy keeps its apps with its text", async ({ page, host }) => {
   await openChat(page);
-  await typeInComposer(page, "/git");
-  await page.keyboard.press("Enter");
+  await pickApp(page, "/git", /GitHub/);
   host.activeTurn = "elsewhere";
   await typeInComposer(page, "do it");
   await page.keyboard.press("Enter");

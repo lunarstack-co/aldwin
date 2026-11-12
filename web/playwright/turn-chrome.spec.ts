@@ -69,11 +69,15 @@ test("day separators group turns across days, hover/focus shows time, and missin
 test("message timing shows in detail density only", async ({ page, host }) => {
   await page.clock.install({ time: new Date("2026-11-12T10:00:00Z") });
   await openChat(page);
+  // Paused, so only runFor moves the clock and a slow machine cannot add time between steps.
+  await page.clock.pauseAt(new Date("2026-11-12T10:01:00Z"));
   await send(page, "time me");
   await page.clock.runFor(800);
   await host.stream("Timed answer");
   await page.clock.runFor(4000);
   host.done({ reason: "answered", usage: { input_tokens: 100, output_tokens: 200 } });
+  await expect(page.getByTestId("composer-stop")).toHaveCount(0);
+  await page.clock.resume();
 
   await expect(page.getByTestId("message-timing")).toHaveCount(0);
 
