@@ -1,0 +1,40 @@
+{
+  "loadError": "Couldn't read the settings.",
+  "limitsLabel": "Limits",
+  "limits": {
+    "context_exchanges": {
+      "label": "Messages remembered in a chat",
+      "hint": "How many recent back-and-forth messages Aldwin rereads before it answers. More helps it keep track of a long chat but makes each answer slower and costlier."
+    },
+    "max_steps": {
+      "label": "Steps per answer",
+      "hint": "The most actions (searching, reading a file, using an app) Aldwin takes for one message before it stops and reports back."
+    },
+    "web_searches": {
+      "label": "Web searches per answer",
+      "hint": "The most times Aldwin searches the web for one message, so a single question can't use up your search engine's allowance."
+    },
+    "connector_tools": {
+      "label": "App tools offered at once",
+      "hint": "The most tools from your connected apps Aldwin can see at one time. Too many can confuse the model."
+    },
+    "profile_chars": {
+      "label": "About you: length read",
+      "hint": "How much of your profile, the notes about you from setup, Aldwin reads, in characters."
+    },
+    "notes_chars": {
+      "label": "Recent notes: length read",
+      "hint": "How much of the notes Aldwin keeps between chats it reads, in characters."
+    },
+    "notes_days": {
+      "label": "Recent notes: days",
+      "hint": "How many days back of those notes Aldwin reads."
+    },
+    "persona_chars": {
+      "label": "Personality: length read",
+      "hint": "How much of Aldwin's personality and answer style it reads, in characters."
+    }
+  },
+  "updates": "Check for updates",
+  "updatesHint": "When Aldwin starts, it asks PyPI, where Aldwin is published, for the latest version number and tells you if there is a newer one."
+}

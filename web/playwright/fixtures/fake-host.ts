@@ -1,6 +1,15 @@
 import type { Page, Route, WebSocketRoute } from "@playwright/test";
 
-import type { SkillCatalogItem } from "../../src/types/protocol";
+import type { AuthMode, ConnectorStatus, SkillCatalogItem } from "../../src/types/protocol";
+
+import {
+  LIMIT_MINIMUMS,
+  SKILL_BODIES,
+  connectorsFixture,
+  modelsFixture,
+  searchFixture,
+  settingsFixture,
+} from "./settings-fixtures";
 
 /** A frame the page sent over the socket. */
 export type Frame = { id: string; type: string } & Record<string, unknown>;
@@ -99,6 +108,17 @@ export class FakeHost {
   skillsListError: string | null = null;
   /** Hold `skills.list` replies until `releaseSkills()`. */
   holdSkills = false;
+  settings = settingsFixture();
+  models = modelsFixture();
+  search = searchFixture();
+  connectors = connectorsFixture();
+  skillBodies: Record<string, string> = { ...SKILL_BODIES };
+  /** Every REST response body the fake sent, to prove no full key ever comes back. */
+  responses: { path: string; body: unknown }[] = [];
+  /** The id of the last `connectors.login` or `connectors.add`, for sign-in events tied to it. */
+  /** Settings request types the fake answers with an error, to test the page's fallbacks. */
+  failing = new Set<string>();
+  lastSignInId: string | null = null;
   private heldSkills: (() => void)[] = [];
   private held: (() => void)[] = [];
   statusReply: { message: string; turn_streamed_chunks: number; active_tool: string | null; partial_text: string | null } = {
@@ -173,6 +193,23 @@ export class FakeHost {
       else names.push(name);
     }
     if (names.length || dropped.length) this.emit({ re: frame.id, kind: "skills.used", names, dropped }, ws);
+  }
+
+  /** What the host does with `turn.apps`: an app that is not connected (or has no tools) is unknown; at most three. */
+  private appsUsed(frame: Frame, ws: WebSocketRoute): void {
+    const picked = [...new Set((frame.apps as string[] | undefined) ?? [])];
+    if (picked.length === 0) return;
+    const connected = new Set(
+      this.connectors.items.filter((c) => c.enabled && c.status === "connected" && c.tools.length > 0).map((c) => c.name),
+    );
+    const names: string[] = [];
+    const dropped: { name: string; reason: "unknown" | "limit" }[] = [];
+    for (const name of picked) {
+      if (!connected.has(name)) dropped.push({ name, reason: "unknown" });
+      else if (names.length >= MAX_PICKED_SKILLS) dropped.push({ name, reason: "limit" });
+      else names.push(name);
+    }
+    this.emit({ re: frame.id, kind: "apps.used", names, dropped }, ws);
   }
 
   release(): void {
@@ -266,6 +303,7 @@ export class FakeHost {
         }
         this.activeTurn = frame.id;
         this.skillsUsed(frame, ws);
+        this.appsUsed(frame, ws);
         if (this.current === null) {
           const row = session(`s${this.sessions.length + 1}`, String(frame.text), "2026-11-11T10:00:00Z");
           this.sessions = [row, ...this.sessions];
@@ -275,8 +313,160 @@ export class FakeHost {
         await this.onTurn?.(frame);
         break;
       default:
+        this.replySettings(ws, frame);
         break;
     }
+  }
+
+  /**
+   * The settings messages: models, providers, search, skill bodies and connectors.
+   * Like the real host, a change answers with `done` alone (disable adds its
+   * `connector.status`); only the list requests send lists.
+   */
+  private replySettings(ws: WebSocketRoute, frame: Frame): void {
+    const done = () => this.emit({ re: frame.id, kind: "done", reason: "ok" }, ws);
+    const fail = (code: string, message: string) => this.emit({ re: frame.id, kind: "error", code, message }, ws);
+    const emitModels = () => this.emit({ re: frame.id, kind: "models", ...this.models }, ws);
+    const emitSearch = () => this.emit({ re: frame.id, kind: "search.providers", ...this.search }, ws);
+    const emitConnectors = () => this.emit({ re: frame.id, kind: "connectors", error: null, ...this.connectors }, ws);
+    const name = String(frame.name ?? frame.provider ?? "");
+    if (this.failing.has(String(frame.type))) return fail("internal", "That didn't work.");
+    switch (frame.type) {
+      case "models.list":
+        emitModels();
+        return done();
+      case "set_model": {
+        if (this.activeTurn !== null) return fail("busy", "Aldwin is still working on your last request.");
+        const ref = String(frame.name);
+        const known = this.models.providers.some((p) => p.models.some((m) => m.ref === ref));
+        if (!known) return fail("unknown_model", `Unknown model ${ref}.`);
+        this.models = { ...this.models, current: ref };
+        this.settings.model = ref;
+        return done();
+      }
+      case "provider.server":
+        this.models.providers.push({
+          name,
+          title: String(frame.title ?? name),
+          local: Boolean(frame.local),
+          configured: true,
+          status: "ok",
+          models: [{ ref: `${name}/local-model`, id: "local-model", title: "Local model", context_window: null, supports_tools: true }],
+        });
+        return done();
+      case "provider.disconnect":
+        this.models.providers = this.models.providers.map((p) =>
+          p.name === name ? { ...p, configured: false, status: "not_configured", models: [] } : p,
+        );
+        return done();
+      case "search.list":
+        emitSearch();
+        return done();
+      case "search.connect":
+        this.search.items = this.search.items.map((i) =>
+          i.name === name ? { ...i, connected: true, source: "file", detail: "key-…9999" } : i,
+        );
+        return done();
+      case "search.use":
+        this.search = {
+          ...this.search,
+          setting: name,
+          active: name,
+          items: this.search.items.map((i) => ({ ...i, active: i.name === name })),
+        };
+        return done();
+      case "search.disconnect":
+        this.search.items = this.search.items.map((i) =>
+          i.name === name ? { ...i, connected: false, source: null, detail: "", active: false } : i,
+        );
+        return done();
+      case "skills.show": {
+        const body = this.skillBodies[name];
+        if (body === undefined) return fail("not_found", `No skill called ${name}.`);
+        this.emit({ re: frame.id, kind: "skill.body", name, body }, ws);
+        return done();
+      }
+      case "connectors.list":
+        emitConnectors();
+        return done();
+      case "connectors.add": {
+        this.lastSignInId = frame.id;
+        const item = this.connectors.catalog.find((c) => c.url === frame.url);
+        const added = String(frame.name ?? item?.name ?? "custom");
+        this.connectors.items.push({
+          name: added,
+          title: String(frame.title ?? item?.title ?? added),
+          url: String(frame.url),
+          enabled: true,
+          status: "connected",
+          auth: (frame.auth as "none" | "bearer" | "oauth") ?? "none",
+          trust_read_only_hints: true,
+          tools: [],
+          error: null,
+          retry_in_s: null,
+          transport: "http",
+          command: null,
+          note: null,
+        });
+        this.connectors.catalog = this.connectors.catalog.map((c) => (c.name === added ? { ...c, added: true } : c));
+        return done();
+      }
+      case "connectors.enable":
+      case "connectors.disable": {
+        const enabled = frame.type === "connectors.enable";
+        const status: ConnectorStatus = enabled ? "connected" : "disabled";
+        this.connectors.items = this.connectors.items.map((c) => (c.name === name ? { ...c, enabled, status } : c));
+        // Disable answers with its status on the request; enable runs in the background and reports as the host.
+        const re = enabled ? "host" : frame.id;
+        this.emit({ re, kind: "connector.status", name, status, tools: 0, error: null, retry_in_s: null }, ws);
+        return done();
+      }
+      case "connectors.remove":
+        this.connectors.items = this.connectors.items.filter((c) => c.name !== name);
+        return done();
+      case "connectors.login":
+        // The sign-in waits for the test to push `connector.auth` and then finish it.
+        this.lastSignInId = frame.id;
+        return;
+      case "connectors.auth_paste":
+      case "connectors.auth_token":
+        return done();
+      default:
+        return;
+    }
+  }
+
+  /** The host asks the user to sign a connector in, tied to the waiting login or add. */
+  connectorAuth(name: string, mode: AuthMode, extra: { url?: string; expires_in?: number; token_help_url?: string } = {}): void {
+    const title = this.connectors.items.find((c) => c.name === name)?.title ?? name;
+    this.emit({
+      re: this.lastSignInId ?? "host",
+      kind: "connector.auth",
+      name,
+      title,
+      mode,
+      url: extra.url ?? null,
+      token_help_url: extra.token_help_url ?? null,
+      expires_in: extra.expires_in ?? 300,
+    });
+  }
+
+  /** Finishes the waiting sign-in: the connector connects and the request ends. */
+  finishSignIn(name: string): void {
+    this.connectors.items = this.connectors.items.map((c) => (c.name === name ? { ...c, status: "connected" } : c));
+    this.emit({ re: "host", kind: "connector.status", name, status: "connected", tools: 3, error: null, retry_in_s: null });
+    if (this.lastSignInId) this.emit({ re: this.lastSignInId, kind: "done", reason: "ok" });
+    this.lastSignInId = null;
+  }
+
+  /** Ends the waiting sign-in with an error, as when it runs out of time. */
+  failSignIn(message: string): void {
+    if (this.lastSignInId) this.emit({ re: this.lastSignInId, kind: "error", code: "auth_timeout", message });
+    this.lastSignInId = null;
+  }
+
+  connectorStatus(name: string, status: ConnectorStatus): void {
+    this.emit({ re: "host", kind: "connector.status", name, status, tools: 0, error: null, retry_in_s: null });
   }
 
   /** Per-conversation history, keyed by id in `histories`; the seeded history otherwise. */
@@ -385,6 +575,10 @@ export class FakeHost {
     this.calls.push({ method, path: pathname, body });
     const custom = this.rest.get(`${method} ${pathname}`);
     if (custom) return custom(route, body);
+    const reply = (json: unknown, status = 200) => {
+      this.responses.push({ path: pathname, body: json });
+      return route.fulfill({ status, json });
+    };
     switch (`${method} ${pathname}`) {
       case "GET /v1/setup/status":
         return route.fulfill({ json: this.status });
@@ -398,7 +592,11 @@ export class FakeHost {
         }
         return route.fulfill({ json: { ticket: `t-${this.sockets.length + 1}`, expires_in: 30 } });
       case "GET /v1/settings":
-        return route.fulfill({ json: { keys: [{ name: "openai", title: "OpenAI", kind: "provider" }, { name: "anthropic", title: "Anthropic", kind: "provider" }] } });
+        return reply(this.settings);
+      case "PATCH /v1/settings":
+        return this.patchSettings(body as Record<string, unknown>, reply);
+      case "POST /v1/settings/secrets":
+        return this.saveSecret(body as { kind: string; name: string; key: string }, reply);
       case "POST /v1/setup/profile": {
         const update = body as Record<string, unknown>;
         if (update.skipped) this.status = { ...this.status, profile_done: true, profile_skipped: true };
@@ -408,6 +606,41 @@ export class FakeHost {
       default:
         return route.fulfill({ status: 404, json: { detail: `No fake for ${method} ${pathname}` } });
     }
+  }
+
+  /** Applies an allowed patch, or refuses all of it on the first bad field, as `apply_settings_patch` does. */
+  private patchSettings(patch: Record<string, unknown>, reply: (json: unknown, status?: number) => Promise<void>) {
+    const limits = (patch.limits ?? {}) as Record<string, unknown>;
+    for (const [field, value] of Object.entries(limits)) {
+      const minimum = LIMIT_MINIMUMS[field];
+      if (minimum === undefined) return reply({ detail: `limits.${field}: Extra inputs are not permitted.` }, 400);
+      if (typeof value !== "number" || !Number.isInteger(value)) return reply({ detail: `limits.${field}: Input should be a valid integer.` }, 400);
+      if (value < minimum) return reply({ detail: `limits.${field}: Input should be greater than or equal to ${minimum}.` }, 400);
+    }
+    const unknown = Object.keys(patch).find((k) => !["model", "limits", "search", "check_for_updates"].includes(k));
+    if (unknown) return reply({ detail: `${unknown} cannot be changed here.` }, 400);
+    this.settings = {
+      ...this.settings,
+      limits: { ...this.settings.limits, ...(limits as Record<string, number>) },
+      search: { ...this.settings.search, ...((patch.search ?? {}) as object) },
+      ...(typeof patch.check_for_updates === "boolean" ? { check_for_updates: patch.check_for_updates } : {}),
+    };
+    return reply(this.settings);
+  }
+
+  /** Checks a key the way the host's vendor check answers, and saves only a good one. */
+  private saveSecret(body: { kind: string; name: string; key: string }, reply: (json: unknown, status?: number) => Promise<void>) {
+    const title = this.settings.keys.find((k) => k.name === body.name)?.title ?? body.name;
+    if (body.key.startsWith("sk-bad")) return reply({ detail: `${title} refused this key.`, status: "invalid_key" }, 400);
+    if (body.key.startsWith("sk-slow")) return reply({ detail: `${title} did not answer in time.`, status: "unreachable" }, 502);
+    const masked = `sk-…${body.key.slice(-4)}`;
+    this.settings.keys = this.settings.keys.map((k) => (k.name === body.name ? { ...k, source: "file", masked } : k));
+    if (body.kind === "provider") {
+      this.models.providers = this.models.providers.map((p) =>
+        p.name === body.name ? { ...p, configured: true, status: "ok" } : p,
+      );
+    }
+    return reply({ ok: true, kind: body.kind, name: body.name, masked, env_override: false });
   }
 
   calledPaths(): string[] {

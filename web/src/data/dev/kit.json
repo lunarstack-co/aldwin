@@ -13,6 +13,9 @@
     "option": "Option",
     "dialog": "Dialog content",
     "tab": "Tab",
-    "skillText": "Use @files to tidy my notes"
+    "skillText": "Use @files to tidy my notes",
+    "search": "Search models",
+    "model": "GPT-4o",
+    "group": "OpenAI"
   }
 }

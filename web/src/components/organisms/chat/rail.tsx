@@ -2,13 +2,17 @@
 
 import { ThreadListPrimitive } from "@assistant-ui/react";
 import { ChevronRight, Plus, Search, Settings } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import { Lockup } from "@/components/brand/lockup";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { RAIL_HISTORY_LIMIT } from "@/constants/chat";
+import { ROUTES, isSettingsPage } from "@/constants/routes";
 import copy from "@/data/chat/rail.json";
 import { useChatStore } from "@/state/chat-store";
 import type { SessionMeta } from "@/types/protocol";
+import { cn } from "@/utils/cn";
 
 import { HistoryList } from "./history-list";
 
@@ -44,6 +48,7 @@ export function Rail({
 }) {
   // Until the host lists them, "no conversations" would be a guess.
   const listed = useChatStore((s) => s.sessionsLoaded);
+  const onSettings = isSettingsPage(usePathname());
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       <Lockup onNavigate={onNavigate} className="self-start" />
@@ -101,10 +106,20 @@ export function Rail({
         )}
       </div>
       <div className="flex flex-col gap-1 border-t pt-3">
-        <Button variant="ghost" disabled data-testid="settings" className="justify-start max-md:h-10">
+        <Link
+          href={ROUTES.settings}
+          onClick={onNavigate}
+          aria-current={onSettings ? "page" : undefined}
+          data-testid="settings"
+          className={cn(
+            buttonVariants({ variant: "ghost" }),
+            "justify-start max-md:h-10",
+            onSettings && "bg-sidebar-accent text-sidebar-accent-foreground",
+          )}
+        >
           <Settings aria-hidden />
           {copy.settings}
-        </Button>
+        </Link>
       </div>
     </div>
   );

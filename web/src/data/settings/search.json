@@ -1,0 +1,19 @@
+{
+  "engines": "Search engines",
+  "active": "In use",
+  "connected": "Connected",
+  "notConnected": "Not connected",
+  "local": "On this computer",
+  "connect": "Connect",
+  "keyLabel": "{title} API key",
+  "saveKey": "Connect",
+  "getKey": "Get a key",
+  "use": "Use this one",
+  "disconnect": "Disconnect",
+  "searxngUrl": "SearXNG address",
+  "searxngHint": "Where your SearXNG server answers, for example http://127.0.0.1:8080.",
+  "saveUrl": "Save address",
+  "loadError": "Couldn't load the search engines.",
+  "empty": "No search engines are available.",
+  "keyHint": "Get a free key from the {title} website and paste it here. Aldwin checks it works before saving it."
+}

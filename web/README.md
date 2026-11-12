@@ -50,16 +50,16 @@ git clean -fd src/aldwin/web/static
 
 ```
 src/
-  app/          routes only: (chat)/ holds / and /c/, which share one chat shell; onboarding/ the first run
+  app/          routes only: (chat)/ holds /, /c/ and /settings/, which share one chat shell; onboarding/ the first run
   components/
     ui/           design-kit and shadcn primitives: Button, Input, Select, Dialog, Sheet, Callout, Steps…
     assistant-ui/ chat pieces: registry files in elements/, plus Aldwin's tool row, work chip, plan and states
-    brand/        the Aldwin mark and lockup
-    organisms/    sections with their own behaviour: chat/ChatShell, the rail, onboarding forms
+    brand/        the Aldwin mark and lockup, and other brands' marks (BrandMark, logos/marks.ts)
+    organisms/    sections with their own behaviour: chat/ChatShell, the rail, settings/, onboarding forms
   layouts/      page frames: AppShell, ChatLayout, OnboardingLayout, CenteredLayout
   providers/    React context providers: ThemeProvider, SetupProvider, ChatRuntimeProvider
   hooks/        reusable hooks: useChatSession, useConversationRoute, usePageTitle, useDensity…
-  state/        Zustand stores: the transcript (chat-store) and the socket phase (connection-store)
+  state/        Zustand stores: the transcript (chat-store), the socket phase (connection-store), settings lists (settings-store)
   styles/       globals.css imports tokens, theme, base and motion
   utils/        reusable functions, one folder per topic: api/, ws/, history/, time/, page-title/…
   data/         all text the pages show, as JSON, named after where it appears
@@ -87,7 +87,23 @@ Clean density (the default) folds a turn's tool calls into one "Working for 8s" 
 
 ### Skills (`@`)
 
-Typing `@` in the composer, or pressing its `@` button, opens the skills menu: `ComposerPrimitive.TriggerPopover` through the registry's `composer-trigger-popover`, in `components/organisms/chat/skills-popover.tsx`. The catalogue comes from `skills.list` the first time the menu opens and then from the host's `skills` events. Skills that failed to load are hidden, recently used ones come first, and at most eight rows show. A pick is written into the text as `@name`, the form the CLI uses, and on send the session reads every `@name` in the text into `turn.skills` (`utils/skills`), so Retry and pasted text carry the same skills. The host uses at most three per turn and reports the rest in `skills.used`; sent messages show `@name` as chips, with the used skills and any dropped ones underneath. Tools are never sent. The used and dropped lines come from the live `skills.used` event, which the host does not save, so after a reload only the chips remain.
+Typing `@` in the composer, or pressing its `@` button, opens the skills menu (its Manage skills link opens `/settings/?section=skills`): `ComposerPrimitive.TriggerPopover` through the registry's `composer-trigger-popover`, in `components/organisms/chat/skills-popover.tsx`. The catalogue comes from `skills.list` the first time the menu opens and then from the host's `skills` events. Skills that failed to load are hidden, recently used ones come first, and at most eight rows show. A pick is written into the text as `@name`, the form the CLI uses, and on send the session reads every `@name` in the text into `turn.skills` (`utils/skills`), so Retry and pasted text carry the same skills. The host uses at most three per turn and reports the rest in `skills.used`; sent messages show `@name` as chips, with the used skills and any dropped ones underneath. Single tools are never sent; connected apps go in `turn.apps`, below. The used and dropped lines come from the live `skills.used` event, which the host does not save, so after a reload only the chips remain.
+
+### Connected apps (`/`) and web search
+
+Typing `/` in the composer, or pressing its apps button, opens a menu of the apps the user has connected in Settings (connectors that are on and offer tools), each with its mark (`components/organisms/chat/apps-popover.tsx`). A pick becomes a chip above the text rather than text, and on send the session puts the picked connector names in `turn.apps`. The host checks each app is connected, tells the model to use it for that message, and answers with `apps.used`; an app it could not use gets a line under the message. At most three apps go with a message, and Retry sends the same ones again. Beside the model picker, the search picker shows the web search engine in use and switches between connected ones with `search.use`.
+
+### Settings
+
+`/settings/` sits in the `(chat)` layout, so it shares the chat's socket; the chat shell loads it only when it is opened. `?section=` names one of six sections, so Back and Forward move between them: Providers & models, Search, Skills, Tools, Advanced and Appearance. Each section opens with a sentence on what it is for, and Providers, Search and Tools start with a line saying what is connected and what needs attention.
+
+- **Providers & models**, **Search** and **Tools** read their lists over the socket (`models.list`, `search.list`, `connectors.list`, kept in `state/settings-store.ts`) and change them with the matching requests in `utils/settings/actions.ts`. A list that was on screen is asked for again after a reconnect.
+- **Keys** go to `POST /v1/settings/secrets`. The host checks a key with the provider before saving it and answers with it masked; the page never shows or keeps a full key.
+- **Advanced** sends only the changed limits through `PATCH /v1/settings` and shows a refused field's reason beside it. The terminal reads the same settings.
+- **Appearance** (theme and how much of each chat to show) stays in the browser.
+- **Connector sign-in** follows the host's `connector.auth`: browser, paste or token. The sign-in page opens only when the user clicks it, and the panel closes when the host's time runs out.
+
+The composer's model picker is the registry `model-selector` (cmdk), grouped by provider. Until it is first opened it is a plain button, so the chat page does not load the list; a change goes to the host with `set_model` and applies everywhere, the terminal included. Brand marks are bundled as path data in their brands' colours (black and white marks follow the text colour); names without a mark get a generic icon, and nothing is fetched from outside.
 
 ## Design system
 

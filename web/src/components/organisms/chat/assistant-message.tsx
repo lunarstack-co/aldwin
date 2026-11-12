@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import actions from "@/data/chat/message-actions.json";
 import copy from "@/data/chat/transcript.json";
 import { useDensity } from "@/hooks/use-density";
+import { cn } from "@/utils/cn";
 
 // The runtime's own placeholder for a running message with no words yet is a lone dot; the thinking line covers that wait.
 const Nothing = () => null;
@@ -22,12 +23,19 @@ const detailParts = { Text: MarkdownText, tools: { Fallback: ToolRow }, ToolGrou
 
 /** Copy and Retry, and nothing else; Retry asks the last question again as a new turn. */
 function Actions() {
+  const isLast = useAuiState((s) => s.message.isLast);
+  // Earlier answers keep the bar's space and only fade it in, so hovering never moves the transcript.
   return (
     <ActionBarPrimitive.Root
       hideWhenRunning
-      autohide="not-last"
+      autohide="never"
       data-testid="message-actions"
-      className="text-muted-foreground flex items-center gap-1"
+      data-last={isLast || undefined}
+      className={cn(
+        "text-muted-foreground flex items-center gap-1 transition-opacity duration-150",
+        // Touch screens cannot hover, so there the bar simply stays visible.
+        !isLast && "[@media(hover:hover)]:opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100",
+      )}
     >
       <ActionBarPrimitive.Copy
         render={<Button variant="ghost" size="sm" data-testid="copy-answer" className="max-md:h-10" />}
@@ -60,7 +68,7 @@ export function AssistantMessage() {
   const hasText = useAuiState((s) => s.message.parts.some((p) => p.type === "text" && p.text !== ""));
   return (
     <MessagePrimitive.Root
-      className="flex gap-3"
+      className="group/turn flex gap-3"
       aria-label={copy.answer}
       data-testid="turn"
       data-status={status}

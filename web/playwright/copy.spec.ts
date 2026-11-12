@@ -39,7 +39,7 @@ test("visible strings live in data files", async ({ page, host }) => {
       .map((el) => (el as HTMLElement).innerText.trim())
       .filter(Boolean),
   );
-  const dynamic = /^(Fixture|Ada|openai\/gpt-4o|Model: |\d|Worked|Working)/;
+  const dynamic = /^(Fixture|Ada|openai\/gpt-4o|gpt-4o$|GPT-4o$|Tavily$|\d|Worked|Working)/;
   const unknown = visible
     .flatMap((text) => text.split("\n").map((line) => line.trim()).filter(Boolean))
     .filter((line) => !dynamic.test(line) && !known.some((re) => re.test(line)));

@@ -145,10 +145,16 @@ test("nothing opens while disconnected", async ({ page, host }) => {
   await expect(page.getByTestId("history-row").first()).toBeDisabled();
 });
 
-test("never answers an approval", async ({ page, host }) => {
+test("never answers an approval, says the answer is waiting, and offers Stop @cross", async ({ page, host }) => {
   await openChat(page);
   await send(page, "write it");
   host.approval({ summary: "Write file" });
-  await page.waitForTimeout(1500);
+  const notice = page.getByTestId("approval-notice");
+  await expect(notice).toContainText("It wants to: Write file.");
+  await expect(notice).toContainText("isn't available in the web app yet");
+  await page.waitForTimeout(500);
   expect(host.sentOfType("approve")).toHaveLength(0);
+  await notice.getByRole("button", { name: "Stop" }).click();
+  await expect.poll(() => host.sentOfType("stop").length).toBe(1);
+  await expect(notice).toHaveCount(0);
 });

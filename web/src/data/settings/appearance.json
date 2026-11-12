@@ -1,0 +1,8 @@
+{
+  "themeHint": "System follows your computer's light or dark setting.",
+  "densityHint": "How much of Aldwin's work you see in a chat.",
+  "density": {
+    "clean": "Shows the answer, with the steps Aldwin took folded into one line you can open.",
+    "detail": "Shows every step as it happens: each search, file read and app action."
+  }
+}

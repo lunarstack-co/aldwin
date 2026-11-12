@@ -3,7 +3,6 @@
   "placeholder": "Ask anything…",
   "followUp": "Follow-up…",
   "skills": "Add a skill with @",
-  "model": "Model: {model}",
   "send": "Send",
   "stop": "Stop",
   "hint": "Enter to send, Shift+Enter for a new line"

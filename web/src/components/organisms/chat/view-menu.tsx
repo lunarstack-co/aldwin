@@ -15,13 +15,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { THEMES } from "@/constants/theme";
 import densityCopy from "@/data/chat/density-toggle.json";
 import copy from "@/data/chat/header.json";
 import themeCopy from "@/data/theme-toggle.json";
 import { useDensity } from "@/hooks/use-density";
 import { isDensity } from "@/utils/density";
 
-const THEMES = ["light", "dark", "system"] as const;
 const noop = () => () => {};
 
 /**

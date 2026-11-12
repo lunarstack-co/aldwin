@@ -24,7 +24,6 @@ const jetBrainsMono = localFont({
   variable: "--font-jetbrains-mono",
   weight: "100 800",
   display: "swap",
-  preload: false,
 });
 
 // A page on this computer only: named for the tab and the home screen, never indexed.

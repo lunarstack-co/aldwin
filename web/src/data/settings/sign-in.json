@@ -1,0 +1,14 @@
+{
+  "title": "Sign in to {title}",
+  "browser": "Open the sign-in page, approve Aldwin, then come back here.",
+  "open": "Open sign-in page",
+  "waiting": "Waiting for you to finish…",
+  "paste": "Open the sign-in page and approve Aldwin. Then copy the address your browser lands on and paste it here.",
+  "pasteLabel": "Address after signing in",
+  "token": "Paste an access token for {title}.",
+  "tokenHelp": "How to get a token",
+  "tokenLabel": "{title} token",
+  "submit": "Finish sign-in",
+  "expired": "The sign-in for {title} ran out of time. Try Authenticate again.",
+  "cancel": "Cancel sign-in"
+}

@@ -121,3 +121,80 @@ test("icon buttons are labelled", async ({ page, host }) => {
   );
   expect(unnamed).toEqual([]);
 });
+
+test("every Settings section passes axe", async ({ page }) => {
+  for (const section of ["providers", "search", "skills", "tools", "advanced", "appearance"]) {
+    await openChat(page, `/settings/?section=${section}`);
+    await expect(page.locator(`[data-testid=settings-${section}]`)).toBeVisible();
+    await expect(page.locator(`[data-testid=settings-${section}]`)).not.toContainText("Loading");
+    await axe(page, `settings ${section}`);
+  }
+});
+
+test("the open model picker and a sign-in panel pass axe", async ({ page, host }) => {
+  await openChat(page);
+  await page.getByTestId("model-picker-composer").click();
+  await expect(page.getByTestId("model-picker-menu").getByRole("option").first()).toBeVisible();
+  await axe(page, "model picker");
+  await page.keyboard.press("Escape");
+  await openChat(page, "/settings/?section=tools");
+  await page.locator('[data-connector="notion"]').getByRole("button", { name: "Authenticate" }).click();
+  await expect.poll(() => host.sentOfType("connectors.login").length).toBe(1);
+  host.connectorAuth("notion", "paste", { url: "https://notion.example.com/authorize" });
+  await expect(page.getByTestId("connector-sign-in")).toBeVisible();
+  await axe(page, "sign-in panel");
+});
+
+test("Settings works without a pointer", async ({ page, host }) => {
+  await openChat(page);
+  const settings = page.getByTestId("settings").filter({ visible: true });
+  for (let i = 0; i < 20 && !(await settings.evaluate((el) => el === document.activeElement)); i += 1) await page.keyboard.press("Tab");
+  await expect(settings).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/settings\/$/);
+  const advanced = page.getByTestId("settings-nav").getByRole("link", { name: "Advanced" });
+  for (let i = 0; i < 20 && !(await advanced.evaluate((el) => el === document.activeElement)); i += 1) await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#settings-section-title")).toHaveText("Advanced");
+  const steps = page.getByTestId("limit-max_steps");
+  for (let i = 0; i < 20 && !(await steps.evaluate((el) => el === document.activeElement)); i += 1) await page.keyboard.press("Tab");
+  await expect(steps).toBeFocused();
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.type("20");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("advanced-form")).toContainText("Saved");
+  expect(host.settings.limits.max_steps).toBe(20);
+});
+
+test("the Add an app dialog passes axe", async ({ page }) => {
+  await openChat(page, "/settings/?section=tools");
+  await page.getByTestId("add-app-open").click();
+  await expect(page.getByTestId("add-app").locator("[data-catalog]").first()).toBeVisible();
+  await axe(page, "add an app");
+});
+
+test("the open apps menu and a picked app chip pass axe", async ({ page }) => {
+  await openChat(page);
+  await page.getByTestId("composer-input").click();
+  await page.keyboard.type("/");
+  await expect(page.getByTestId("apps-menu").getByRole("option").first()).toBeVisible();
+  await axe(page, "apps menu");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("composer-apps")).toBeVisible();
+  await axe(page, "picked app");
+});
+
+test("the leave-without-saving dialog passes axe", async ({ page }) => {
+  await openChat(page, "/settings/?section=advanced");
+  await page.getByTestId("limit-max_steps").fill("30");
+  await page.getByRole("link", { name: "Back to chat" }).click();
+  await expect(page.getByTestId("leave-dialog")).toBeVisible();
+  await axe(page, "leave dialog");
+});
+
+test("the remove-app dialog passes axe", async ({ page }) => {
+  await openChat(page, "/settings/?section=tools");
+  await page.locator('[data-connector="notion"]').getByRole("button", { name: "Remove" }).click();
+  await expect(page.getByTestId("remove-connector")).toBeVisible();
+  await axe(page, "remove app");
+});

@@ -10,9 +10,11 @@ import {
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, type ReactNode } from "react";
 
+import { leaveTo } from "@/components/organisms/leave-guard";
 import { conversationHref } from "@/constants/routes";
 import { useChatStore } from "@/state/chat-store";
 import { useConnectionStore } from "@/state/connection-store";
+import { confirmLeave } from "@/state/unsaved-store";
 import { turnIdOf, turnsToMessages } from "@/utils/thread-messages";
 import type { ChatSession } from "@/utils/ws/session";
 
@@ -56,7 +58,7 @@ export function ChatRuntimeProvider({
     async (parentId: string | null) => {
       const turnId = parentId === null ? null : turnIdOf(parentId);
       const turn = useChatStore.getState().turns.find((t) => t.id === turnId);
-      if (turn?.userText) session.sendTurn(turn.userText);
+      if (turn?.userText) session.sendTurn(turn.userText, turn.pickedApps);
       else session.retry();
     },
     [session],
@@ -75,13 +77,15 @@ export function ChatRuntimeProvider({
   const onSwitchToThread = useCallback(
     (id: string) => {
       if (id === useChatStore.getState().currentSessionId) useChatStore.getState().setHistoryView("chat");
-      else router.push(conversationHref(id));
+      else confirmLeave(() => leaveTo(router, conversationHref(id)));
     },
     [router],
   );
   const onSwitchToNewThread = useCallback(() => {
-    useChatStore.getState().setHistoryView("chat");
-    router.push("/");
+    confirmLeave(() => {
+      useChatStore.getState().setHistoryView("chat");
+      leaveTo(router, "/");
+    });
   }, [router]);
 
   const runtime = useExternalStoreRuntime({

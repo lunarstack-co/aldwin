@@ -10,6 +10,7 @@ import { useChatStore } from "@/state/chat-store";
 import { useConnectionStore } from "@/state/connection-store";
 import { cn } from "@/utils/cn";
 
+import { ApprovalNotice } from "./approval-notice";
 import { AssistantMessage } from "./assistant-message";
 import { Composer } from "./composer";
 import { EmptyHome } from "./empty-home";
@@ -18,8 +19,9 @@ import { UserMessage } from "./user-message";
 const components = { UserMessage, AssistantMessage };
 
 /**
- * The conversation and its composer: centred on an empty conversation, with
- * the composer docked to the bottom once there is something to read.
+ * The conversation and its composer: centred on an empty conversation (at the
+ * bottom on phones), with the composer docked to the bottom once there is
+ * something to read.
  */
 export function Thread({ model, disabled }: { model: string; disabled: boolean }) {
   const isEmpty = useChatStore((s) => s.turns.length === 0);
@@ -42,7 +44,8 @@ export function Thread({ model, disabled }: { model: string; disabled: boolean }
         <div
           className={cn(
             "mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 sm:px-6 xl:max-w-3xl",
-            isEmpty && "justify-center",
+            // Phones keep the composer at the bottom, where the thumb is; wider screens centre it with the greeting.
+            isEmpty && "md:justify-center",
           )}
         >
           <ThreadPrimitive.Empty>
@@ -70,6 +73,7 @@ export function Thread({ model, disabled }: { model: string; disabled: boolean }
             >
               <ArrowDown aria-hidden />
             </ThreadPrimitive.ScrollToBottom>
+            <ApprovalNotice />
             <AgentPlan />
             <Composer variant={isEmpty ? "centered" : "docked"} model={model} disabled={disabled} />
           </ThreadPrimitive.ViewportFooter>

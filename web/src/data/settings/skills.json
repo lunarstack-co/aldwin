@@ -1,0 +1,16 @@
+{
+  "source": {
+    "default": "Comes with Aldwin",
+    "user": "Made by you",
+    "user override": "Made by you, replaces a built-in one"
+  },
+  "lastUsed": "Last used {date}",
+  "neverUsed": "Not used yet",
+  "broken": "Can't be used",
+  "show": "Show",
+  "hide": "Hide",
+  "loadingBody": "Loading the skill…",
+  "lede": "To make a new skill, ask Aldwin in a chat, for example \"make a skill for writing my weekly update\".",
+  "loadError": "Couldn't load the skills.",
+  "empty": "No skills yet."
+}

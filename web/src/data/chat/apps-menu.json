@@ -1,0 +1,17 @@
+{
+  "label": "Connected apps",
+  "button": "Use a connected app (/)",
+  "loading": "Loading your apps…",
+  "none": "No apps are connected yet.",
+  "noMatch": "No matching apps",
+  "error": "Couldn't load your apps.",
+  "retry": "Try again",
+  "manage": "Manage apps",
+  "tools": "{count} tools",
+  "oneTool": "1 tool",
+  "picked": "Apps for this message",
+  "remove": "Remove {app}",
+  "limit": "Up to 3 apps per message.",
+  "droppedUnknown": "{app} isn't connected right now",
+  "droppedLimit": "{app} wasn't used: up to 3 apps per message"
+}

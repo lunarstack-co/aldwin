@@ -1,20 +1,24 @@
 "use client";
 
 import { AuiIf, ComposerPrimitive, useAui } from "@assistant-ui/react";
-import { ArrowUp, AtSign, Square } from "lucide-react";
+import { ArrowUp, AtSign, Blocks, Square } from "lucide-react";
 import { useEffect, useId, useRef, type KeyboardEvent } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import copy from "@/data/chat/composer.json";
+import appsCopy from "@/data/chat/apps-menu.json";
 import { useChatStore } from "@/state/chat-store";
 import { cn } from "@/utils/cn";
-import { fill } from "@/utils/text";
 
+import { AppsPopover } from "./apps-popover";
+import type { ButtonTrigger } from "./button-trigger";
+import { ModelPicker } from "./model-picker";
+import { PickedAppList } from "./picked-apps";
+import { SearchPicker } from "./search-picker";
 import { SkillsPopover } from "./skills-popover";
 
 /**
- * Where the user types. `@` opens the skills menu, Send becomes Stop while an
+ * Where the user types. `@` opens the skills menu and `/` the connected apps; Send becomes Stop while an
  * answer is on its way, and Esc stops it too.
  */
 export function Composer({
@@ -32,6 +36,7 @@ export function Composer({
   const active = useChatStore((s) => s.turns.find((t) => t.id === s.activeId) ?? null);
   const stopping = active?.status === "stopping";
   const draft = useChatStore((s) => s.draft);
+  const pickedApps = useChatStore((s) => s.pickedApps);
 
   useEffect(() => {
     if (draft === null) return;
@@ -39,15 +44,26 @@ export function Composer({
     useChatStore.getState().clearDraft();
   }, [draft, aui]);
 
-  // Types `@` at the caret as a keystroke would, so the menu opens from the same input event.
-  function startMention() {
+  // Types `@` or `/` at the caret as a keystroke would, so the menu opens from the same input event.
+  // What it typed is remembered, so closing the menu without a pick takes it back.
+  const buttonTriggerRef = useRef<ButtonTrigger | null>(null);
+  function startTrigger(char: "@" | "/") {
     const input = inputRef.current;
     if (!input) return;
     input.focus();
     const start = input.selectionStart ?? input.value.length;
     const end = input.selectionEnd ?? start;
     const before = input.value.slice(0, start);
-    input.setRangeText(before === "" || /\s$/.test(before) ? "@" : " @", start, end, "end");
+    const inserted = before === "" || /\s$/.test(before) ? char : ` ${char}`;
+    buttonTriggerRef.current = {
+      char,
+      before,
+      inserted,
+      after: input.value.slice(end),
+      picked: false,
+      seenOpen: false,
+    };
+    input.setRangeText(inserted, start, end, "end");
     input.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
@@ -68,8 +84,15 @@ export function Composer({
         disabled && "opacity-70",
       )}
     >
+      <PickedAppList
+        apps={pickedApps}
+        onRemove={(name) => useChatStore.getState().unpickApp(name)}
+        className="px-1.5 pt-1"
+        testId="composer-apps"
+      />
       <ComposerPrimitive.TriggerPopoverRoot>
-        <SkillsPopover />
+        <SkillsPopover buttonTriggerRef={buttonTriggerRef} />
+        <AppsPopover buttonTriggerRef={buttonTriggerRef} />
         <ComposerPrimitive.Input
           ref={inputRef}
           data-testid="composer-input"
@@ -96,7 +119,7 @@ export function Composer({
           variant="ghost"
           size="icon-sm"
           disabled={disabled}
-          onClick={startMention}
+          onClick={() => startTrigger("@")}
           aria-label={copy.skills}
           title={copy.skills}
           data-testid="composer-skills"
@@ -104,9 +127,20 @@ export function Composer({
         >
           <AtSign aria-hidden />
         </Button>
-        <Badge variant="outline" data-testid="composer-model" className="max-w-[50%] truncate">
-          {fill(copy.model, { model })}
-        </Badge>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          disabled={disabled}
+          onClick={() => startTrigger("/")}
+          aria-label={appsCopy.button}
+          title={appsCopy.button}
+          data-testid="composer-apps-button"
+          className="max-md:size-10"
+        >
+          <Blocks aria-hidden />
+        </Button>
+        <ModelPicker placement="composer" fallback={model} disabled={disabled || active !== null} />
+        <SearchPicker disabled={disabled} />
         <span aria-hidden className="flex-1" />
         <AuiIf condition={(s) => !s.composer.canCancel}>
           <ComposerPrimitive.Send

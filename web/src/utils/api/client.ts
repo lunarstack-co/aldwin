@@ -22,7 +22,7 @@ function detailOf(body: ErrorBody, status: number): string {
 }
 
 /** A same-origin JSON call to `aldwin web`; failures become `ApiError`. */
-export async function call<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
+export async function call<T>(method: "GET" | "POST" | "PATCH", path: string, body?: unknown): Promise<T> {
   let response: Response;
   try {
     response = await fetch(path, {
