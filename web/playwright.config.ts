@@ -6,6 +6,9 @@ const BASE_URL = "http://127.0.0.1:4173";
 // directory, so its projects run on request: PW_KIT=1, and PW_KIT_URL to reuse a running one.
 const KIT = process.env.PW_KIT === "1";
 const KIT_URL = process.env.PW_KIT_URL ?? "http://127.0.0.1:3100";
+// Specs tagged @timing measure the page's own speed, so on CI they run alone
+// (PW_TIMING=1, one worker) rather than beside other browsers sharing the CPU.
+const TIMING = process.env.PW_TIMING === "1";
 
 // Functional specs run on desktop Chromium in both themes; specs tagged
 // @cross also run on Firefox, WebKit and the two phones.
@@ -21,7 +24,8 @@ const projects: Project[] = browsers.flatMap(({ name, device, cross }) =>
   (["light", "dark"] as const).map((colorScheme) => ({
     name: `${name}-${colorScheme}`,
     testIgnore: /kit\.spec\.ts/,
-    grep: cross ? /@cross/ : undefined,
+    grep: TIMING ? /@timing/ : cross ? /@cross/ : undefined,
+    grepInvert: CI && !TIMING ? /@timing/ : undefined,
     use: {
       ...device,
       ...(name === "chromium" || name === "firefox" || name === "webkit" ? { viewport: { width: 1280, height: 800 } } : {}),
@@ -44,7 +48,7 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: CI,
   retries: CI ? 2 : 0,
-  workers: CI ? 4 : undefined,
+  workers: TIMING ? 1 : CI ? 4 : undefined,
   reporter: CI ? [["html", { open: "never" }], ["github"]] : [["list"]],
   use: {
     trace: "on-first-retry",

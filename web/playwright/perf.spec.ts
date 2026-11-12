@@ -26,7 +26,7 @@ test("no page loads more than 560 KiB of gzipped JS", ({ browserName }) => {
   expect(over).toEqual([]);
 });
 
-test("fifty deltas a second has no long tasks", async ({ page, host, browserName }) => {
+test("fifty deltas a second has no long tasks @timing", async ({ page, host, browserName }) => {
   test.skip(browserName !== "chromium", "long task timing is Chromium-only");
   await page.addInitScript(() => {
     const w = window as unknown as { __long: number[] };
@@ -42,7 +42,7 @@ test("fifty deltas a second has no long tasks", async ({ page, host, browserName
   expect(long.filter((d) => d > 50)).toEqual([]);
 });
 
-test("chat paints within a second", async ({ page, browserName }) => {
+test("chat paints within a second @timing", async ({ page, browserName }) => {
   test.skip(browserName !== "chromium", "paint timing is Chromium-only");
   const times: number[] = [];
   for (let i = 0; i < 3; i += 1) {

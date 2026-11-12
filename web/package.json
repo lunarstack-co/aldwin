@@ -17,6 +17,7 @@
     "test:pw": "playwright test",
     "test:pw:ui": "playwright test --ui",
     "test:pw:kit": "PW_KIT=1 playwright test --project=kit-light --project=kit-dark",
+    "test:pw:timing": "PW_TIMING=1 playwright test --project=chromium-light --project=chromium-dark",
     "test:pw:docker": "scripts/playwright-docker.sh"
   },
   "dependencies": {

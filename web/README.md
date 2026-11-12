@@ -24,11 +24,12 @@ Run these from `web/`:
 | `npm run preview` | Serve `out/` on `http://127.0.0.1:4173` the way `aldwin web` does |
 | `npm run test:pw` | Run the Playwright suite against the export (`test:e2e` is the same) |
 | `npm run test:pw:ui` | Open Playwright's UI mode |
+| `npm run test:pw:timing` | Run the `@timing` checks alone on one worker, as CI does |
 | `npm run test:pw:kit` | Check the component gallery at `/dev/kit/` on `next dev` |
 | `npm run test:pw:docker` | Run the suite in the Linux image CI uses |
 | `npm run icons` | Redraw the favicon, Apple icon and app icons from the Aldwin mark |
 
-CI runs `lint`, `typecheck`, `build`, the Playwright suite and the kit check in the `web` job, and uploads the report and traces when a test fails. The release workflow runs `npm run build` before building the Python package.
+CI runs `lint`, `typecheck`, `build`, the Playwright suite, the timing checks on their own and the kit check in the `web` job, and uploads the report and traces when a test fails. The release workflow runs `npm run build` before building the Python package.
 
 ## Developing against a running Aldwin
 

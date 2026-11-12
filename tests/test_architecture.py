@@ -387,6 +387,7 @@ def test_ci_workflow_has_web_job() -> None:
         "npm run typecheck",
         "npm run build",
         "npm run test:pw",
+        "npm run test:pw:timing",
         "npm run test:pw:kit",
     ):
         assert command in runs, f"web job is missing {command!r}"

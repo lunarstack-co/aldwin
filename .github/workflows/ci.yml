@@ -148,6 +148,10 @@ jobs:
       - name: End-to-end (Playwright)
         run: npm run test:pw
 
+      # Timing checks run alone so other browsers do not share the CPU they measure.
+      - name: Timing checks (Playwright, one worker)
+        run: npm run test:pw:timing
+
       - name: Component kit (Playwright on next dev)
         run: npm run test:pw:kit
 
