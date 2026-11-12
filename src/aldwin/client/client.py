@@ -294,9 +294,11 @@ class AldwinClient:
         text: str,
         *,
         skills: Sequence[str] = (),
+        apps: Sequence[str] = (),
     ) -> AsyncGenerator[Event, None]:
         """Send a `turn` request and yield events until `done` or `error`."""
-        async for event in self._stream(TurnRequest(text=text, skills=list(skills))):
+        request = TurnRequest(text=text, skills=list(skills), apps=list(apps))
+        async for event in self._stream(request):
             yield event
 
     async def _stream(self, request: Request) -> AsyncGenerator[Event, None]:

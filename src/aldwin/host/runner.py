@@ -58,6 +58,7 @@ from aldwin.core.connectors.errors import (
 )
 from aldwin.core.connectors.local import parse_command_line
 from aldwin.core.connectors.oauth_messages import needs_sign_in
+from aldwin.core.connectors.picks import build_picked_apps
 from aldwin.core.connectors.policy import tool_call_labels
 from aldwin.core.connectors.state import ConnectorSnapshot
 from aldwin.core.home import home_dir
@@ -134,6 +135,7 @@ from aldwin.protocol import (
     ApprovalAnswer,
     ApprovalEvent,
     ApproveRequest,
+    AppsUsedEvent,
     CatalogItem,
     ConnectorAuthEvent,
     ConnectorInfo,
@@ -157,6 +159,7 @@ from aldwin.protocol import (
     ConnectorToolInfo,
     DoneEvent,
     DoneReason,
+    DroppedApp,
     DroppedSkill,
     ErrorCode,
     ErrorEvent,
@@ -2274,14 +2277,30 @@ class AldwinHost:
         if text != req.text:
             await scope.emit(NoticeEvent(re=req.id, message=PASTED_SECRET_NOTICE))
         task_text = build_task(text, picked)
+        picked_apps: list[str] = []
+        if self._negotiated_version >= 2 and req.apps:
+            apps, dropped_apps = self._connectors.pick_apps(req.apps)
+            picked_apps = [name for name, _title in apps]
+            await scope.emit(
+                AppsUsedEvent(
+                    re=req.id,
+                    names=picked_apps,
+                    dropped=[
+                        DroppedApp(name=name, reason=reason)
+                        for name, reason in dropped_apps
+                    ],
+                )
+            )
+            task_text = build_picked_apps(task_text, apps)
         if self._stored_session.turns is None:
             self._stored_session.turns = []
-        self._stored_session.turns.append(
-            {
-                "text": text,
-                "skills": [entry.name for entry in picked],
-            }
-        )
+        stored_turn: dict[str, Any] = {
+            "text": text,
+            "skills": [entry.name for entry in picked],
+        }
+        if picked_apps:
+            stored_turn["apps"] = picked_apps
+        self._stored_session.turns.append(stored_turn)
 
         cold_load_task: asyncio.Task[None] | None = None
         if is_local_model(self._model):
