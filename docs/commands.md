@@ -81,8 +81,14 @@ is installed. If none of these work, it says so and you can select with the mous
 | `?` | Shortcuts in the footer (when the prompt is empty) |
 | `↑` / `↓` | Navigate input history or move in slash / approval lists |
 | `Ctrl+R` | Reverse-search input history |
+| `Ctrl+G` | Open the current draft in your external editor |
 | `Ctrl+C` | Clear the draft; twice on an empty prompt saves and exits |
 | `Ctrl+D` | Save the conversation and exit |
+
+To use a graphical editor such as VS Code, configure the `EDITOR` environment
+variable with its wait option (for example, `EDITOR="code --wait"`). This
+ensures Aldwin waits until you finish editing before returning the draft
+to the prompt.
 
 ## Uninstall
 

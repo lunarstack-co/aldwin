@@ -57,6 +57,7 @@ def test_dock_busy_and_contextual_footers() -> None:
         session.set_footer("shortcuts")
         shortcuts = to_plain_text(session._toolbar_text())
         assert "send" in shortcuts or "↵" in shortcuts
+        assert "⌃G" in shortcuts
         session.set_footer("ctrl_c", left="Press Ctrl-C again to exit")
         assert "Ctrl-C again" in to_plain_text(session._toolbar_text())
         session.set_footer("idle")
