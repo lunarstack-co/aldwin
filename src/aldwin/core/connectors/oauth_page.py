@@ -50,41 +50,56 @@ _EYES: Final[dict[PageKind, str]] = {
     ),
 }
 
+# The web app's tokens (web/src/styles/tokens.css): neutral paper and ink on one
+# hue. This page is served on its own port, so it cannot read the theme the
+# user picked in Aldwin; it follows the system's light or dark setting.
 _STYLE = """
 :root {
   color-scheme: light dark;
-  --paper: #f6f1e7; --ink: #0e1716; --muted: #55625f;
-  --teal: #38bdb0; --quiet: #8a9693; --chip: #ece5d8;
+  --tint: 106;
+  --background: oklch(0.992 0.002 var(--tint));
+  --foreground: oklch(0.145 0.006 var(--tint));
+  --muted: oklch(0.97 0.004 var(--tint));
+  --muted-foreground: oklch(0.556 0.007 var(--tint));
+  --border: oklch(0.922 0.005 var(--tint));
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #0e1716; --ink: #f6f1e7; --muted: #a7b2af;
-    --quiet: #6b7875; --chip: #1b2725;
+    --background: oklch(0.17 0.003 var(--tint));
+    --foreground: oklch(0.985 0.002 var(--tint));
+    --muted: oklch(0.275 0.004 var(--tint));
+    --muted-foreground: oklch(0.708 0.004 var(--tint));
+    --border: oklch(0.985 0.002 var(--tint) / 10%);
   }
 }
 * { box-sizing: border-box; margin: 0; }
 html, body { height: 100%; }
 body {
   display: grid; place-items: center; padding: 24px;
-  background: var(--paper); color: var(--ink);
+  background: var(--background); color: var(--foreground);
   font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased; text-align: center;
 }
-main { max-width: 26rem; animation: arrive 320ms cubic-bezier(.2,.8,.2,1) both; }
-.mark { width: 96px; height: 96px; margin: 0 auto 28px; display: block; }
-.mark.ok { color: var(--teal); }
-.mark.declined, .mark.stale { color: var(--quiet); }
-h1 {
-  font-size: 1.625rem; line-height: 1.25; font-weight: 600;
-  letter-spacing: -0.015em;
+main {
+  width: 100%; max-width: 26rem; padding: 40px 28px;
+  border: 1px solid var(--border); border-radius: 16px;
+  animation: arrive 320ms cubic-bezier(.2,.8,.2,1) both;
 }
-p { margin-top: 10px; color: var(--muted); text-wrap: balance; }
+.mark { width: 64px; height: 64px; margin: 0 auto 24px; display: block; }
+.mark.ok { color: var(--foreground); }
+.mark.declined, .mark.stale { color: var(--muted-foreground); }
+h1 {
+  font-size: 1.375rem; line-height: 1.3; font-weight: 600;
+  letter-spacing: -0.01em;
+}
+p { margin-top: 8px; color: var(--muted-foreground); text-wrap: balance; }
 code {
   font: 0.9em ui-monospace, "SF Mono", Menlo, monospace;
-  background: var(--chip); padding: 2px 6px; border-radius: 6px; color: var(--ink);
+  background: var(--muted); padding: 2px 6px; border-radius: 6px;
+  color: var(--foreground);
 }
 footer {
-  margin-top: 40px; font-size: 13px; color: var(--quiet); letter-spacing: 0.02em;
+  margin-top: 28px; font-size: 13px; color: var(--muted-foreground);
 }
 @keyframes arrive { from { opacity: 0; transform: translateY(6px); } }
 @media (prefers-reduced-motion: reduce) { main { animation: none; } }
@@ -109,7 +124,10 @@ def _mark(kind: PageKind, *, fill: str = "currentColor", css: bool = True) -> st
 def _copy(kind: PageKind, title: str | None) -> tuple[str, str]:
     """The heading and the line under it; both already HTML-safe."""
     name = escape(title) if title else None
-    retry = "run <code>/connectors</code> in Aldwin"
+    retry = (
+        "use Authenticate in Aldwin's Settings, under Tools, "
+        "or run <code>/connectors</code> in the terminal"
+    )
     if kind == "ok":
         heading = f"{name} is connected" if name else "You're signed in"
         return heading, "Go back to Aldwin. You can close this tab."
@@ -139,4 +157,4 @@ def callback_page(kind: PageKind, title: str | None = None) -> str:
 
 
 def _favicon() -> str:
-    return quote(_mark("stale", fill="#38bdb0", css=False), safe="")
+    return quote(_mark("stale", fill="#1f1f1d", css=False), safe="")
