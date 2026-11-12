@@ -9,12 +9,13 @@ import { readDensity, isDensity } from "../src/utils/density";
 import { displayTitle, filterSessions, groupSessions, shouldCallSessionsNew } from "../src/utils/history";
 import { allowsProtocol, allowsTag } from "../src/utils/markdown";
 import { pageTitle } from "../src/utils/page-title";
+import { searchSkills, skillFormatter, skillsFromText, visibleSkills } from "../src/utils/skills";
 import { turnsToMessages } from "../src/utils/thread-messages";
 import { formatDuration } from "../src/utils/time";
 import { outcomeOfClose, retryDelay, socketUrl } from "../src/utils/ws";
 import { createConnection, type SocketLike } from "../src/utils/ws/connection";
 import { ApiError } from "../src/utils/api";
-import { session } from "./fixtures/fake-host";
+import { SKILL_FIXTURE, session, skillsOf } from "./fixtures/fake-host";
 
 test("formatDuration", () => {
   const cases: [number, string][] = [
@@ -172,4 +173,34 @@ test("connection reaches stopped after the retries run out, and not ready on 503
   ).start();
   await new Promise((r) => setTimeout(r, 10));
   expect(notReady.at(-1)).toBe("not_ready");
+});
+
+test("skill tokens follow the CLI pattern", () => {
+  expect(skillsFromText("@files and @web-research")).toEqual(["files", "web-research"]);
+  expect(skillsFromText("mail fola@cuvama.com and x@files")).toEqual([]);
+  expect(skillsFromText("@memory @files @memory")).toEqual(["memory", "files"]);
+  expect(skillsFromText("@Files @-bad @a--b @ok")).toEqual(["ok"]);
+  expect(skillsFromText("@ghost")).toEqual(["ghost"]);
+  expect(skillsFromText("use @files, then\n@memory.")).toEqual(["files", "memory"]);
+  expect(skillsFromText("npm i @types/node and use @vercel/og")).toEqual([]);
+  expect(skillsFromText("see @files/notes or contact @acme.com today")).toEqual([]);
+  expect(skillsFromText("ping @files! then @memory.")).toEqual(["files", "memory"]);
+});
+
+test("the menu hides broken skills and lists recent ones first", () => {
+  expect(visibleSkills(SKILL_FIXTURE).map((s) => s.name)).toEqual(["web-research", "files", "memory", "ship-notes"]);
+  expect(searchSkills(SKILL_FIXTURE, "we").map((s) => s.name)).toEqual(["web-research"]);
+  expect(searchSkills(SKILL_FIXTURE, "es").map((s) => s.name)).toEqual(["web-research", "files", "ship-notes"]);
+  expect(searchSkills(skillsOf(12), "")).toHaveLength(8);
+  expect(searchSkills(skillsOf(12), "s1").map((s) => s.name)).toEqual(["s10", "s11", "s12"]);
+});
+
+test("skill formatter writes and reads @name", () => {
+  expect(skillFormatter.serialize({ id: "files", type: "skill", label: "files" })).toBe("@files");
+  expect(skillFormatter.parse("use @files now")).toEqual([
+    { kind: "text", text: "use " },
+    { kind: "mention", type: "skill", id: "files", label: "files" },
+    { kind: "text", text: " now" },
+  ]);
+  expect(skillFormatter.parse("plain")).toEqual([{ kind: "text", text: "plain" }]);
 });

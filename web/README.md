@@ -85,6 +85,10 @@ Each conversation has its own address, `/c/?id=<id>`. `hooks/use-conversation-ro
 
 Clean density (the default) folds a turn's tool calls into one "Working for 8s" / "Worked for 12s" chip; Detail shows each call. The rail shows the 15 most recent conversations; See all groups every one into Today, Yesterday, Previous 7 days and Older.
 
+### Skills (`@`)
+
+Typing `@` in the composer, or pressing its `@` button, opens the skills menu: `ComposerPrimitive.TriggerPopover` through the registry's `composer-trigger-popover`, in `components/organisms/chat/skills-popover.tsx`. The catalogue comes from `skills.list` the first time the menu opens and then from the host's `skills` events. Skills that failed to load are hidden, recently used ones come first, and at most eight rows show. A pick is written into the text as `@name`, the form the CLI uses, and on send the session reads every `@name` in the text into `turn.skills` (`utils/skills`), so Retry and pasted text carry the same skills. The host uses at most three per turn and reports the rest in `skills.used`; sent messages show `@name` as chips, with the used skills and any dropped ones underneath. Tools are never sent. The used and dropped lines come from the live `skills.used` event, which the host does not save, so after a reload only the chips remain.
+
 ## Design system
 
 The tokens in `src/styles/tokens.css` are the assistant-ui set, copied value for value: every neutral sits on the `--tint` hue, `--live` (blue) marks only what is running, and shadows are zeroed except on floating surfaces. `src/styles/theme.css` maps them onto Tailwind's shadcn names (`bg-background`, `text-muted-foreground`, `border-border`, `rounded-thread`…). Retheming Aldwin later means editing `tokens.css`.

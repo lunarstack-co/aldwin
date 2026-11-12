@@ -6,6 +6,7 @@ import { ConnectionState } from "@/components/assistant-ui/connection-state";
 import railCopy from "@/data/chat/rail.json";
 import copy from "@/data/chat/shell.json";
 import { useChatSession } from "@/hooks/use-chat-session";
+import { useSkillsCatalog } from "@/hooks/use-skills-catalog";
 import { useConversationRoute } from "@/hooks/use-conversation-route";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useSetup } from "@/hooks/use-setup";
@@ -28,6 +29,11 @@ import { ViewMenu } from "./view-menu";
 function RouteSync({ session }: { session: ReturnType<typeof useChatSession> }) {
   useConversationRoute(session);
   usePageTitle();
+  return null;
+}
+
+function SkillsSync({ session }: { session: ReturnType<typeof useChatSession> }) {
+  useSkillsCatalog(session);
   return null;
 }
 
@@ -65,6 +71,7 @@ export function ChatShell({ children }: { children?: ReactNode }) {
   return (
     <ChatRuntimeProvider session={session}>
       <RouteSync session={session} />
+      <SkillsSync session={session} />
       {children}
       <ChatLayout
         railLabel={copy.railLabel}

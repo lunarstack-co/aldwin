@@ -12,6 +12,7 @@
     "code": "const answer = 42;",
     "option": "Option",
     "dialog": "Dialog content",
-    "tab": "Tab"
+    "tab": "Tab",
+    "skillText": "Use @files to tidy my notes"
   }
 }

@@ -1,0 +1,12 @@
+{
+  "label": "Skills",
+  "loading": "Loading skills…",
+  "empty": "No skills yet",
+  "noMatch": "No matching skills",
+  "error": "Couldn't load skills.",
+  "retry": "Try again",
+  "manage": "Manage in Settings…",
+  "used": "Skills used",
+  "droppedUnknown": "@{name} wasn't found",
+  "droppedLimit": "@{name} wasn't used: up to 3 skills per message"
+}
