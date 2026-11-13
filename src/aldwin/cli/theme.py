@@ -12,8 +12,7 @@ from prompt_toolkit.styles import Style
 from rich.console import Console
 from rich.theme import Theme
 
-# Lunar teal: Aldwin's own accent (cool local assistant, not Claude orange).
-# TrueColor for Rich + #hex for prompt_toolkit.
+# Lunar teal accent: TrueColor for Rich, #hex for prompt_toolkit.
 ACCENT_RGB: Final[tuple[int, int, int]] = (56, 189, 176)
 ACCENT_BRIGHT_RGB: Final[tuple[int, int, int]] = (122, 224, 214)
 ACCENT_SHADOW_RGB: Final[tuple[int, int, int]] = (32, 120, 112)
@@ -210,7 +209,7 @@ def rich_theme_for(choice: ThemeChoice) -> Theme:
         return THEME_LIGHT
     if choice == "colour_blind":
         return THEME_COLOUR_BLIND
-    # auto: prefer dark until OSC 11 background query lands with onboarding.
+    # auto falls back to dark: the terminal background is not queried yet.
     return THEME
 
 

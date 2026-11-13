@@ -260,11 +260,11 @@ async def test_anthropic_describe_and_check_access() -> None:
     assert described is not None
     assert described.id == "claude-3-7-sonnet-20250219"
 
-    # Missing model ID returns None (Finding 1)
+    # Missing model ID returns None
     missing = await backend.describe_model("unknown-model")
     assert missing is None
 
-    # Auth error check_access: 401 -> invalid_key, 403 -> no_access (Finding 7)
+    # Auth error check_access: 401 -> invalid_key, 403 -> no_access
     auth_fail_transport = httpx.MockTransport(lambda r: httpx.Response(401))
     backend_auth_fail = AnthropicBackend(
         entry, api_key="k", transport=auth_fail_transport
@@ -289,7 +289,7 @@ async def test_anthropic_describe_and_check_access() -> None:
 async def test_anthropic_stream_failure_modes() -> None:
     from agentling import ModelContextLengthError
 
-    # Context length exceeded maps to ModelContextLengthError (Finding 3)
+    # Context length exceeded maps to ModelContextLengthError
     ctx_transport = httpx.MockTransport(
         lambda r: httpx.Response(
             400,

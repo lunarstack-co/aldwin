@@ -24,12 +24,10 @@ class ConversationLock:
 
     @property
     def path(self) -> Path:
-        """Return the lock file path."""
         return self._path
 
     @property
     def held(self) -> bool:
-        """Return whether this instance holds the lock."""
         return self._fd is not None
 
     def try_acquire(self) -> bool:

@@ -31,7 +31,7 @@ def test_build_agent_default_config(
     aldwin_home: Path,
     fake_model: FakeModel,
 ) -> None:
-    """TC-01: `build_agent` wires tools, starter skill, `max_steps=15`, and context."""
+    """`build_agent` wires tools, starter skill, `max_steps=15`, and context."""
     ensure_home(aldwin_home)
 
     @tool
@@ -69,7 +69,7 @@ def test_load_skills_skips_broken_and_reports_invalid(
     aldwin_home: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """TC-06: Valid skills load; broken `SKILL.md` is logged and reported as invalid."""
+    """Valid skills load; broken `SKILL.md` is logged and reported as invalid."""
     ensure_home(aldwin_home)
     skills_dir = aldwin_home / "skills"
 
@@ -104,7 +104,7 @@ def test_load_skills_duplicate_name_first_wins_and_rejects_skill_tools(
     aldwin_home: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """TC-16: Duplicate skill names keep the first; `tools:` and reserved names fail."""
+    """Duplicate skill names keep the first; `tools:` and reserved names fail."""
     ensure_home(aldwin_home)
     skills_dir = aldwin_home / "skills"
 
@@ -250,7 +250,7 @@ async def test_skill_catalog_appears_once_in_system_message(
     aldwin_home: Path,
     fake_model: FakeModel,
 ) -> None:
-    """TC-07: Skill catalog appears exactly once in the rendered system prompt."""
+    """Skill catalog appears exactly once in the rendered system prompt."""
     ensure_home(aldwin_home)
     fake_model.add_turns(FakeTurn.text(["Ready to help."]))
 
@@ -273,7 +273,7 @@ async def test_skill_catalog_appears_once_in_system_message(
 
 
 def test_base_instructions_sections_and_safety_rules() -> None:
-    """TC-13: Base instructions cover identity, narration, tools, memory, and safety."""
+    """Base instructions cover identity, narration, tools, memory, and safety."""
     text = load_base_instructions()
     lower = text.lower()
 
@@ -291,7 +291,7 @@ async def test_new_and_restore_session_roundtrip(
     aldwin_home: Path,
     fake_model: FakeModel,
 ) -> None:
-    """TC-14: `new_session` and `restore_session` preserve full conversation memory."""
+    """`new_session` and `restore_session` preserve full conversation memory."""
     ensure_home(aldwin_home)
     fake_model.add_turns(
         FakeTurn.text(["Hello Fola!"]),
@@ -321,7 +321,7 @@ async def test_new_and_restore_session_roundtrip(
 async def test_set_model_mid_conversation_preserves_memory(
     aldwin_home: Path,
 ) -> None:
-    """TC-11: `rebuild_agent` + `switch_session_model` keeps history."""
+    """`rebuild_agent` + `switch_session_model` keeps history."""
     ensure_home(aldwin_home)
     model_a = FakeModel(turns=[FakeTurn.text(["Hi Fola from model A"])])
     model_b = FakeModel(turns=[FakeTurn.text(["Your name is Fola from model B"])])
@@ -366,7 +366,7 @@ def test_build_agent_performance_under_200ms(
     aldwin_home: Path,
     fake_model: FakeModel,
 ) -> None:
-    """TC-20: `build_agent` completes in < 200 ms with multiple skills."""
+    """`build_agent` completes in < 200 ms with multiple skills."""
     ensure_home(aldwin_home)
     skills_dir = aldwin_home / "skills"
     for idx in range(3):

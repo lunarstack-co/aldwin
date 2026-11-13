@@ -48,7 +48,7 @@ def legacy_home(tmp_path: Path) -> Path:
 
 @pytest.mark.uninitialized_home
 def test_fresh_home_skips_migration(aldwin_home: Path) -> None:
-    """TC-06: a brand-new 0.0.2 home is marked migrated with no 0.0.1 side effects."""
+    """A brand-new 0.0.2 home is marked migrated with no 0.0.1 side effects."""
     created = ensure_home(aldwin_home)
     assert created is True
 
@@ -59,7 +59,7 @@ def test_fresh_home_skips_migration(aldwin_home: Path) -> None:
 
 
 def test_upgrade_from_0_0_1_preserves_and_adds(legacy_home: Path) -> None:
-    """TC-07: upgrading a synthetic 0.0.1 home backs up config.yaml and adds keys."""
+    """Upgrading a synthetic 0.0.1 home backs up config.yaml and adds keys."""
     before = (legacy_home / "config.yaml").read_text(encoding="utf-8")
 
     created = ensure_home(legacy_home)
@@ -100,7 +100,7 @@ def test_upgrade_from_0_0_1_preserves_and_adds(legacy_home: Path) -> None:
 def test_second_run_up_to_date(
     legacy_home: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """TC-08: a second migration run makes no further changes and logs as much."""
+    """A second migration run makes no further changes and logs as much."""
     ensure_home(legacy_home)
     migrate_0_0_1(legacy_home, fresh_install=False)
 
@@ -147,7 +147,7 @@ def test_backup_write_failure_leaves_config_untouched(
 
 
 def test_crash_recovery_completes(legacy_home: Path) -> None:
-    """TC-10: a pre-existing backup (simulated crash after step 1) still finishes."""
+    """A pre-existing backup (simulated crash after step 1) still finishes."""
     original = (legacy_home / "config.yaml").read_text(encoding="utf-8")
     (legacy_home / CONFIG_BACKUP_0_0_1_NAME).write_text(original, encoding="utf-8")
 
@@ -162,7 +162,7 @@ def test_crash_recovery_completes(legacy_home: Path) -> None:
 
 
 def test_index_built_and_corrupt_session_skipped(legacy_home: Path) -> None:
-    """TC-11: migration builds the memory index; a corrupt session file is skipped."""
+    """Migration builds the memory index; a corrupt session file is skipped."""
     ensure_home(legacy_home)
     remember_note(legacy_home, "buy more coffee filters")
     sessions_dir = legacy_home / "sessions"

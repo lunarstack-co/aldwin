@@ -51,9 +51,7 @@ async def _collect_turn(client: AldwinClient, text: str) -> list[Any]:
     return events
 
 
-# ============================================================================
-# Unit Tests: Model Reference and Error Classification
-# ============================================================================
+# Model references and error classification
 
 
 def test_parse_model_ref_parts_handles_bare_prefixed_and_nested_refs() -> None:
@@ -402,9 +400,7 @@ def test_is_local_model_and_retry_status_helpers() -> None:
     assert "Can't reach DeepSeek" in msg_conn
 
 
-# ============================================================================
-# Integration Tests: Host Runner Lifecycle and Error Events
-# ============================================================================
+# Host runner lifecycle and error events
 
 
 async def test_host_auth_failure_turn(aldwin_home: Path) -> None:
@@ -633,7 +629,6 @@ async def test_host_context_trim_recovery(aldwin_home: Path) -> None:
         agent_builder=lambda _m, _ask: Agent(model=fake_model),
         initial_model="ollama/llama3.1:8b",
     )
-    # Pre-populate session with previous exchanges
     host._agent_session.memory.add(TaskStep(task="Old question 1"))
     host._agent_session.memory.add(FinalStep(answer="Old answer 1"))
     host._agent_session.memory.add(TaskStep(task="Old question 2"))

@@ -235,7 +235,7 @@ async def _cancel_task(task: asyncio.Task[None] | None) -> None:
 
 
 def format_session_header(model: str, session_id: str = "") -> str:
-    """Format session header: `{model id} · {provider title}`."""
+    """`{model id} · {provider title}`, plus the session id when given."""
     formatted = format_model_provider_title(model)
     if session_id:
         return f"{formatted} ({session_id})"
@@ -243,7 +243,7 @@ def format_session_header(model: str, session_id: str = "") -> str:
 
 
 def format_model_provider_title(model: str) -> str:
-    """Format model string as `{model id} · {provider title}`."""
+    """Turn `provider/model` into `{model id} · {provider title}`."""
     cleaned = model.strip()
     if "/" in cleaned:
         prov, _, mid = cleaned.partition("/")
@@ -802,7 +802,6 @@ async def run_chat(
     input_dev: Input | None = None,
     output_dev: Output | None = None,
 ) -> int:
-    """Run the main Aldwin interactive chat loop."""
     _ = debug
     active_console = console or create_console(plain=boot.plain, theme=boot.theme)
     renderer = ChatRenderer(active_console, plain=boot.plain)

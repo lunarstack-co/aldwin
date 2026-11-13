@@ -1,4 +1,4 @@
-"""Persona file reading, cap truncation, and atomic updates for Aldwin (`ENG-381`)."""
+"""Persona file reading, cap truncation, and atomic updates for Aldwin."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ _WARNED_PERSONA_CAPS: set[tuple[str, int, int, int]] = set()
 
 @dataclass(frozen=True, slots=True)
 class PersonaSummary:
-    """Summary of the active `persona.md` file used by `/persona` (`FR-10`)."""
+    """Summary of the active `persona.md` file used by `/persona`."""
 
     path: Path
     display_path: str
@@ -61,7 +61,7 @@ def read_persona(
     home: Path | None = None,
     cap: int = DEFAULT_PERSONA_CAP,
 ) -> str:
-    """Read `persona.md` from `home` (or shipped default), capped at `cap` (`FR-7`).
+    """Read `persona.md` from `home` (or shipped default), capped at `cap`.
 
     Truncates in the prompt only (never on disk) and logs a warning once per
     file modification when the file exceeds `cap` characters.
@@ -86,7 +86,7 @@ def read_persona(
 
 
 def persona_text(home: Path | None = None) -> str:
-    """Return the current `persona.md` text (or default) for `/persona` (`FR-10`)."""
+    """Return the current `persona.md` text (or default) for `/persona`."""
     root = (home if home is not None else home_dir()).expanduser().resolve()
     _path, raw, _mtime = _read_raw_persona(root)
     return raw
@@ -96,7 +96,7 @@ def persona_summary(
     home: Path | None = None,
     cap: int = DEFAULT_PERSONA_CAP,
 ) -> PersonaSummary:
-    """Return path, text, and cap metadata for `/persona` (`FR-10`)."""
+    """Return path, text, and cap metadata for `/persona`."""
     root = (home if home is not None else home_dir()).expanduser().resolve()
     persona_path, raw, _mtime = _read_raw_persona(root)
     return PersonaSummary(
@@ -115,7 +115,7 @@ def write_persona(
     *,
     cap: int = DEFAULT_PERSONA_CAP,
 ) -> Path:
-    """Validate `new_text` (`1..cap` chars) and write `persona.md` (`FR-8`)."""
+    """Validate `new_text` (`1..cap` chars) and write `persona.md`."""
     if not isinstance(new_text, str) or "\x00" in new_text:
         raise ValueError("Invalid persona: text must be a valid string.")
 

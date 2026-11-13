@@ -106,7 +106,7 @@ def test_policy_registry_matches_pinned_table(aldwin_home: Path) -> None:
     assert remember_tier({"text": "new note"}) == "auto"
     assert remember_tier({"text": "updated", "replace": "id_1"}) == "diff"
 
-    # `TC-77`: built-ins never use the connector-only fields.
+    # Built-ins never use the connector-only fields.
     for policy in REGISTRY.values():
         assert policy.connector is None
         assert policy.auto_reason is None
@@ -118,7 +118,7 @@ def test_policy_registry_matches_pinned_table(aldwin_home: Path) -> None:
     mutated["read_file"] = replace(REGISTRY["read_file"], tier="ask")
     assert _snapshot_registry(mutated) != PINNED_POLICY_TABLE
 
-    # Verify all currently built tools in `builtin_tools` have valid entries
+    # Every tool in `builtin_tools` has a valid entry.
     async def _noop_ask(_s: str, _d: str = "") -> bool:
         return False
 

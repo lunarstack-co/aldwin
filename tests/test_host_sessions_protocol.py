@@ -68,7 +68,7 @@ async def _start_hanging_turn(
 async def test_sessions_list_emits_items_and_current(
     rig: Rig, fake_model: FakeModel
 ) -> None:
-    """TC-17: `items` holds conversations with turns; `current` is the active one."""
+    """`items` holds conversations with turns; `current` is the active one."""
     host, client = rig
     fake_model.add_turns(FakeTurn.text(["Hi there."]))
     await _chat(client, "Hello")
@@ -87,7 +87,7 @@ async def test_sessions_list_emits_items_and_current(
 async def test_sessions_open_idle_switches_active(
     rig: Rig, fake_model: FakeModel
 ) -> None:
-    """TC-18: opening a saved conversation makes it active, memory and all."""
+    """Opening a saved conversation makes it active, memory and all."""
     host, client = rig
     fake_model.add_turns(FakeTurn.text(["Paris."]), FakeTurn.text(["Blue."]))
     await _chat(client, "Capital of France?")
@@ -129,7 +129,7 @@ async def test_sessions_open_labels_the_conversation_with_the_active_model(
 async def test_sessions_open_same_id_noop(
     rig: Rig, fake_model: FakeModel, aldwin_home: Path
 ) -> None:
-    """TC-19: opening the active conversation succeeds and changes nothing."""
+    """Opening the active conversation succeeds and changes nothing."""
     host, client = rig
     fake_model.add_turns(FakeTurn.text(["Ok."]))
     await _chat(client, "Hi")
@@ -147,7 +147,7 @@ async def test_sessions_open_same_id_noop(
 async def test_sessions_open_missing_returns_not_found(
     rig: Rig, aldwin_home: Path
 ) -> None:
-    """TC-20: an unknown or corrupt id is `not_found`; the slot is unchanged."""
+    """An unknown or corrupt id is `not_found`; the slot is unchanged."""
     host, client = rig
     active = host.stored_session.meta.id
     (aldwin_home / "sessions" / "2026-11-01_broken.json").write_text("{", "utf-8")
@@ -160,7 +160,7 @@ async def test_sessions_open_missing_returns_not_found(
 
 
 async def test_sessions_open_mid_turn_busy(rig: Rig, fake_model: FakeModel) -> None:
-    """TC-21: a switch while a turn runs is refused and the turn keeps going."""
+    """A switch while a turn runs is refused and the turn keeps going."""
     host, client = rig
     fake_model.add_turns(FakeTurn.text(["Done."]))
     await _chat(client, "First")
@@ -182,7 +182,7 @@ async def test_sessions_open_mid_turn_busy(rig: Rig, fake_model: FakeModel) -> N
 async def test_sessions_new_mid_turn_busy_no_new_file(
     rig: Rig, fake_model: FakeModel, aldwin_home: Path
 ) -> None:
-    """TC-22: `sessions.new` mid-turn is refused and writes no file."""
+    """`sessions.new` mid-turn is refused and writes no file."""
     host, client = rig
     active = host.stored_session.meta.id
     turn = await _start_hanging_turn(client, fake_model)
@@ -199,7 +199,7 @@ async def test_sessions_new_mid_turn_busy_no_new_file(
 
 
 async def test_sessions_new_reuses_empty_latest(rig: Rig, aldwin_home: Path) -> None:
-    """TC-23: new chat on an empty conversation keeps that one."""
+    """New chat on an empty conversation keeps that one."""
     host, client = rig
     landing = host.stored_session.meta.id
 
@@ -214,7 +214,7 @@ async def test_sessions_new_reuses_empty_latest(rig: Rig, aldwin_home: Path) -> 
 async def test_sessions_new_after_turns_creates_distinct_id(
     rig: Rig, fake_model: FakeModel, aldwin_home: Path
 ) -> None:
-    """TC-24: once a conversation has turns, new chat starts an empty one."""
+    """Once a conversation has turns, new chat starts an empty one."""
     host, client = rig
     fake_model.add_turns(FakeTurn.text(["Hello back."]))
     await _chat(client, "Hello")
@@ -231,7 +231,7 @@ async def test_sessions_new_after_turns_creates_distinct_id(
 async def test_sessions_new_switches_to_empty_latest_from_older_active(
     rig: Rig, fake_model: FakeModel, aldwin_home: Path
 ) -> None:
-    """TC-25: from an older conversation, new chat goes to the empty newest one."""
+    """From an older conversation, new chat goes to the empty newest one."""
     host, client = rig
     fake_model.add_turns(FakeTurn.text(["One."]))
     await _chat(client, "Older chat")
@@ -250,7 +250,7 @@ async def test_sessions_new_switches_to_empty_latest_from_older_active(
 async def test_sessions_open_new_do_not_emit_history(
     rig: Rig, fake_model: FakeModel
 ) -> None:
-    """TC-26: open and new reply with `sessions` only; `history` is a separate call."""
+    """Open and new reply with `sessions` only; `history` is a separate call."""
     host, client = rig
     fake_model.add_turns(FakeTurn.text(["Answer."]))
     await _chat(client, "Question")
@@ -269,7 +269,7 @@ async def test_sessions_open_new_do_not_emit_history(
 async def test_activate_persists_previous_before_switch(
     rig: Rig, fake_model: FakeModel
 ) -> None:
-    """TC-27: leaving a conversation saves it first, without reordering history."""
+    """Leaving a conversation saves it first, without reordering history."""
     host, client = rig
     fake_model.add_turns(FakeTurn.text(["Noted."]))
     await _chat(client, "Remember this")
@@ -287,7 +287,7 @@ async def test_activate_persists_previous_before_switch(
 async def test_client_sessions_helpers_happy_path(
     rig: Rig, fake_model: FakeModel
 ) -> None:
-    """TC-28: the three client helpers round-trip through the host."""
+    """The three client helpers round-trip through the host."""
     host, client = rig
     fake_model.add_turns(FakeTurn.text(["Hi."]))
     await _chat(client, "Hello")
@@ -307,7 +307,7 @@ async def test_client_sessions_helpers_happy_path(
 async def test_idle_cli_new_conversation_uses_landing(
     rig: Rig, fake_model: FakeModel, aldwin_home: Path
 ) -> None:
-    """TC-29: the terminal's `/new` follows the same no-litter rule when idle."""
+    """The terminal's `/new` follows the same no-litter rule when idle."""
     host, client = rig
     landing = host.stored_session.meta.id
 
@@ -325,7 +325,7 @@ async def test_idle_cli_new_conversation_uses_landing(
 async def test_mid_turn_cli_new_cancels_protocol_new_busy(
     rig: Rig, fake_model: FakeModel
 ) -> None:
-    """TC-30: mid-turn, `sessions.new` is refused but the terminal `/new` cancels."""
+    """Mid-turn, `sessions.new` is refused but the terminal `/new` cancels."""
     host, client = rig
     turn = await _start_hanging_turn(client, fake_model)
     running = host.stored_session.meta.id
@@ -342,7 +342,7 @@ async def test_mid_turn_cli_new_cancels_protocol_new_busy(
 
 
 def test_protocol_doc_lists_sessions_messages() -> None:
-    """TC-31: the protocol doc names the sessions requests and their rules."""
+    """The protocol doc names the sessions requests and their rules."""
     doc = (Path(__file__).resolve().parent.parent / "docs" / "protocol.md").read_text(
         encoding="utf-8"
     )

@@ -604,9 +604,7 @@ def bootstrap_host(
 class ClientTransport(Protocol):
     """Client-side transport handle used by `AldwinClient`."""
 
-    async def send(self, request: Request) -> None:
-        """Send a protocol request to the host."""
-        ...
+    async def send(self, request: Request) -> None: ...
 
     def events(self) -> AsyncIterator[Event]:
         """Yield protocol events from the host until the transport closes."""
@@ -616,9 +614,7 @@ class ClientTransport(Protocol):
         """Ask the host to close the current session file and start a new one."""
         ...
 
-    async def close(self) -> None:
-        """Close the transport connection."""
-        ...
+    async def close(self) -> None: ...
 
 
 class _InProcessClientEndpoint:
@@ -640,7 +636,6 @@ class _InProcessClientEndpoint:
             yield event
 
     async def new_conversation(self) -> None:
-        """Invoke the host's new-conversation hook."""
         await self._transport.trigger_new_conversation()
 
     async def close(self) -> None:
@@ -663,7 +658,6 @@ class InProcessTransport:
 
     @property
     def closed(self) -> bool:
-        """Return `True` if this transport has been closed."""
         return self._closed
 
     @property
@@ -793,8 +787,9 @@ async def open_in_process_client(
 
 
 class _CancelOnSigterm:
-    """Turn SIGTERM into a cancel of the current task, so the `finally` that
-    stops local servers runs. Only possible on the main thread's loop.
+    """Turn SIGTERM into a cancel of the current task, so cleanup in `finally` runs.
+
+    Only the main thread's loop can install the handler.
     """
 
     def __init__(self) -> None:
@@ -1057,8 +1052,9 @@ ShellApprovalHandler = Callable[["ApprovalEvent"], Awaitable[tuple[str, str | No
 
 
 def _shell_approve(on_approval: ShellApprovalHandler) -> Any:
-    """Turn the CLI's answer into the host's: the host builds the question and
-    logs the answer; the CLI only shows it and replies.
+    """Adapt the CLI's approval handler to the host's.
+
+    The host builds the question and logs the answer; the CLI only shows it and replies.
     """
     import uuid
 
@@ -1099,8 +1095,9 @@ async def connectors_add_local_command(
     home: Path | None = None,
     workspace: Path | None = None,
 ) -> dict[str, Any]:
-    """Approve, start and save a local connector. Nothing is saved on `no` or on
-    any failure; the program is stopped again before this returns.
+    """Approve, start and save a local connector.
+
+    Nothing is saved on `no` or on any failure; the program is always stopped again.
     """
     from aldwin.core.approval_log import ApprovalLogger
     from aldwin.core.connectors.config import ConnectorConfig
@@ -1172,8 +1169,9 @@ async def connectors_enable_command(
     home: Path | None = None,
     workspace: Path | None = None,
 ) -> dict[str, Any]:
-    """Turn a connector on. A local one not yet approved asks first and stays off
-    on `no`; running Aldwins pick the change up on their next turn.
+    """Turn a connector on; a local one not yet approved asks first.
+
+    It stays off on `no`. Running Aldwins pick the change up on their next turn.
     """
     from aldwin.core.approval_log import ApprovalLogger
     from aldwin.core.connectors.errors import ConnectorError
@@ -1204,8 +1202,9 @@ async def connectors_enable_command(
 def connectors_find_configs(
     *, home: Path | None = None, workspace: Path | None = None
 ) -> dict[str, Any]:
-    """MCP config files other apps keep in the usual places, plus the files
-    named in `connectors.import_paths`. Reads only; problems become warnings.
+    """Find the MCP config files other apps keep, plus `connectors.import_paths`.
+
+    Reads only; problems become warnings.
     """
     from aldwin.core.connectors.importer import find_config_files
     from aldwin.core.settings import ConfigError, load_config
@@ -1243,8 +1242,9 @@ def connectors_import_command(
     home: Path | None = None,
     workspace: Path | None = None,
 ) -> dict[str, Any]:
-    """Import the servers a config file lists. Never starts or asks anything;
-    running Aldwins pick the new entries up on their next turn.
+    """Import the servers a config file lists, without starting or asking anything.
+
+    Running Aldwins pick the new entries up on their next turn.
     """
     from aldwin.core.connectors.errors import ConnectorError
     from aldwin.host.connectors import ConnectorAdmin

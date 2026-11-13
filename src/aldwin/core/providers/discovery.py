@@ -126,7 +126,6 @@ async def _probe_ollama_raw(
                     if isinstance(name, str) and name.strip():
                         names.append(name.strip())
 
-            # Concurrently describe models with the remaining client timeout
             model_infos = await asyncio.gather(
                 *[_probe_ollama_model_show(client, name) for name in names]
             )

@@ -46,15 +46,10 @@ def get_backend(
     home: Path | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> ProviderBackend:
-    """Instantiate a `ProviderBackend` for the given provider.
+    """Instantiate a `ProviderBackend` for `provider`.
 
-    Args:
-        provider: Provider name (e.g. ``"openai"``, ``"anthropic"``),
-            a ``ProviderEntry``, or a ``ProviderConfig``.
-        config: Optional Aldwin configuration (holds custom providers).
-        secrets: Optional in-memory secrets configuration.
-        home: Optional home directory path for resolving secrets.
-        transport: Optional HTTP transport (for recorded tests/fixtures).
+    `config` supplies custom providers, `secrets` and `home` resolve the key,
+    and `transport` replaces the network in tests.
     """
     entry: ProviderEntry
     if isinstance(provider, str):

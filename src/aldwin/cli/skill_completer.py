@@ -65,7 +65,6 @@ def _fuzzy_rank(query: str, item: SkillCatalogItem) -> tuple[int, int, str] | No
     desc = item.description.lower()
     if name.startswith(q):
         return (0, 0, item.name)
-    # subsequence
     it = iter(name)
     if all(ch in it for ch in q):
         return (1, 0, item.name)

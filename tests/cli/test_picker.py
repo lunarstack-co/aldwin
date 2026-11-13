@@ -100,7 +100,6 @@ async def test_picker_two_step_navigation_esc_goes_back() -> None:
             )
         )
         await asyncio.sleep(0.05)
-        # Send Esc
         pipe.send_text("\x1b")
         chosen = await asyncio.wait_for(task, timeout=1.0)
         assert chosen is None

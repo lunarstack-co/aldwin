@@ -27,7 +27,7 @@ class Clock:
 
 
 def test_tickets_are_unique_and_spent_once() -> None:
-    """TC-10, TC-11: each ticket is new and opens exactly one socket."""
+    """Each ticket is new and opens exactly one socket."""
     store = TicketStore()
     first, second = store.mint(), store.mint()
     assert first != second and len(first) >= 40
@@ -40,7 +40,7 @@ def test_tickets_are_unique_and_spent_once() -> None:
 
 
 def test_ticket_expires_after_its_lifetime() -> None:
-    """TC-12: a ticket older than its lifetime is refused, and spent anyway."""
+    """A ticket older than its lifetime is refused, and spent anyway."""
     clock = Clock()
     store = TicketStore(ttl=30.0, clock=clock)
     kept, late = store.mint(), store.mint()
@@ -130,7 +130,7 @@ def _sign_in(client: TestClient, auth: Authenticator) -> None:
 def test_ticket_is_minted_for_the_signed_in_page(
     client: TestClient, auth: Authenticator, runtime: WebHostRuntime
 ) -> None:
-    """TC-06: a same-origin request with the cookie gets a 30-second ticket."""
+    """A same-origin request with the cookie gets a 30-second ticket."""
     runtime.mark_ready()
     _sign_in(client, auth)
 
@@ -145,7 +145,7 @@ def test_ticket_is_minted_for_the_signed_in_page(
 def test_ticket_needs_the_session_cookie(
     client: TestClient, runtime: WebHostRuntime
 ) -> None:
-    """TC-07: no cookie means 401 and no ticket."""
+    """No cookie means 401 and no ticket."""
     runtime.mark_ready()
     response = client.post("/v1/ws-ticket", headers={"Origin": BASE})
     assert response.status_code == 401
@@ -155,7 +155,7 @@ def test_ticket_needs_the_session_cookie(
 def test_ticket_with_a_wrong_cookie_is_401(
     client: TestClient, runtime: WebHostRuntime
 ) -> None:
-    """TC-23: a cookie from another run does not mint a ticket."""
+    """A cookie from another run does not mint a ticket."""
     runtime.mark_ready()
     client.cookies.set(COOKIE_NAME, "not-this-run")
     assert client.post("/v1/ws-ticket").status_code == 401
@@ -176,7 +176,7 @@ def test_ticket_from_another_page_is_403(
     runtime: WebHostRuntime,
     headers: dict[str, str],
 ) -> None:
-    """TC-08: the cookie alone is not enough from another site or port."""
+    """The cookie alone is not enough from another site or port."""
     runtime.mark_ready()
     _sign_in(client, auth)
     response = client.post("/v1/ws-ticket", headers=headers)
@@ -185,7 +185,7 @@ def test_ticket_from_another_page_is_403(
 
 
 def test_ticket_waits_for_a_host(client: TestClient, auth: Authenticator) -> None:
-    """TC-09: before a host is serving, minting answers 503 host_not_ready."""
+    """Before a host is serving, minting answers 503 host_not_ready."""
     _sign_in(client, auth)
     response = client.post("/v1/ws-ticket", headers={"Origin": BASE})
     assert response.status_code == 503

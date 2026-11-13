@@ -19,7 +19,7 @@ from aldwin.core.logging import (
 def test_setup_logging_rotates_and_respects_debug_flag(
     aldwin_home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """TC-25: RotatingFileHandler writes 0600 log, honours debug, stays off stdout."""
+    """RotatingFileHandler writes 0600 log, honours debug, stays off stdout."""
     log_path = setup_logging(aldwin_home, debug=False)
     assert log_path == aldwin_home / "logs" / "aldwin.log"
     assert log_path.is_file()
@@ -53,7 +53,7 @@ def test_setup_logging_rotates_and_respects_debug_flag(
 
 
 def test_logging_redacts_accidental_secret_tokens(aldwin_home: Path) -> None:
-    """TC-26: SecretRedactingFilter scrubs API keys before writing to aldwin.log."""
+    """SecretRedactingFilter scrubs API keys before writing to aldwin.log."""
     log_path = setup_logging(aldwin_home, debug=True)
     logger = logging.getLogger("aldwin.core.test")
 

@@ -21,7 +21,7 @@ from aldwin.core.tools import USER_AGENT, ToolOutput
 from aldwin.core.tools import display as core_display
 
 FETCH_TIMEOUT_SECONDS: Final[float] = 10.0
-MAX_FETCH_BYTES: Final[int] = 2 * 1024 * 1024  # 2 MB
+MAX_FETCH_BYTES: Final[int] = 2 * 1024 * 1024
 MAX_FETCH_CHARS: Final[int] = 20_000
 MAX_REDIRECTS: Final[int] = 5
 

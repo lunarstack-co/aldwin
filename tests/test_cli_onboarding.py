@@ -234,7 +234,6 @@ async def test_path_a_local_picker_and_no_key_prompt(
     assert "32k context" in text
     assert "Default model: ollama/qwen3:8b (change any time with /model)" in text
 
-    # Verify no secret file was written and model is configured
     assert not (aldwin_home / "secrets.yaml").exists()
     status = get_onboarding_status(aldwin_home)
     assert status.model == "ollama/qwen3:8b"
@@ -382,8 +381,8 @@ async def test_chat_only_warning_rejected_reprompts_picker(
             )
         ]
 
-    # Pick 1 (gemma3:4b) -> reject with 'n' -> picker re-prompts!
-    # Now pick 2 (qwen3:8b) -> skip Tavily with ""
+    # Pick 1 (gemma3:4b) -> reject with 'n' -> picker re-prompts.
+    # Then pick 2 (qwen3:8b) -> skip Tavily with ""
     answers = iter(["1", "n", "2", ""])
 
     async def fake_prompt(_label: str, _is_password: bool) -> str:
@@ -522,7 +521,6 @@ async def test_path_b_cloud_provider_flow(
     async def empty_detector(*_args: Any, **_kwargs: Any) -> list[LocalProviderStatus]:
         return []
 
-    # Mock save_provider_key for anthropic
     async def mock_save_key(provider: str, key: str, **_kwargs: Any) -> AccessStatus:
         if key == "sk-ant-valid-1234":
             return AccessStatus.OK
@@ -574,7 +572,6 @@ async def test_setup_menu_options(
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     boot = bootstrap(plain=True)
 
-    # Preconfigure model
     from aldwin.client import save_setup
 
     save_setup(model="openai/gpt-4o", home=aldwin_home)
@@ -938,7 +935,7 @@ async def test_setup_chat_only_warning_and_cancellation(
     assert ok1 is True
     assert "default model: ollama/chat-only-4b" in console1.export_text()
 
-    # Now test reject: option 1 (Local), model 1, reject 'n', then cancel
+    # Reject: option 1 (Local), model 1, reject 'n', then cancel
     answers_reject = iter(["1", "1", "n", "cancel"])
 
     async def prompt_reject(_label: str, _is_password: bool) -> str:
@@ -955,7 +952,7 @@ async def test_setup_chat_only_warning_and_cancellation(
     assert ok2 is False
     assert "Cancelled model selection." in console2.export_text()
 
-    # Test top-level cancellation on setup
+    # Cancel at the top-level setup menu.
     async def cancel_prompt(_label: str, _is_password: bool) -> str:
         raise KeyboardInterrupt
 

@@ -1,4 +1,4 @@
-"""`McpConnection` and the add-flow probe (`FR-5`, `FR-26` errors)."""
+"""`McpConnection` and the add-flow probe."""
 
 from __future__ import annotations
 
@@ -102,7 +102,7 @@ async def test_open_lists_tools_and_list_changed_fires(
 
 
 async def test_call_tool_outcomes(fixture_server: FixtureControls) -> None:
-    """`TC-07` (transport half): `null` reaches the server untouched."""
+    """`null` reaches the server untouched."""
     conn = _in_process(fixture_server, _Events())
     try:
         await conn.open()

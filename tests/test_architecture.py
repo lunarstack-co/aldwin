@@ -1,4 +1,4 @@
-"""Architecture boundary guard tests (`FR-8`, `TC-10`)."""
+"""Architecture boundary guard tests."""
 
 from __future__ import annotations
 
@@ -94,7 +94,7 @@ def test_cli_never_imports_core() -> None:
 
 
 def test_web_door_never_imports_core() -> None:
-    """TC-21: the web door keeps the same walls as the CLI door."""
+    """The web door keeps the same walls as the CLI door."""
     assert (
         check_forbidden_imports(
             SRC_ALDWIN / "web",
@@ -120,12 +120,12 @@ def test_client_never_imports_core_or_agentling() -> None:
 
 
 def test_only_core_connectors_imports_mcp() -> None:
-    """`TC-76`: only `aldwin.core.connectors` imports `mcp`, `mcp_types` or `httpx2`."""
+    """Only `aldwin.core.connectors` imports `mcp`, `mcp_types` or `httpx2`."""
     assert mcp_import_violations(SRC_ALDWIN) == []
 
 
 def test_mcp_guard_catches_planted_import(tmp_path: Path) -> None:
-    """`TC-76`: an `import mcp` planted in a copy of the host fails the guard."""
+    """An `import mcp` planted in a copy of the host fails the guard."""
     host = tmp_path / "aldwin" / "host"
     host.mkdir(parents=True)
     runner = (SRC_ALDWIN / "host" / "runner.py").read_text(encoding="utf-8")
@@ -232,7 +232,7 @@ def test_no_private_agentling_imports_in_src() -> None:
 
 
 def test_no_private_validate_calls() -> None:
-    """`TC-27`: no private `_validate` calls and no old `validate_arguments` hook."""
+    """No private `_validate` calls and no old `validate_arguments` hook."""
     pattern = re.compile(r"\._validate\(|def validate_arguments\b")
     hits = [
         f"{path}:{n}"
@@ -301,7 +301,7 @@ def test_no_vendor_sdks_imported_in_src() -> None:
 
 
 def test_builtin_tools_match_builtin_tool_names(aldwin_home: Path) -> None:
-    """`FR-8`: `builtin_tools()` returns the expected tool names."""
+    """`builtin_tools()` returns the expected tool names."""
     tools = builtin_tools(_dummy_ask, home=aldwin_home, secrets=SecretsConfig())
     names = tuple(t.name for t in tools)
     assert names == (
@@ -317,7 +317,7 @@ def test_builtin_tools_match_builtin_tool_names(aldwin_home: Path) -> None:
 
 
 def test_architecture_guard_catches_deliberate_bad_import(tmp_path: Path) -> None:
-    """`TC-10`: `check_forbidden_imports` flags a deliberate bad import."""
+    """`check_forbidden_imports` flags a deliberate bad import."""
     bad_dir = tmp_path / "fake_cli"
     bad_dir.mkdir()
     bad_file = bad_dir / "bad_door.py"
@@ -333,7 +333,7 @@ def test_architecture_guard_catches_deliberate_bad_import(tmp_path: Path) -> Non
 
 
 def test_ci_workflow_runs_matrix_and_uploads_coverage() -> None:
-    """ENG-433 FR-20: CI matrix 3.11–3.13, security job, coverage upload."""
+    """CI runs Python 3.11 to 3.13, a security job and a coverage upload."""
     ci_path = REPO_ROOT / ".github" / "workflows" / "ci.yml"
     assert ci_path.is_file()
     data = yaml.safe_load(ci_path.read_text(encoding="utf-8"))
@@ -357,7 +357,7 @@ def test_ci_workflow_runs_matrix_and_uploads_coverage() -> None:
     assert any("pytest -m perf" in r for r in runs)
     assert any(
         "--cov=aldwin.core.connectors" in r and "--cov-fail-under=90" in r for r in runs
-    ), "TC-80: the connectors package keeps its own 90% gate"
+    ), "the connectors package keeps its own 90% gate"
     assert any(
         step.get("uses") == "actions/upload-artifact@v4"
         and step.get("with", {}).get("path") == "coverage.xml"
@@ -383,7 +383,7 @@ def _ci_jobs() -> dict[str, Any]:
 
 
 def test_ci_workflow_has_web_job() -> None:
-    """TC-10: a separate `web` job lints, type-checks, builds and runs Playwright."""
+    """A separate `web` job lints, type-checks, builds and runs Playwright."""
     web = _ci_jobs()["web"]
     assert web["runs-on"] == "ubuntu-latest"
     assert web["defaults"]["run"]["working-directory"] == "web"
@@ -411,7 +411,7 @@ def test_ci_workflow_has_web_job() -> None:
 
 
 def test_ci_test_job_remains_node_free() -> None:
-    """TC-12: the Python matrix never needs Node; the web job owns it."""
+    """The Python matrix never needs Node; the web job owns it."""
     for step in _ci_jobs()["test"]["steps"]:
         uses = step.get("uses", "")
         run = step.get("run", "")
@@ -422,7 +422,7 @@ def test_ci_test_job_remains_node_free() -> None:
 
 
 def test_manual_test_doc_exists_and_covers_all_fr11_steps() -> None:
-    """`FR-11`, `FR-12` & `TC-12`: `docs/manual-test.md` covers all required steps."""
+    """`docs/manual-test.md` covers all required steps."""
     doc_path = REPO_ROOT / "docs" / "manual-test.md"
     assert doc_path.is_file()
     text = doc_path.read_text(encoding="utf-8")

@@ -137,7 +137,7 @@ async def _start_approval_turn(rig: Rig, req_id: str = "turn") -> ApprovalEvent:
 
 
 async def test_idle_host_holds_no_conversation_lock(rig: Rig) -> None:
-    """TC-01: an open, idle door never blocks the other door."""
+    """An open, idle door never blocks the other door."""
     assert rig.lock_is_free()
     rig.model.add_turns(FakeTurn.text(["Hello."]))
     await _turn(rig, "t1")
@@ -147,7 +147,7 @@ async def test_idle_host_holds_no_conversation_lock(rig: Rig) -> None:
 async def test_second_door_mid_turn_is_busy(
     rig: Rig, aldwin_home: Path, fake_model: FakeModel
 ) -> None:
-    """TC-02, TC-16: the lock is held through a waiting approval."""
+    """The lock is held through a waiting approval."""
     approval = await _start_approval_turn(rig)
     assert not rig.lock_is_free()
 
@@ -169,7 +169,7 @@ async def test_second_door_mid_turn_is_busy(
 
 
 async def test_same_process_second_turn_is_still_busy(rig: Rig) -> None:
-    """TC-31: a second turn from the same door keeps the old busy reply."""
+    """A second turn from the same door keeps the old busy reply."""
     hang = FakeTurn.hang(prefix_chunks=["Working"])
     rig.model.add_turns(hang)
     await rig.transport.push(TurnRequest(id="t1", text="long"))
@@ -184,7 +184,7 @@ async def test_same_process_second_turn_is_still_busy(rig: Rig) -> None:
 
 
 async def test_stop_mid_approval_releases_the_lock(rig: Rig) -> None:
-    """TC-17: stopping a turn that waits on an approval frees the conversation."""
+    """Stopping a turn that waits on an approval frees the conversation."""
     await _start_approval_turn(rig)
     assert not rig.lock_is_free()
 
@@ -196,7 +196,7 @@ async def test_stop_mid_approval_releases_the_lock(rig: Rig) -> None:
 
 
 async def test_detach_mid_approval_and_reattach_in_grace_approves(rig: Rig) -> None:
-    """TC-04: a door that comes back within the grace answers the approval."""
+    """A door that comes back within the grace answers the approval."""
     approval = await _start_approval_turn(rig)
 
     rig.transport.detach()
@@ -215,7 +215,7 @@ async def test_detach_mid_approval_and_reattach_in_grace_approves(rig: Rig) -> N
 
 
 async def test_grace_expiry_denies_and_releases_the_lock(rig: Rig) -> None:
-    """TC-05, TC-21: past the grace the approval is denied and stays denied."""
+    """Past the grace the approval is denied and stays denied."""
     approval = await _start_approval_turn(rig)
 
     rig.transport.detach()
@@ -245,7 +245,7 @@ async def _send_approve(rig: Rig, approval_id: str) -> list[Event]:
 async def test_grace_arms_on_detach_during_a_turn_and_clears_on_attach(
     rig: Rig,
 ) -> None:
-    """TC-18, TC-20: detaching mid-turn opens the grace; reattaching closes it."""
+    """Detaching mid-turn opens the grace; reattaching closes it."""
     hang = FakeTurn.hang(prefix_chunks=["Working"])
     rig.model.add_turns(hang)
     await rig.transport.push(TurnRequest(id="t1", text="long"))
@@ -264,14 +264,14 @@ async def test_grace_arms_on_detach_during_a_turn_and_clears_on_attach(
 
 
 async def test_idle_detach_does_not_arm_grace(rig: Rig) -> None:
-    """TC-19: with no turn and nothing waiting, a dropped door is just gone."""
+    """With no turn and nothing waiting, a dropped door is just gone."""
     rig.transport.detach()
     assert not rig.host._approval_door_connected()
     assert rig.host._grace_deadline is None
 
 
 async def test_closed_transport_gets_no_grace(rig: Rig) -> None:
-    """TC-22: a transport closed for good fails approvals closed at once."""
+    """A transport closed for good fails approvals closed at once."""
     hang = FakeTurn.hang(prefix_chunks=["Working"])
     rig.model.add_turns(hang)
     await rig.transport.push(TurnRequest(id="t1", text="long"))
@@ -285,7 +285,7 @@ async def test_closed_transport_gets_no_grace(rig: Rig) -> None:
 async def test_session_written_by_another_door_is_reloaded(
     rig: Rig, aldwin_home: Path
 ) -> None:
-    """TC-06: a turn saved by the other door is in memory before the next turn."""
+    """A turn saved by the other door is in memory before the next turn."""
     rig.model.add_turns(FakeTurn.text(["First answer."]))
     await _turn(rig, "t1", "first")
 
@@ -308,7 +308,7 @@ async def test_session_written_by_another_door_is_reloaded(
 
 
 async def test_unchanged_session_is_not_reloaded(rig: Rig) -> None:
-    """TC-13: when nothing else wrote the file, the live session is kept."""
+    """When nothing else wrote the file, the live session is kept."""
     rig.model.add_turns(FakeTurn.text(["One."]), FakeTurn.text(["Two."]))
     await _turn(rig, "t1")
     session = rig.host._agent_session
@@ -319,7 +319,7 @@ async def test_unchanged_session_is_not_reloaded(rig: Rig) -> None:
 
 
 async def test_corrupt_session_on_reload_fails_the_turn(rig: Rig) -> None:
-    """TC-15: an unreadable conversation file fails the turn and frees the lock."""
+    """An unreadable conversation file fails the turn and frees the lock."""
     rig.model.add_turns(FakeTurn.text(["One."]))
     await _turn(rig, "t1")
     rig.host.stored_session.path.write_text("{ broken", encoding="utf-8")
@@ -333,7 +333,7 @@ async def test_corrupt_session_on_reload_fails_the_turn(rig: Rig) -> None:
 
 
 async def test_status_mid_turn_reports_progress_without_the_lock(rig: Rig) -> None:
-    """TC-23, TC-26: status answers mid-turn with counts and text so far."""
+    """Status answers mid-turn with counts and text so far."""
     hang = FakeTurn.hang(prefix_chunks=["Part ", "one"])
     rig.model.add_turns(hang)
     await rig.transport.push(TurnRequest(id="t1", text="long"))
@@ -351,7 +351,7 @@ async def test_status_mid_turn_reports_progress_without_the_lock(rig: Rig) -> No
 
 
 async def test_status_names_the_tool_waiting_on_approval(rig: Rig) -> None:
-    """TC-23: while a tool waits for approval, status names it."""
+    """While a tool waits for approval, status names it."""
     approval = await _start_approval_turn(rig)
 
     status = await _status(rig, "s1")
@@ -364,7 +364,7 @@ async def test_status_names_the_tool_waiting_on_approval(rig: Rig) -> None:
 
 
 async def test_idle_status_is_empty_and_turn_end_clears_it(rig: Rig) -> None:
-    """TC-24, TC-25: no turn means zero counts, also right after a turn."""
+    """No turn means zero counts, also right after a turn."""
     idle = await _status(rig, "s0")
     assert (idle.turn_streamed_chunks, idle.active_tool, idle.partial_text) == (
         0,
@@ -381,7 +381,7 @@ async def test_idle_status_is_empty_and_turn_end_clears_it(rig: Rig) -> None:
 
 
 async def test_pushed_retry_status_keeps_message_and_adds_progress(rig: Rig) -> None:
-    """TC-28: a retry notice mid-turn also carries the turn's progress."""
+    """A retry notice mid-turn also carries the turn's progress."""
     hang = FakeTurn.hang(prefix_chunks=["Part"])
     rig.model.add_turns(hang)
     await rig.transport.push(TurnRequest(id="t1", text="long"))
@@ -400,7 +400,7 @@ async def test_pushed_retry_status_keeps_message_and_adds_progress(rig: Rig) -> 
 
 
 def test_docs_describe_status_and_turn_lock() -> None:
-    """TC-29, TC-30: protocol and privacy docs cover the status pull and locks."""
+    """Protocol and privacy docs cover the status pull and locks."""
     root = Path(__file__).resolve().parent.parent / "docs"
     protocol = (root / "protocol.md").read_text(encoding="utf-8")
     privacy = (root / "privacy.md").read_text(encoding="utf-8")

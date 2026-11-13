@@ -361,7 +361,6 @@ async def test_approvals_yes_no_stop_and_unknown_approval_id(
     aldwin_home: Path,
     fake_model: FakeModel,
 ) -> None:
-    """Approval yes/no, stop during approval, unknown ID."""
     ensure_home(aldwin_home)
     cmd_tool_holder: list[GatedCommandTool] = []
 
@@ -1253,7 +1252,6 @@ async def test_v1_door_diff_denied_ask_works_and_disconnect_denies(
     tmp_path: Path,
     fake_model: FakeModel,
 ) -> None:
-    """v1 door denies Diff, allows Ask, and disconnect denies."""
     ensure_home(aldwin_home)
     save_secrets(SecretsConfig(openai_api_key="sk-test"), home=aldwin_home)
     ws_dir = tmp_path / "ws"

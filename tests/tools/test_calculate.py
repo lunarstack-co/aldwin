@@ -155,7 +155,6 @@ def test_format_row_summary_truncates_and_groups() -> None:
     summary = format_row_summary("1000 + 240 = 1240")
     assert summary.startswith("Calculate ")
     assert "1,240" in summary
-    # Use a known long normalised form:
     padded = ("1+" * 50) + "1"
     if len(padded) <= 200:
         text = evaluate(padded, today=TODAY)

@@ -59,7 +59,6 @@ def record_skills_used(
         cleaned = name.strip()
         if cleaned:
             current[cleaned] = stamp
-    # Newest first by timestamp, then keep MAX_RECENT
     ordered = sorted(current.items(), key=lambda kv: kv[1], reverse=True)
     trimmed = dict(ordered[:MAX_RECENT])
     path = skills_recent_path(root)

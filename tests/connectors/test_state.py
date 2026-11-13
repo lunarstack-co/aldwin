@@ -1,4 +1,4 @@
-"""Connector snapshots and the `<connectors>` context block (`FR-22`)."""
+"""Connector snapshots and the `<connectors>` context block."""
 
 from __future__ import annotations
 

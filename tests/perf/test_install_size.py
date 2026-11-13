@@ -53,7 +53,7 @@ def _size_breakdown(root: Path, limit: int = 20) -> str:
 
 
 def test_installed_size_under_budget(tmp_path: Path) -> None:
-    """TC-08/TC-25: the wheel installs, without extras, at or under 120 MB."""
+    """The wheel installs, without extras, at or under 120 MB."""
     _linux_only()
     uv_bin = shutil.which("uv")
     assert uv_bin is not None, "Expected `uv` binary on PATH"

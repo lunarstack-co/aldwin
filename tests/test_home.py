@@ -34,7 +34,7 @@ def test_home_dir_defaults_to_dot_aldwin(
 def test_home_dir_uses_aldwin_home_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-04: ALDWIN_HOME overrides ~/.aldwin and leaves ~/.aldwin untouched."""
+    """ALDWIN_HOME overrides ~/.aldwin and leaves ~/.aldwin untouched."""
     fake_user_home = tmp_path / "fake_user"
     fake_user_home.mkdir(exist_ok=True)
     custom_home = tmp_path / "custom"
@@ -51,7 +51,7 @@ def test_home_dir_uses_aldwin_home_env(
 def test_home_dir_expands_tilde_and_ignores_blank_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-15: home_dir() expands ~ and falls back on whitespace-only ALDWIN_HOME."""
+    """Home_dir() expands ~ and falls back on whitespace-only ALDWIN_HOME."""
     fake_user_home = tmp_path / "user"
     fake_user_home.mkdir(exist_ok=True)
     monkeypatch.setenv("HOME", str(fake_user_home))
@@ -93,7 +93,7 @@ def test_atomic_write_writes_text_and_bytes_with_mode(aldwin_home: Path) -> None
 def test_atomic_write_cleans_up_temp_file_on_error(
     aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-10: Interrupted atomic write leaves original file intact and no .tmp file."""
+    """Interrupted atomic write leaves original file intact and no .tmp file."""
     target = aldwin_home / "config.yaml"
     atomic_write(target, "model: gpt-4o\n")
 
@@ -114,7 +114,7 @@ def test_atomic_write_cleans_up_temp_file_on_error(
 def test_ensure_home_creates_subdirs_with_0700_and_copies_assets(
     aldwin_home: Path,
 ) -> None:
-    """TC-01 & TC-02 (unit): First call creates folders/assets; second is a no-op."""
+    """First call creates folders/assets; second is a no-op."""
     assert not aldwin_home.exists()
 
     first = ensure_home()
@@ -139,7 +139,7 @@ def test_ensure_home_creates_subdirs_with_0700_and_copies_assets(
 def test_ensure_home_preserves_user_edits_and_adds_missing_assets(
     aldwin_home: Path,
 ) -> None:
-    """TC-03: User edit to persona.md is kept; defaults are not copied into skills/."""
+    """User edit to persona.md is kept; defaults are not copied into skills/."""
     ensure_home()
     persona_path = aldwin_home / "persona.md"
     skill_path = aldwin_home / "skills" / "using-aldwin" / "SKILL.md"
@@ -157,7 +157,7 @@ def test_ensure_home_preserves_user_edits_and_adds_missing_assets(
 def test_ensure_home_repairs_loose_directory_permissions(
     aldwin_home: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """TC-11: Folder found with mode 0755 is repaired to 0700 with a log warning."""
+    """Folder found with mode 0755 is repaired to 0700 with a log warning."""
     ensure_home()
     sessions_dir = aldwin_home / "sessions"
     secrets_file = aldwin_home / "secrets.yaml"
@@ -179,7 +179,7 @@ def test_ensure_home_repairs_loose_directory_permissions(
 
 
 def test_base_instructions_stay_in_package(aldwin_home: Path) -> None:
-    """TC-16: Base instructions stay inside package data and are not copied."""
+    """Base instructions stay inside package data and are not copied."""
     ensure_home()
     instructions = read_base_instructions()
     assert "Aldwin" in instructions
@@ -188,7 +188,7 @@ def test_base_instructions_stay_in_package(aldwin_home: Path) -> None:
 
 @pytest.mark.uninitialized_home
 def test_ensure_home_concurrent_calls_succeed(aldwin_home: Path) -> None:
-    """TC-27: Concurrent ensure_home() calls complete without race errors."""
+    """Concurrent ensure_home() calls complete without race errors."""
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(lambda _: ensure_home(), range(8)))
 

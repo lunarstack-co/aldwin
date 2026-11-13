@@ -568,7 +568,7 @@ def test_clean_env_and_config_env_allow(
         for r in caplog.records
     )
 
-    # Verify load_config also filters and warns on secret env_allow entries
+    # load_config also filters and warns on secret env_allow entries.
     caplog.clear()
     (aldwin_home / "config.yaml").write_text(
         "model: gpt-4o\n"
@@ -1106,7 +1106,7 @@ async def test_policy_edge_branches_and_validation(
         DENIAL_TEXT["circuit_breaker"],
     )
 
-    # Verify pop_call_id matches by tool_name even if an earlier call was skipped
+    # pop_call_id matches by tool_name even if an earlier call was skipped.
     policy_session.clear_step_calls()
     policy_session.enqueue_step_call("c-skipped", "unknown_tool", {})
     policy_session.enqueue_step_call("c-ls", "list_dir", {})
@@ -1373,7 +1373,7 @@ async def _always_yes(_req: ApprovalRequest) -> ApprovalAnswer:
 def test_wrapper_copies_validate_arguments(
     policy_session: PolicySession, validate: bool
 ) -> None:
-    """`TC-27`: the wrapper mirrors the inner tool's `validate_arguments`."""
+    """The wrapper mirrors the inner tool's `validate_arguments`."""
     wrapped = PolicyWrappedTool(
         _typed_list_dir(validate=validate), session=policy_session, ask=_always_yes
     )
@@ -1383,7 +1383,7 @@ def test_wrapper_copies_validate_arguments(
 async def test_wrapper_skips_type_checks_when_inner_opts_out(
     policy_session: PolicySession,
 ) -> None:
-    """`TC-27`: `validate_arguments=False` lets a type mismatch reach `forward()`."""
+    """`validate_arguments=False` lets a type mismatch reach `forward()`."""
     wrapped = PolicyWrappedTool(
         _typed_list_dir(validate=False), session=policy_session, ask=_always_yes
     )
@@ -1395,7 +1395,7 @@ async def test_wrapper_skips_type_checks_when_inner_opts_out(
 async def test_wrapper_validates_when_inner_requires(
     policy_session: PolicySession,
 ) -> None:
-    """`TC-27`: the default still rejects a type mismatch before `forward()`."""
+    """The default still rejects a type mismatch before `forward()`."""
     wrapped = PolicyWrappedTool(
         _typed_list_dir(validate=True), session=policy_session, ask=_always_yes
     )

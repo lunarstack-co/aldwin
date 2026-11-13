@@ -18,7 +18,7 @@ from aldwin.protocol import ApprovalEvent, DoneEvent, ErrorEvent, TextEvent
 
 
 async def test_no_network_blocks_inet_sockets_and_allows_unix_socketpair() -> None:
-    """TC-01: Outbound TCP/HTTP connections are blocked; local `socketpair()` works."""
+    """Outbound TCP/HTTP connections are blocked; local `socketpair()` works."""
     with pytest.raises(RuntimeError, match="Network access is disabled"):
         socket.create_connection(("93.184.216.34", 80), timeout=0.1)
 
@@ -78,7 +78,7 @@ def test_loopback_marker_allows_local_server_only() -> None:
 def test_sentinel_autouse_redirects_aldwin_home_and_user_home(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """TC-02: Autouse fixture redirects `ALDWIN_HOME` and `HOME` without args."""
+    """Autouse fixture redirects `ALDWIN_HOME` and `HOME` without args."""
     current_home = home_dir()
     assert current_home.name == "home"
     assert current_home.is_dir()
@@ -101,7 +101,7 @@ async def test_fake_model_builders_and_agent_session_fixture(
     agent_session: AgentSession,
     aldwin_home: Path,
 ) -> None:
-    """TC-13: Top-level `FakeModel` builders and `agent_session` drive a core turn."""
+    """Top-level `FakeModel` builders and `agent_session` drive a core turn."""
     split_turn = text("HelloWorld", deltas=5)
     assert split_turn.chunks == ["He", "ll", "oW", "or", "ld"]
     assert text("Single", deltas=1).chunks == ["Single"]
@@ -143,7 +143,7 @@ async def test_fake_model_builders_and_agent_session_fixture(
 async def test_fake_host_records_requests_and_yields_events(
     fake_host: FakeHost,
 ) -> None:
-    """TC-14: `FakeHost` (`fake_host` fixture) yields events and records requests."""
+    """`FakeHost` (`fake_host` fixture) yields events and records requests."""
     fake_host.queue_turn(
         [
             TextEvent(re="r1", delta="Checking"),

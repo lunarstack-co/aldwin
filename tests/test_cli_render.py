@@ -643,7 +643,7 @@ def test_tool_result_80_cols_preserves_duration_and_summary() -> None:
     assert len(ok_lines) == 1
     assert len(ok_lines[0]) <= 80
     assert ok_lines[0].startswith("  ✓ shell  echo xxx")
-    # Sub-1s durations are omitted from the permanent row (FR-8).
+    # Sub-1s durations are omitted from the permanent row.
     assert ok_lines[0].endswith("exit 0")
 
     err_lines = [
@@ -654,7 +654,7 @@ def test_tool_result_80_cols_preserves_duration_and_summary() -> None:
     assert len(err_lines) == 1
     assert len(err_lines[0]) <= 80
     assert err_lines[0].startswith("  ✗ shell  echo yyy")
-    # FR-8: failure reason is on the following ⎿ line, not the glyph row.
+    # The failure reason is on the following ⎿ line, not the glyph row.
     assert any("exit 1" in line for line in exported)
 
 

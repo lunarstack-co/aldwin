@@ -31,7 +31,7 @@ async def test_plain_answer_streamed_in_five_deltas(
     host_client: AldwinClient,
     fake_model: FakeModel,
 ) -> None:
-    """TC-03: `FakeModel` scripted text in 5 deltas yields 5 `TextEvent`s then done."""
+    """`FakeModel` scripted text in 5 deltas yields 5 `TextEvent`s then done."""
     fake_model.add_turns(text("Hello world!", deltas=5))
 
     events = await collect(host_client.turn("Say hello"))
@@ -47,7 +47,7 @@ async def test_tool_call_approve_yes_executes_command(
     host_client: AldwinClient,
     fake_model: FakeModel,
 ) -> None:
-    """TC-15: `run_command` + `approve(yes)` runs the command and completes the turn."""
+    """`run_command` + `approve(yes)` runs the command and completes the turn."""
     fake_model.add_turns(
         tool_call("run_command", {"command": "echo integration_approved"}),
         final("Command succeeded."),
@@ -79,7 +79,7 @@ async def test_tool_call_approve_no_skips_command_and_informs_model(
     fake_model: FakeModel,
     tmp_path: Path,
 ) -> None:
-    """TC-05: Declining approval skips `run_command` and sends `'user declined'`."""
+    """Declining approval skips `run_command` and sends `'user declined'`."""
     sentinel = tmp_path / "never_created.txt"
     fake_model.add_turns(
         tool_call("run_command", {"command": f"touch {sentinel}"}),
@@ -109,7 +109,7 @@ async def test_stop_during_stream_emits_done_stopped_under_one_second(
     host_client: AldwinClient,
     fake_model: FakeModel,
 ) -> None:
-    """TC-04: `Esc` (`stop`) during `hang()` emits `done(stopped)` in < 1 s."""
+    """`Esc` (`stop`) during `hang()` emits `done(stopped)` in < 1 s."""
     hang_turn = hang(prefix_chunks=["Partial ", "answer"])
     fake_model.add_turns(hang_turn)
 
@@ -146,7 +146,7 @@ async def test_stop_during_approval_counts_as_no(
     fake_model: FakeModel,
     tmp_path: Path,
 ) -> None:
-    """TC-16: `stop` during approval wait resolves as `no` and stops in < 1 s."""
+    """`stop` during approval wait resolves as `no` and stops in < 1 s."""
     sentinel = tmp_path / "never_approved.txt"
     fake_model.add_turns(
         tool_call("run_command", {"command": f"touch {sentinel}"}),
@@ -172,7 +172,7 @@ async def test_model_error_emits_single_error_event(
     host_client: AldwinClient,
     fake_model: FakeModel,
 ) -> None:
-    """TC-17: Unrecoverable model failure emits 1 `ErrorEvent` and 0 `DoneEvent`s."""
+    """Unrecoverable model failure emits 1 `ErrorEvent` and 0 `DoneEvent`s."""
     fake_model.add_turns(
         raise_(ModelConnectionError("connection dropped", retryable=False))
     )
@@ -188,7 +188,7 @@ async def test_max_steps_emits_done_max_steps(
     host_client: AldwinClient,
     fake_model: FakeModel,
 ) -> None:
-    """TC-18: Reaching `max_steps=15` emits `DoneEvent(reason='max_steps')`."""
+    """Reaching `max_steps=15` emits `DoneEvent(reason='max_steps')`."""
     for step in range(15):
         fake_model.add_turns(
             tool_call("recall", {"query": f"topic {step}"}, call_id=f"c_{step}")
@@ -205,7 +205,7 @@ async def test_crash_after_step_2_reloads_as_interrupted_and_resumes(
     aldwin_home: Path,
     fake_model: FakeModel,
 ) -> None:
-    """TC-07: Crash after step 2 leaves `interrupted=True` and resumes cleanly."""
+    """Crash after step 2 leaves `interrupted=True` and resumes cleanly."""
     hang_step3 = hang(prefix_chunks=["Mid-step"])
     fake_model.add_turns(
         tool_call("remember", {"text": "Fact step one"}, call_id="c1"),
@@ -276,7 +276,7 @@ async def test_new_conversation_starts_fresh_and_keeps_old_file(
     fake_model: FakeModel,
     aldwin_home: Path,
 ) -> None:
-    """TC-19: `/new` (`new_conversation()`) starts an empty session and keeps old."""
+    """`/new` (`new_conversation()`) starts an empty session and keeps old."""
     fake_model.add_turns(final("First session answer."))
     await collect(host_client.turn("First session question"))
 
@@ -296,7 +296,7 @@ async def test_fifty_turn_conversation_caps_context_at_20_user_turns(
     host_client: AldwinClient,
     fake_model: FakeModel,
 ) -> None:
-    """TC-06: 50-turn conversation keeps <= 20 user turns and 1 terminal event each."""
+    """50-turn conversation keeps <= 20 user turns and 1 terminal event each."""
     for i in range(50):
         if i % 10 == 0:
             fake_model.add_turns(
@@ -334,7 +334,7 @@ async def test_turn_with_tool_then_final_answer_emits_text_and_hides_final_answe
     host_client: AldwinClient,
     fake_model: FakeModel,
 ) -> None:
-    """TC-01: Turn finishing via `final_answer` renders Markdown and 1 tool."""
+    """Turn finishing via `final_answer` renders Markdown and 1 tool."""
     from aldwin.cli.render import ChatRenderer
     from aldwin.cli.theme import create_console
 

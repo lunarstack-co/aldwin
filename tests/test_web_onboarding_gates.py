@@ -82,18 +82,16 @@ def _ticket_status(client: TestClient) -> int:
 
 
 def test_fresh_home_has_no_working_keys(aldwin_home: Path) -> None:
-    """TC-06."""
     assert keys_gate_ok(aldwin_home) is False
 
 
 def test_an_openai_key_in_the_file_passes(aldwin_home: Path) -> None:
-    """TC-07."""
     _write_openai_key(aldwin_home)
     assert keys_gate_ok(aldwin_home) is True
 
 
 def test_a_local_model_passes_without_any_key(aldwin_home: Path) -> None:
-    """TC-08: a model on this computer needs no cloud key."""
+    """A model on this computer needs no cloud key."""
     from aldwin.core.settings import update_config_model
 
     update_config_model("ollama/llama3", aldwin_home)
@@ -103,7 +101,6 @@ def test_a_local_model_passes_without_any_key(aldwin_home: Path) -> None:
 def test_an_environment_key_passes_and_is_never_shown(
     aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-09, TC-25."""
     monkeypatch.setenv("OPENAI_API_KEY", OPENAI_KEY)
     assert keys_gate_ok(aldwin_home) is True
     status = get_setup_status(aldwin_home)
@@ -115,7 +112,7 @@ def test_an_environment_key_passes_and_is_never_shown(
 
 
 def test_answers_are_kept_as_drafts_until_finished(aldwin_home: Path) -> None:
-    """TC-13: each Continue saves its answer; the step is done only at Finish."""
+    """Each Continue saves its answer; the step is done only at Finish."""
     save_onboarding_profile({"first_name": "Ada"}, home=aldwin_home)
     save_onboarding_profile({"occupation": "Engineer"}, home=aldwin_home)
 
@@ -127,7 +124,7 @@ def test_answers_are_kept_as_drafts_until_finished(aldwin_home: Path) -> None:
 
 
 def test_finishing_seeds_the_default_profile_and_persona(aldwin_home: Path) -> None:
-    """TC-11, TC-34: answers reach profile.md and persona.md while they are stock."""
+    """Answers reach profile.md and persona.md while they are stock."""
     save_onboarding_profile(
         {"first_name": "Ada", "occupation": "Engineer"}, home=aldwin_home
     )
@@ -148,7 +145,7 @@ def test_finishing_seeds_the_default_profile_and_persona(aldwin_home: Path) -> N
 
 
 def test_finishing_never_overwrites_what_the_user_wrote(aldwin_home: Path) -> None:
-    """TC-12: custom profile and persona text are left alone."""
+    """Custom profile and persona text are left alone."""
     profile_path = aldwin_home / "memory" / "profile.md"
     profile_path.write_text("I live in Lagos.\n", encoding="utf-8")
     (aldwin_home / "persona.md").write_text("Speak like a pirate.\n", "utf-8")
@@ -164,7 +161,7 @@ def test_finishing_never_overwrites_what_the_user_wrote(aldwin_home: Path) -> No
 
 
 def test_skipping_clears_drafts_and_seeds_nothing(aldwin_home: Path) -> None:
-    """TC-10, TC-35: Skip marks the step done and keeps nothing typed."""
+    """Skip marks the step done and keeps nothing typed."""
     save_onboarding_profile({"first_name": "Ada"}, home=aldwin_home)
     save_onboarding_profile({}, skipped=True, home=aldwin_home)
 
@@ -207,7 +204,7 @@ def test_bad_profile_answers_are_refused(
 
 
 def test_fresh_home_starts_no_host(aldwin_home: Path, tmp_path: Path) -> None:
-    """TC-01: no keys, no host; the socket ticket waits."""
+    """No keys, no host; the socket ticket waits."""
     with _web(aldwin_home, tmp_path) as (client, runtime):
         status = _status(client)
         assert status["keys_ok"] is False and status["host_ready"] is False
@@ -218,7 +215,7 @@ def test_fresh_home_starts_no_host(aldwin_home: Path, tmp_path: Path) -> None:
 def test_skipping_the_profile_never_starts_a_host(
     aldwin_home: Path, tmp_path: Path
 ) -> None:
-    """TC-10: the profile is not a key."""
+    """The profile is not a key."""
     with _web(aldwin_home, tmp_path) as (client, _runtime):
         response = client.post("/v1/setup/profile", json={"skipped": True})
         assert response.status_code == 200
@@ -229,7 +226,7 @@ def test_skipping_the_profile_never_starts_a_host(
 def test_saving_a_provider_key_starts_the_host(
     aldwin_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-14, TC-25: a checked key opens the gate and the ticket stops waiting."""
+    """A checked key opens the gate and the ticket stops waiting."""
     _check_returns(monkeypatch, AccessStatus.OK)
     with _web(aldwin_home, tmp_path) as (client, _runtime):
         response = client.post(
@@ -245,7 +242,7 @@ def test_saving_a_provider_key_starts_the_host(
 def test_setup_save_starts_the_host(
     aldwin_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-15, TC-05: the terminal's first-run answers, saved from the browser."""
+    """The terminal's first-run answers, saved from the browser."""
     _check_returns(monkeypatch, AccessStatus.OK)
     with _web(aldwin_home, tmp_path) as (client, _runtime):
         response = client.post("/v1/setup/save", json={"openai_api_key": OPENAI_KEY})
@@ -256,7 +253,6 @@ def test_setup_save_starts_the_host(
 def test_a_rejected_key_saves_nothing_and_starts_nothing(
     aldwin_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-17."""
     _check_returns(monkeypatch, AccessStatus.INVALID_KEY)
     with _web(aldwin_home, tmp_path) as (client, _runtime):
         response = client.post(
@@ -270,7 +266,7 @@ def test_a_rejected_key_saves_nothing_and_starts_nothing(
 def test_a_local_model_starts_the_host(
     aldwin_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-16: picking a model on this computer passes without a cloud key."""
+    """Picking a model on this computer passes without a cloud key."""
 
     async def models(provider: str, home: Path | None = None) -> list[ModelInfo]:
         return [ModelInfo("llama3", "Llama 3", 8192, True, True)]
@@ -289,7 +285,7 @@ def test_a_local_model_starts_the_host(
 def test_another_server_is_added_then_its_model_starts_the_host(
     aldwin_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-29: an OpenAI-compatible server by address, with an optional key."""
+    """An OpenAI-compatible server by address, with an optional key."""
 
     class Answers:
         async def check_access(self) -> AccessStatus:
@@ -381,7 +377,7 @@ def test_a_key_or_an_address_is_required(aldwin_home: Path, tmp_path: Path) -> N
 
 
 def test_theme_never_rides_along_with_setup(aldwin_home: Path, tmp_path: Path) -> None:
-    """TC-30: the browser's appearance stays in the browser."""
+    """The browser's appearance stays in the browser."""
     before = (aldwin_home / "config.yaml").read_text("utf-8")
     with _web(aldwin_home, tmp_path) as (client, _runtime):
         response = client.post("/v1/setup/save", json={"theme": "light"})
@@ -392,7 +388,7 @@ def test_theme_never_rides_along_with_setup(aldwin_home: Path, tmp_path: Path) -
 def test_starting_twice_runs_one_host(
     aldwin_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-18: every setup change may ask; only the first starts a host."""
+    """Every setup change may ask; only the first starts a host."""
     _write_openai_key(aldwin_home)
     with _web(aldwin_home, tmp_path) as (client, runtime):
         first = runtime._host
@@ -405,7 +401,7 @@ def test_starting_twice_runs_one_host(
 def test_working_keys_at_launch_start_the_host_straight_away(
     aldwin_home: Path, tmp_path: Path
 ) -> None:
-    """TC-19, TC-03: keys set up in the terminal; no setup page needed."""
+    """Keys set up in the terminal; no setup page needed."""
     _write_openai_key(aldwin_home)
     with _web(aldwin_home, tmp_path) as (client, runtime):
         status = _status(client)
@@ -419,7 +415,7 @@ def test_working_keys_at_launch_start_the_host_straight_away(
 def test_skipping_the_profile_with_keys_reaches_aldwin(
     aldwin_home: Path, tmp_path: Path
 ) -> None:
-    """TC-02: keys work and the profile is skipped, so both gates are clear."""
+    """Keys work and the profile is skipped, so both gates are clear."""
     _write_openai_key(aldwin_home)
     with _web(aldwin_home, tmp_path) as (client, _runtime):
         status = client.post("/v1/setup/profile", json={"skipped": True}).json()
@@ -429,7 +425,7 @@ def test_skipping_the_profile_with_keys_reaches_aldwin(
 def test_returning_users_skip_what_they_finished(
     aldwin_home: Path, tmp_path: Path
 ) -> None:
-    """TC-04, TC-28: a second launch remembers both gates; lost keys reopen one."""
+    """A second launch remembers both gates; lost keys reopen one."""
     _write_openai_key(aldwin_home)
     with _web(aldwin_home, tmp_path) as (client, _runtime):
         client.post("/v1/setup/profile", json={"complete": True})
@@ -448,7 +444,7 @@ def test_returning_users_skip_what_they_finished(
 def test_the_terminal_reads_what_the_browser_saved(
     aldwin_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-31: one home, one set of files."""
+    """One home, one set of files."""
     _check_returns(monkeypatch, AccessStatus.OK)
     with _web(aldwin_home, tmp_path) as (client, _runtime):
         client.post(
@@ -466,7 +462,7 @@ def test_the_terminal_reads_what_the_browser_saved(
 
 
 def test_privacy_doc_explains_the_profile_seed() -> None:
-    """TC-27: what the profile step writes, and that it never overwrites."""
+    """What the profile step writes, and that it never overwrites."""
     docs = Path(__file__).resolve().parent.parent / "docs"
     privacy = (docs / "privacy.md").read_text(encoding="utf-8")
     assert "onboarding.json" in privacy

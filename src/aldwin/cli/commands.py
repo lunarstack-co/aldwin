@@ -149,7 +149,7 @@ _SEARCH_COMPLETION_HINTS: Final[dict[str, str]] = {
 
 
 class SlashCompleter(Completer):
-    """Prompt-toolkit completer for `/help`, `/new`, `/model`, etc.."""
+    """Completes slash command names, and provider names after `/search`."""
 
     def get_completions(
         self,
@@ -323,11 +323,8 @@ async def _handle_model_command(
         curr_clean = curr.strip()
         curr_provider = curr_clean.split("/")[0] if "/" in curr_clean else "openai"
 
-        # Screen 1: Available providers
-        # 1. Local providers (Ollama, LM Studio)
-        # 2. Configured cloud companies (OpenAI, Anthropic, ...)
-        # 3. Add a provider…
-        # 4. Other server
+        # Screen 1 lists local providers, configured cloud providers, then
+        # "Add a provider…" and "Other server".
         available_providers: list[ProviderModels] = [
             p for p in models_ev.providers if p.local or p.configured
         ]
@@ -900,10 +897,7 @@ async def handle_slash_command(
     prompt_secret: Callable[[str], Awaitable[str]] | None = None,
     home: Path | None = None,
 ) -> bool:
-    """Execute a `/command` line.
-
-    Returns `True` when `/exit` is invoked and the chat loop should terminate.
-    """
+    """Run one `/command` line; return `True` when `/exit` should end the chat loop."""
     stripped = line.strip()
     cmd_part, _, arg_part = stripped.partition(" ")
     cmd = cmd_part.lower()

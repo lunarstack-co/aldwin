@@ -48,7 +48,6 @@ async def test_local_turn_zero_non_loopback_traffic(
         encoding="utf-8",
     )
 
-    # Prepare a test file for read_file in workspace
     test_file = tmp_path / "notes.txt"
     test_file.write_text("Secret local content\n", encoding="utf-8")
 
@@ -121,7 +120,6 @@ async def test_local_turn_zero_non_loopback_traffic(
         assert isinstance(events[-1], DoneEvent)
         assert events[-1].reason == "answered"
 
-        # Assert no requests left loopback
         assert transport.non_loopback_requests == []
         assert len(transport.loopback_requests) > 0
     finally:

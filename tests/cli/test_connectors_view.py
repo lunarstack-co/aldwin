@@ -1,4 +1,4 @@
-"""`/connectors` view, connector tool rows and `/tools` (`FR-25`, `FR-26`, `FR-28`)."""
+"""`/connectors` view, connector tool rows and `/tools`."""
 
 from __future__ import annotations
 
@@ -241,7 +241,6 @@ async def test_add_flow_asks_for_a_token_on_401() -> None:
     ],
 )
 async def test_add_flow_shows_each_error_and_saves_nothing(message: str) -> None:
-    """`TC-12` (door half)."""
     client = FakeConnectorsClient()
     client.add_error = ProtocolError(message, code="connector")
     out = await _run(client, "1", "1", "https://fixture.example/mcp")

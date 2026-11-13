@@ -14,7 +14,7 @@ from aldwin.web.auth import (
 
 
 def test_cookie_kwargs_are_strict_http_only_and_not_secure() -> None:
-    """TC-13: HttpOnly, SameSite=Strict, Path=/, and no Secure on http."""
+    """HttpOnly, SameSite=Strict, Path=/, and no Secure on http."""
     auth = Authenticator.mint("127.0.0.1", 7841)
     assert auth.cookie_kwargs() == {
         "key": COOKIE_NAME,
@@ -44,7 +44,7 @@ def test_mint_makes_a_fresh_unguessable_token() -> None:
     ],
 )
 def test_origin_and_launch_url(host: str, origin: str) -> None:
-    """TC-14: the origin brackets IPv6 and the launch URL carries the token."""
+    """The origin brackets IPv6 and the launch URL carries the token."""
     auth = Authenticator.mint(host, 7841)
     assert auth.origin == origin == origin_for(host, 7841)
     assert auth.launch_url == f"{origin}/?t={auth.token}"
@@ -52,7 +52,7 @@ def test_origin_and_launch_url(host: str, origin: str) -> None:
 
 @pytest.mark.parametrize("host", ["127.0.0.1", "127.0.0.2", "localhost", "::1"])
 def test_loopback_hosts_are_accepted(host: str) -> None:
-    """TC-14: loopback names and addresses are allowed."""
+    """Loopback names and addresses are allowed."""
     assert is_loopback_host(host)
 
 
@@ -60,7 +60,7 @@ def test_loopback_hosts_are_accepted(host: str) -> None:
     "host", ["0.0.0.0", "::", "8.8.8.8", "192.168.1.10", "example.com", ""]
 )
 def test_other_hosts_are_refused(host: str) -> None:
-    """TC-14: anything reachable from another computer is refused."""
+    """Anything reachable from another computer is refused."""
     assert not is_loopback_host(host)
 
 
@@ -82,7 +82,7 @@ def test_localhost_binds_ipv4_loopback() -> None:
     ],
 )
 def test_host_header_must_name_the_bound_address(header: str | None, ok: bool) -> None:
-    """TC-03: a rebound hostname or another port is refused."""
+    """A rebound hostname or another port is refused."""
     assert Authenticator.mint("127.0.0.1", 7841).host_ok(header) is ok
 
 
@@ -105,7 +105,7 @@ def test_ipv6_host_header_is_bracketed() -> None:
     ],
 )
 def test_origin_must_be_absent_or_bound(origin: str | None, ok: bool) -> None:
-    """TC-03 and TC-11: a missing Origin passes; a foreign one does not."""
+    """A missing Origin passes; a foreign one does not."""
     assert Authenticator.mint("127.0.0.1", 7841).origin_ok(origin) is ok
 
 
@@ -123,12 +123,12 @@ def test_origin_must_be_absent_or_bound(origin: str | None, ok: bool) -> None:
 def test_fetch_site_must_be_same_origin_or_typed(
     fetch_site: str | None, ok: bool
 ) -> None:
-    """TC-03: a page on another loopback port is same-site, not same-origin."""
+    """A page on another loopback port is same-site, not same-origin."""
     assert Authenticator.mint("127.0.0.1", 7841).fetch_site_ok(fetch_site) is ok
 
 
 def test_token_check() -> None:
-    """TC-12: only this run's exact token passes."""
+    """Only this run's exact token passes."""
     auth = Authenticator.mint("127.0.0.1", 7841)
     assert auth.token_ok(auth.token)
     assert not auth.token_ok(None)

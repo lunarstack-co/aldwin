@@ -140,7 +140,7 @@ class StdioTransport:
             ConnectionError,
             OSError,
         ):
-            pass  # the pipe closed under the read: our own stop, or the server died
+            pass  # the pipe closed mid-read: Aldwin stopped it, or the server died
 
     async def _write_stdin(self, process: Process) -> None:
         assert process.stdin is not None

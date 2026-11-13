@@ -263,7 +263,7 @@ def test_fallback_without_fts5(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.setattr(MemoryIndex, "fts5_available", staticmethod(lambda: False))
-    # Reset module fallback log flag.
+    # The fallback warning is logged once per process, so reset its flag.
     import aldwin.core.memory_index as mi
 
     monkeypatch.setattr(mi, "_FTS5_FALLBACK_LOGGED", False)
@@ -323,7 +323,7 @@ def test_perf_budget_rebuild_and_query(tmp_path: Path) -> None:
                 {"type": "final", "data": {"answer": f"answer {i}"}},
             ],
         )
-    # Ensure note files exist with headers for days we appended to blindly.
+    # The appends above skipped the day header, so add it where missing.
     for path in idx.notes_dir.glob("*.md"):
         text = path.read_text(encoding="utf-8")
         if not text.startswith("#"):

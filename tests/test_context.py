@@ -184,7 +184,6 @@ def test_system_message_environment_block_updates_across_midnight(
     aldwin_home: Path,
     tmp_path: Path,
 ) -> None:
-    """System message `<environment>` block updates date across midnight."""
     from datetime import datetime, timezone
 
     ensure_home(aldwin_home)

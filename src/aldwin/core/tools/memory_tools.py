@@ -441,7 +441,7 @@ class ForgetTool(Tool):
         try:
             mtime_ns = path.stat().st_mtime_ns
         except OSError:
-            # Fall back via find_note_by_id.
+            # The indexed file is gone; the note may have moved.
             found = find_note_by_id(root, m["note_id"])
             if found is None:
                 return f'no note matches "{q}"'
@@ -472,9 +472,8 @@ class ForgetTool(Tool):
         """Ask only when exactly one note matches; otherwise raise with the message."""
         resolved = self._resolve_single(query)
         if isinstance(resolved, str):
-            # Zero or many matches: return the list without asking (forget never
-            # Diff-asks then). ToolCallError carries the informational text so
-            # the model sees the ids and the "call forget with the id…" line.
+            # Zero or many matches: raise without asking, so the model sees the
+            # ids and the hint to call forget with one of them.
             raise ToolCallError(resolved)
         note_path = f"memory/notes/{resolved.day}.md"
         removed_line = f"[{resolved.day}] {resolved.text}  (id {resolved.note_id})\n"
@@ -495,7 +494,8 @@ class ForgetTool(Tool):
 
     async def forward(self, query: str) -> ToolOutput:  # type: ignore[override]
         started = time.monotonic()
-        # Re-resolve after approval (mtime recheck already re-ran prepare).
+        # Resolved again rather than kept from prepare_approval; the mtime
+        # recheck has already run it once.
         resolved = self._resolve_single(query)
         if isinstance(resolved, str):
             raise ToolCallError(resolved)

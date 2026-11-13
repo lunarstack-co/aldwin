@@ -38,7 +38,7 @@ async def test_set_persona_approved_updates_file_and_next_model_call(
     aldwin_home: Path,
     fake_model: FakeModel,
 ) -> None:
-    """TC-09: Approving `set_persona` updates `persona.md` and the next model call."""
+    """Approving `set_persona` updates `persona.md` and the next model call."""
     ensure_home(aldwin_home)
     new_persona = "Be ultra direct. Answer in one sentence whenever possible."
 
@@ -97,7 +97,7 @@ async def test_set_persona_declined_or_stopped_keeps_original_persona(
     aldwin_home: Path,
     fake_model: FakeModel,
 ) -> None:
-    """TC-10: Declining or stopping `set_persona` leaves `persona.md` untouched."""
+    """Declining or stopping `set_persona` leaves `persona.md` untouched."""
     ensure_home(aldwin_home)
     persona_path = aldwin_home / "persona.md"
     original_text = persona_path.read_text(encoding="utf-8")
@@ -159,7 +159,7 @@ def test_read_persona_missing_fallback_and_over_cap_warning(
     aldwin_home: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """TC-16: Missing `persona.md` uses default asset; over-cap warns once."""
+    """Missing `persona.md` uses default asset; over-cap warns once."""
     ensure_home(aldwin_home)
     persona_path = aldwin_home / "persona.md"
 
@@ -208,7 +208,7 @@ def test_set_persona_schema_states_configured_cap(aldwin_home: Path) -> None:
 async def test_set_persona_rejects_empty_or_over_2000_chars_without_asking(
     aldwin_home: Path,
 ) -> None:
-    """TC-17: Invalid `new_text` returns error without calling `ask()` or writing."""
+    """Invalid `new_text` returns error without calling `ask()` or writing."""
     ensure_home(aldwin_home)
     persona_path = aldwin_home / "persona.md"
     before = persona_path.read_text(encoding="utf-8")
@@ -235,7 +235,7 @@ async def test_set_persona_rejects_empty_or_over_2000_chars_without_asking(
 
 
 def test_persona_text_and_summary_via_client(aldwin_home: Path) -> None:
-    """TC-19: `persona_text` and `persona_summary` work via core and `aldwin.client`."""
+    """`persona_text` and `persona_summary` work via core and `aldwin.client`."""
     ensure_home(aldwin_home)
     write_persona(aldwin_home, "Concise and friendly assistant.")
 
@@ -256,7 +256,7 @@ def test_persona_text_and_summary_via_client(aldwin_home: Path) -> None:
 async def test_set_persona_approval_wait_exceeds_agent_tool_timeout(
     aldwin_home: Path,
 ) -> None:
-    """TC-05: `SetPersonaTool` approval wait exceeding `Agent.tool_timeout` succeeds."""
+    """`SetPersonaTool` approval wait exceeding `Agent.tool_timeout` succeeds."""
     from agentling import Agent, ToolResultEvent
 
     ensure_home(aldwin_home)

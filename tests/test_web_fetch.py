@@ -371,7 +371,6 @@ async def test_web_fetch_handles_network_errors_and_binary_content() -> None:
         assert r_dns.ok is False
         assert "Could not resolve host" in str(r_dns)
 
-    # Timeout test.
     async def slow_resolver(host: str, port: int) -> list[str]:
         del host, port
         await asyncio.sleep(5.0)

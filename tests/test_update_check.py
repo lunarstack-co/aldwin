@@ -235,7 +235,6 @@ def test_check_for_updates_default_true(aldwin_home: Path) -> None:
 
 
 def test_check_for_updates_false_loads(aldwin_home: Path) -> None:
-    """check_for_updates: false loads as False."""
     atomic_write(aldwin_home / "config.yaml", "check_for_updates: false\n")
     assert load_config(aldwin_home).check_for_updates is False
 

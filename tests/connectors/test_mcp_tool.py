@@ -1,4 +1,4 @@
-"""`McpTool`: naming, schemas, results and approval text (`FR-6`)."""
+"""`McpTool`: naming, schemas, results and approval text."""
 
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ def _tool(connection: Any, tmp: Path, name: str = "read_thing", **spec: Any) -> 
 async def test_null_argument_reaches_the_server(
     connection: McpConnection, tmp_path: Path
 ) -> None:
-    """`TC-07`: `null` for a `["string","null"]` argument is not refused locally."""
+    """`null` for a `["string","null"]` argument is not refused locally."""
     tool = _tool(connection, tmp_path, "echo_nullable")
     assert tool.validate_arguments is False
     assert await tool.forward(value=None) == "None"

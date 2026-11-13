@@ -82,7 +82,7 @@ def _sock(**kwargs: Any) -> Any:
 
 
 async def test_detach_keeps_the_transport_open() -> None:
-    """TC-14: a tab closing does not end the host's request loop."""
+    """A tab closing does not end the host's request loop."""
     transport = WebSocketTransport()
     tab = _sock()
     assert await transport.attach(tab)
@@ -96,7 +96,7 @@ async def test_detach_keeps_the_transport_open() -> None:
 
 
 async def test_close_wakes_the_host_with_none_and_closes_the_tab() -> None:
-    """TC-15, TC-36: shutdown is the only way ``receive_request`` returns None."""
+    """Shutdown is the only way ``receive_request`` returns None."""
     transport = WebSocketTransport()
     tab = _sock()
     await transport.attach(tab)
@@ -113,7 +113,7 @@ async def test_close_wakes_the_host_with_none_and_closes_the_tab() -> None:
 
 
 async def test_events_reach_the_tab_and_are_dropped_while_detached() -> None:
-    """TC-16: events go to the live tab, tagged web, and are never queued."""
+    """Events go to the live tab, tagged web, and are never queued."""
     transport = WebSocketTransport()
     tab = _sock()
     await transport.attach(tab)
@@ -129,7 +129,7 @@ async def test_events_reach_the_tab_and_are_dropped_while_detached() -> None:
 
 
 async def test_requests_are_tagged_as_coming_from_the_web() -> None:
-    """TC-17: the page cannot claim to be the terminal."""
+    """The page cannot claim to be the terminal."""
     transport = WebSocketTransport()
     tab = _sock()
     await transport.attach(tab)
@@ -143,7 +143,7 @@ async def test_requests_are_tagged_as_coming_from_the_web() -> None:
 
 
 async def test_second_tab_is_refused_and_the_first_stays() -> None:
-    """TC-18: without take-over, the new tab gets 4409 already_attached."""
+    """Without take-over, the new tab gets 4409 already_attached."""
     transport = WebSocketTransport()
     first, second = _sock(), _sock()
     await transport.attach(first)
@@ -157,7 +157,7 @@ async def test_second_tab_is_refused_and_the_first_stays() -> None:
 
 
 async def test_take_over_replaces_the_old_tab() -> None:
-    """TC-19: take-over closes the old tab with 4000 replaced."""
+    """Take-over closes the old tab with 4000 replaced."""
     transport = WebSocketTransport()
     old, new = _sock(), _sock()
     await transport.attach(old)
@@ -177,7 +177,7 @@ async def test_take_over_replaces_the_old_tab() -> None:
 
 
 async def test_bad_json_gets_a_protocol_error_and_the_transport_lives() -> None:
-    """TC-25: an unreadable message is answered, not fatal."""
+    """An unreadable message is answered, not fatal."""
     transport = WebSocketTransport()
     tab = _sock()
     await transport.attach(tab)
@@ -324,7 +324,7 @@ def _wait_for(check: Any, timeout: float = 5.0) -> None:
 
 
 def test_turn_streams_over_the_socket(rig: Rig, fake_model: FakeModel) -> None:
-    """TC-01: hello, then a turn whose text arrives as the host sends it."""
+    """Hello, then a turn whose text arrives as the host sends it."""
     fake_model.add_turns(FakeTurn.text(["Hello", " there"]))
     with rig.connect() as ws:
         _hello(ws)
@@ -339,7 +339,7 @@ def test_turn_streams_over_the_socket(rig: Rig, fake_model: FakeModel) -> None:
 
 
 def test_stop_ends_a_running_turn(rig: Rig, fake_model: FakeModel) -> None:
-    """TC-01: stop over the socket ends the turn with reason stopped."""
+    """Stop over the socket ends the turn with reason stopped."""
     fake_model.add_turns(FakeTurn.hang(prefix_chunks=["Thinking"]))
     with rig.connect() as ws:
         _hello(ws)
@@ -354,7 +354,7 @@ def test_stop_ends_a_running_turn(rig: Rig, fake_model: FakeModel) -> None:
 
 
 def test_approval_is_answered_over_the_socket(rig: Rig, fake_model: FakeModel) -> None:
-    """TC-01: an approval goes to the tab and the tab's yes runs the tool."""
+    """An approval goes to the tab and the tab's yes runs the tool."""
     fake_model.add_turns(
         FakeTurn.tool_call("run_command", {"command": "df -h"}, call_id="c_1"),
         FakeTurn.text(["41 GB free."]),
@@ -380,7 +380,7 @@ def test_approval_is_answered_over_the_socket(rig: Rig, fake_model: FakeModel) -
 def test_closing_the_tab_mid_approval_keeps_the_host_waiting(
     rig: Rig, fake_model: FakeModel
 ) -> None:
-    """TC-20, TC-21: a dropped tab detaches; a new tab can answer the approval."""
+    """A dropped tab detaches; a new tab can answer the approval."""
     fake_model.add_turns(
         FakeTurn.tool_call("run_command", {"command": "ls"}, call_id="c_1"),
         FakeTurn.text(["Done."]),
@@ -413,7 +413,7 @@ def test_closing_the_tab_mid_approval_keeps_the_host_waiting(
 
 
 def test_second_tab_gets_4409_and_the_first_keeps_working(rig: Rig) -> None:
-    """TC-04: one live tab; the second is closed with already_attached."""
+    """One live tab; the second is closed with already_attached."""
     with rig.connect() as first:
         _hello(first)
         with rig.connect() as second:
@@ -424,7 +424,7 @@ def test_second_tab_gets_4409_and_the_first_keeps_working(rig: Rig) -> None:
 
 
 def test_take_over_moves_the_conversation_to_the_new_tab(rig: Rig) -> None:
-    """TC-05: the old tab is closed with 4000 replaced; the new one is served."""
+    """The old tab is closed with 4000 replaced; the new one is served."""
     with rig.connect() as old:
         _hello(old)
         with rig.connect(take_over=True) as new:
@@ -436,7 +436,7 @@ def test_take_over_moves_the_conversation_to_the_new_tab(rig: Rig) -> None:
 
 
 def test_other_requests_ride_the_same_socket(rig: Rig) -> None:
-    """TC-27, TC-28: history, skills, models and sessions.list get answers."""
+    """History, skills, models and sessions.list get answers."""
     with rig.connect() as ws:
         _hello(ws)
         for request in (
@@ -451,7 +451,7 @@ def test_other_requests_ride_the_same_socket(rig: Rig) -> None:
 
 
 def test_unreadable_message_is_answered_and_the_socket_stays(rig: Rig) -> None:
-    """TC-25: bad JSON gets a protocol error on the same socket."""
+    """Bad JSON gets a protocol error on the same socket."""
     with rig.connect() as ws:
         ws.send_text("{not json")
         error = parse_event(ws.receive_text())
@@ -460,7 +460,7 @@ def test_unreadable_message_is_answered_and_the_socket_stays(rig: Rig) -> None:
 
 
 def test_binary_frames_close_the_socket(rig: Rig) -> None:
-    """TC-26: the protocol is text JSON only."""
+    """The protocol is text JSON only."""
     with rig.connect() as ws:
         ws.send_bytes(b"\x00\x01")
         closed = _expect_closed(ws)
@@ -470,7 +470,7 @@ def test_binary_frames_close_the_socket(rig: Rig) -> None:
 
 
 def test_shutdown_closes_the_tab_and_stops_the_host(rig: Rig) -> None:
-    """TC-36: closing the runtime ends the host loop and the socket."""
+    """Closing the runtime ends the host loop and the socket."""
     with rig.connect() as ws:
         _hello(ws)
         _portal(rig.client).call(rig.runtime.shutdown)
@@ -493,7 +493,7 @@ def _denied(rig: Rig, **kwargs: Any) -> int:
 
 
 def test_upgrade_without_a_good_ticket_is_401(rig: Rig) -> None:
-    """TC-02: no ticket, or one that was never minted, is refused before accept."""
+    """No ticket, or one that was never minted, is refused before accept."""
     with pytest.raises(WebSocketDenialResponse) as denied:
         with rig.client.websocket_connect(WS_URL, headers={"Origin": BASE}):
             pass
@@ -502,7 +502,7 @@ def test_upgrade_without_a_good_ticket_is_401(rig: Rig) -> None:
 
 
 def test_ticket_reuse_is_401(rig: Rig) -> None:
-    """TC-03: a ticket opens one socket only."""
+    """A ticket opens one socket only."""
     ticket = rig.ticket()
     with rig.connect(ticket) as ws:
         _hello(ws)
@@ -516,7 +516,7 @@ def test_ticket_reuse_is_401(rig: Rig) -> None:
 def test_upgrade_from_another_page_is_403_and_keeps_the_ticket(
     rig: Rig, origin: str | None
 ) -> None:
-    """TC-02, TC-22, TC-37: Origin must be present and this server's own."""
+    """Origin must be present and this server's own."""
     ticket = rig.ticket()
     assert _denied(rig, ticket=ticket, origin=origin) == 403
     assert rig.runtime.tickets.consume(ticket)
@@ -529,7 +529,7 @@ def test_upgrade_from_another_page_is_403_and_keeps_the_ticket(
 def test_upgrade_with_a_foreign_host_or_site_is_403(
     rig: Rig, headers: dict[str, str]
 ) -> None:
-    """TC-02: the Host and Sec-Fetch-Site checks apply to the upgrade too."""
+    """The Host and Sec-Fetch-Site checks apply to the upgrade too."""
     ticket = rig.ticket()
     with pytest.raises(WebSocketDenialResponse) as denied:
         with rig.client.websocket_connect(
@@ -541,13 +541,13 @@ def test_upgrade_with_a_foreign_host_or_site_is_403(
 
 
 def test_localhost_origin_on_the_bound_port_is_accepted(rig: Rig) -> None:
-    """TC-37: localhost and 127.0.0.1 on the same port are the same server."""
+    """Localhost and 127.0.0.1 on the same port are the same server."""
     with rig.connect(origin=f"http://localhost:{PORT}") as ws:
         _hello(ws)
 
 
 def test_expired_ticket_is_401(aldwin_home: Path, tmp_path: Path) -> None:
-    """TC-13: a ticket used after its lifetime is refused."""
+    """A ticket used after its lifetime is refused."""
     runtime = WebHostRuntime(home=aldwin_home, ticket_ttl=0.05)
     runtime.mark_ready()
     client = _app(runtime, aldwin_home, tmp_path)
@@ -565,7 +565,7 @@ def test_expired_ticket_is_401(aldwin_home: Path, tmp_path: Path) -> None:
 
 
 def test_socket_waits_for_a_host(aldwin_home: Path, tmp_path: Path) -> None:
-    """TC-24: before a host is serving, the upgrade is refused with 503."""
+    """Before a host is serving, the upgrade is refused with 503."""
     runtime = WebHostRuntime(home=aldwin_home)
     client = _app(runtime, aldwin_home, tmp_path)
     try:
@@ -584,14 +584,14 @@ def test_socket_waits_for_a_host(aldwin_home: Path, tmp_path: Path) -> None:
 
 
 def test_web_door_has_no_jwt_or_auth_js_path() -> None:
-    """TC-30, TC-35: sessions are the cookie and one-time tickets only."""
+    """Sessions are the cookie and one-time tickets only."""
     source = "".join(p.read_text("utf-8").lower() for p in WEB_DIR.rglob("*.py"))
     for marker in ("jwt", "jwe", "nextauth", "auth.js", "auth_secret"):
         assert marker not in source, marker
 
 
 def test_docs_describe_the_socket_and_its_ticket() -> None:
-    """TC-33, TC-34: protocol and privacy pages cover the WebSocket."""
+    """Protocol and privacy pages cover the WebSocket."""
     docs = Path(__file__).resolve().parent.parent / "docs"
     protocol = (docs / "protocol.md").read_text(encoding="utf-8")
     section = protocol.split("## The browser's WebSocket", 1)[1].split("\n## ", 1)[0]

@@ -70,7 +70,6 @@ class AldwinPromptSession(PromptSession[str]):
         self._ctrl_c_at: float = 0.0
         self._shortcuts_open: bool = False
         kwargs.setdefault("reserve_space_for_menu", 0)
-        # Bottom toolbar refreshes from our contextual footer.
         kwargs["bottom_toolbar"] = self._toolbar_text
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
 
@@ -149,7 +148,7 @@ class AldwinPromptSession(PromptSession[str]):
         def _ctrl_c(event: KeyPressEvent) -> None:
             buf = event.current_buffer
             if buf.text:
-                # Keep in history via prompt_toolkit history on validate; clear draft.
+                # Save the cleared draft to history so up-arrow can bring it back.
                 if buf.text.strip():
                     try:
                         event.app.current_buffer.history.append_string(buf.text)

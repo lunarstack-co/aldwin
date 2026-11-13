@@ -355,7 +355,6 @@ def test_validate_model_ref_valid_and_unknown() -> None:
 
 
 def test_list_providers_custom_without_shape_or_base_url_raises_config_error() -> None:
-    """A custom provider without shape or base_url raises ConfigError."""
     cfg_no_shape = AldwinConfig(
         providers={"no-shape-custom": ProviderConfig(base_url="https://example.com")}
     )

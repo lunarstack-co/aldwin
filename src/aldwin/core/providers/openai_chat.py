@@ -114,7 +114,6 @@ class OpenAIChatModel:
             extra_body: Fields merged into every request body last, so they
                 win: sampling settings such as temperature, or a
                 server's own options.
-            local: Whether the model runs locally.
         """
         self.model = model
         self.api_key = (
