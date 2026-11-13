@@ -265,6 +265,28 @@ def test_deleted_files_leave_the_index_and_others_stay(tmp_path: Path) -> None:
     assert kept.exists()
 
 
+def test_an_unchanged_sync_never_opens_the_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    idx = _index(tmp_path)
+    _write_note(idx.notes_dir, "2026-10-01", ["- pecan note"])
+    idx.sync()
+    opened: list[str] = []
+    real_connect = MemoryIndex._connect
+
+    def counting_connect(self: MemoryIndex) -> sqlite3.Connection:
+        opened.append("open")
+        return real_connect(self)
+
+    monkeypatch.setattr(MemoryIndex, "_connect", counting_connect)
+    idx.sync()
+    assert opened == []
+
+    idx.index_path.unlink()
+    assert "pecan" in idx.search("pecan")
+    assert opened
+
+
 def test_synthetic_id_stable(tmp_path: Path) -> None:
     idx = _index(tmp_path)
     path = _write_note(idx.notes_dir, "2026-10-04", ["- bare note without id"])

@@ -73,6 +73,7 @@ class MemoryIndex:
         self.notes_dir = notes_dir
         self.sessions_dir = sessions_dir
         self.index_path = index_path
+        self._synced_state: tuple[object, ...] | None = None
 
     @staticmethod
     def fts5_available() -> bool:
@@ -178,8 +179,40 @@ class MemoryIndex:
                     raise
         raise sqlite3.DatabaseError("unable to open memory index")
 
+    def _folder_state(self) -> tuple[tuple[str, int, int], ...]:
+        entries: list[tuple[str, int, int]] = []
+        for folder, suffix in ((self.notes_dir, ".md"), (self.sessions_dir, ".json")):
+            try:
+                with os.scandir(folder) as found:
+                    for entry in found:
+                        if entry.name.endswith(suffix):
+                            st = entry.stat()
+                            entries.append((entry.path, st.st_mtime_ns, st.st_size))
+            except OSError:
+                continue
+        return tuple(sorted(entries))
+
+    def _index_state(self) -> tuple[int, int] | None:
+        try:
+            st = self.index_path.stat()
+        except OSError:
+            return None
+        return (st.st_mtime_ns, st.st_size)
+
     def sync(self) -> None:
-        """Re-index notes and session files whose mtime or size changed."""
+        """Re-index notes and session files whose mtime or size changed.
+
+        When no file and not the index itself changed since this object's last
+        sync, the database is not opened at all, so a no-op sync stays cheap.
+        """
+        folders = self._folder_state()
+        if self._synced_state == (folders, self._index_state()):
+            return
+        if self._sync_files():
+            self._synced_state = (folders, self._index_state())
+
+    def _sync_files(self) -> bool:
+        """Bring the index up to date with the files; False when it could not."""
         for attempt in range(2):
             try:
                 conn = self._connect()
@@ -188,12 +221,12 @@ class MemoryIndex:
                     self._unlink_index()
                     continue
                 logger.warning("Could not open memory index for sync")
-                return
+                return False
             try:
                 self._sync_notes(conn)
                 self._sync_sessions(conn)
                 conn.commit()
-                return
+                return True
             except sqlite3.DatabaseError:
                 logger.info("Memory index rebuilt")
                 self._unlink_index()
@@ -203,6 +236,7 @@ class MemoryIndex:
                 except sqlite3.Error:
                     logger.debug("Error closing memory index", exc_info=True)
         logger.warning("Memory index sync failed after rebuild")
+        return False
 
     def _tracked_files(self, conn: sqlite3.Connection) -> dict[str, tuple[int, int]]:
         rows = conn.execute("SELECT path, mtime_ns, size FROM files").fetchall()
