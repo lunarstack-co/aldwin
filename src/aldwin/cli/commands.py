@@ -66,6 +66,7 @@ KEYBINDINGS_HELP: Final[tuple[tuple[str, str], ...]] = (
     ("?", "Shortcuts in the footer (when prompt is empty)"),
     ("↑ / ↓", "History, or move in slash / approval lists"),
     ("Ctrl+R", "Search input history"),
+    ("Ctrl+G", "Open the current draft in your external editor"),
     ("Ctrl+C", "Clear draft; twice on empty prompt saves and exits"),
     ("Ctrl+D", "Save and exit"),
 )

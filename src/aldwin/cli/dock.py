@@ -24,6 +24,7 @@ SHORTCUTS_PANEL: Final[tuple[tuple[str, str], ...]] = (
     ("⌥↵ / ⇧↵", "newline"),
     ("↑↓", "history"),
     ("⌃R", "search history"),
+    ("⌃G", "open in editor"),
     ("⌃O", "expand diff"),
     ("Esc", "stop / close"),
     ("⌃C", "clear / quit"),
@@ -107,7 +108,7 @@ class AldwinPromptSession(PromptSession[str]):
         if self._footer_kind == "paste":
             return "paste again to expand"
         if self._footer_kind == "shortcuts":
-            return " · ".join(f"{k} {v}" for k, v in SHORTCUTS_PANEL[:4])
+            return " · ".join(f"{k} {v}" for k, v in SHORTCUTS_PANEL[:5])
         return "? for shortcuts"
 
     def _toolbar_text(self) -> AnyFormattedText:
@@ -135,6 +136,15 @@ class AldwinPromptSession(PromptSession[str]):
         @kb.add("c-j")
         def _ctrl_j(event: KeyPressEvent) -> None:
             event.current_buffer.insert_text("\n")
+
+        @kb.add("c-g")
+        def _ctrl_g(event: KeyPressEvent) -> None:
+            buf = event.current_buffer
+
+            if buf.complete_state is not None:
+                return
+
+            buf.open_in_editor()
 
         @kb.add("c-m")
         def _enter(event: KeyPressEvent) -> None:
