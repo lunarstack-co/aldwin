@@ -298,7 +298,7 @@ test("reconnect within grace keeps the card answerable; grace expiry and hard re
   });
   host.done();
 
-  // Grace expiry: host ends the turn after reconnect without any approve frame.
+  // Grace expiry: the host ends the turn after the reconnect, with no approve frame.
   await send(page, "second");
   host.toolCall({ call_id: "c2", name: "run_command" });
   host.emitApproval({ approval_id: "ap_exp", call_id: "c2", summary: "Run exp", digest: "sha256:exp" });
@@ -344,14 +344,14 @@ test("take over while waiting keeps the card pending, clean density shows outsid
   const card = page.getByTestId("approval-card");
   await expect(card).toBeVisible();
 
-  // Keyboard Tab order: Allow -> Always allow in this chat -> Deny -> reason -> Send deny.
+  // Tab order: Allow, then Always allow in this chat, then Deny.
   await card.getByRole("button", { name: "Allow", exact: true }).focus();
   await page.keyboard.press("Tab");
   await expect(card.getByRole("button", { name: "Always allow in this chat" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(card.getByRole("button", { name: "Deny" })).toBeFocused();
 
-  // Take over while card waits: take-over dialog wins, then card remains in request.
+  // A take-over while the card waits: the dialog shows first, then the card is still pending.
   host.statusReply = { message: "", turn_streamed_chunks: 0, active_tool: "edit_file", partial_text: null };
   await host.drop(4000);
   await expect(page.getByTestId("take-over")).toBeVisible();

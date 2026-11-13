@@ -44,7 +44,7 @@ class BearerAuth(httpx2.Auth):
     """Sends `Authorization: Bearer <token>` on each request.
 
     An `Auth` (not a default header) keeps the token out of the client's repr
-    and debug logs, and is the same seam OAuth plugs into later.
+    and debug logs.
     """
 
     def __init__(self, token: str) -> None:
@@ -109,6 +109,8 @@ class McpConnection:
         self._lost: ConnectorError | None = None
         self._last_response: tuple[int, str] | None = None
         self._side_tasks: set[asyncio.Task[Any]] = set()
+        # Icons the server declared about itself, as `(src, media type)`.
+        self.declared_icons: list[tuple[str, str | None]] = []
 
     @property
     def host(self) -> str:
@@ -212,6 +214,11 @@ class McpConnection:
                     client_info=Implementation(name="aldwin", version=__version__),
                 ) as client:
                     self._client = client
+                    info = getattr(client, "server_info", None)
+                    self.declared_icons = [
+                        (icon.src, icon.mime_type)
+                        for icon in (getattr(info, "icons", None) or [])
+                    ]
                     tools = await _list_all(client)
                     subscribed = asyncio.get_running_loop().create_future()
                     listener = asyncio.create_task(self._listen(client, subscribed))

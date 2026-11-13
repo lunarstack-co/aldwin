@@ -51,12 +51,10 @@ type ComposerTriggerPopoverBaseProps = Omit<
 type ComposerTriggerPopoverProps = ComposerTriggerPopoverBaseProps &
   (
     | {
-        /** Insert-directive behavior. */
         directive: DirectiveBehaviorProps;
         action?: never;
       }
     | {
-        /** Action behavior. */
         action: ActionBehaviorProps;
         directive?: never;
       }

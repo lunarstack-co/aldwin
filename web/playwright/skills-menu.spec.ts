@@ -24,20 +24,12 @@ test("typing @ opens the skills menu, recent first, with no tools or uploads @cr
   await expect(menu(page)).not.toContainText(/upload|attach/i);
 });
 
-test("the @ button opens the menu in the composer @cross", async ({ page }) => {
+test("the @ button asks for the catalogue once and lists the skills @cross", async ({ page, host }) => {
   await openChat(page);
   await page.getByTestId("composer-skills").click();
-  await expect(input(page)).toBeFocused();
-  await expect(input(page)).toHaveValue("@");
   await expect(menu(page)).toBeVisible();
-});
-
-test("the @ button adds a space after text", async ({ page }) => {
-  await openChat(page);
-  await typeInComposer(page, "hi");
-  await page.getByTestId("composer-skills").click();
-  await expect(input(page)).toHaveValue("hi @");
-  await expect(menu(page)).toBeVisible();
+  await expect(options(page)).toHaveText([/^web-research/, /^files/, /^memory/, /^ship-notes/]);
+  expect(host.sentOfType("skills.list")).toHaveLength(1);
 });
 
 test("@ inside a word or address does not open the menu", async ({ page }) => {

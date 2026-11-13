@@ -72,7 +72,7 @@ test("shows loading on slow response, 404 message, and disables with no conversa
   await expect(page.getByTestId("conversation-json-trigger")).toHaveAttribute("aria-disabled", "true");
   await page.keyboard.press("Escape");
 
-  // 404 shows the friendly not-found message.
+  // An unknown id shows the not-found message.
   host.ticketFailures = { remaining: 0, status: 0 };
   host.current = host.sessions[1]!;
   await openChat(page, "/c/?id=s_404");

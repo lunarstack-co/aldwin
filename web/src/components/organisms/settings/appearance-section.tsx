@@ -38,7 +38,7 @@ export function AppearanceSection() {
           aria-label={themeCopy.label}
           value={mounted ? theme : undefined}
           onValueChange={(value) => setTheme(String(value))}
-          className="grid gap-2 sm:grid-cols-3"
+          className="grid gap-2 @md:grid-cols-3"
         >
           {THEMES.map((id) => (
             <Label key={id} htmlFor={`theme-${id}-option`} className={OPTION}>
@@ -57,7 +57,7 @@ export function AppearanceSection() {
           onValueChange={(value) => {
             if (isDensity(value)) setDensity(value);
           }}
-          className="grid gap-2 sm:grid-cols-2"
+          className="grid gap-2 @md:grid-cols-2"
         >
           {DENSITIES.map((id) => (
             <Label key={id} htmlFor={`density-${id}-option`} className={cn(OPTION, "items-start")}>

@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 import { connectorFixture } from "./fixtures/settings-fixtures";
 import { expect, openChat, session, test, type FakeHost } from "./fixtures/test";
 
-const SECTIONS = ["Providers & models", "Search", "Skills", "Tools", "Advanced", "Appearance"];
+const SECTIONS = ["Models", "Search", "Skills", "Tools", "Advanced", "Appearance"];
 
 async function openSettings(page: Page, section?: string): Promise<void> {
   await openChat(page, section ? `/settings/?section=${section}` : "/settings/");
@@ -32,9 +32,9 @@ test("the address names the open section", async ({ page }) => {
   await expect(page.locator("#settings-section-title")).toHaveText("Search");
 });
 
-test("an unknown section falls back to Providers & models", async ({ page }) => {
+test("an unknown section falls back to Models", async ({ page }) => {
   await openSettings(page, "nope");
-  await expect(page.locator("#settings-section-title")).toHaveText("Providers & models");
+  await expect(page.locator("#settings-section-title")).toHaveText("Models");
 });
 
 test("Back moves between sections", async ({ page }) => {
@@ -306,6 +306,7 @@ test.describe("skills", () => {
 test.describe("tools", () => {
   const row = (page: Page, name: string) => page.locator(`[data-connector="${name}"]`);
   const panel = (page: Page) => page.getByTestId("connector-sign-in");
+  const dialog = (page: Page) => page.getByTestId("connect-dialog");
 
   async function authenticateNotion(page: Page, host: FakeHost) {
     await openSettings(page, "tools");
@@ -319,10 +320,25 @@ test.describe("tools", () => {
     await expect(row(page, "github")).toContainText("12 tools");
     await expect(row(page, "notion")).toContainText("Needs you to sign in");
     for (const name of ["github", "notion"]) await expect(row(page, name).locator(`svg[data-brand="${name}"]`)).toBeVisible();
-    await page.getByTestId("add-app-open").click();
-    const catalog = page.getByTestId("add-app").getByTestId("connector-catalog");
+    const catalog = page.getByTestId("connector-catalog");
     await expect(catalog.locator("[data-catalog]")).toHaveCount(2);
     for (const name of ["linear", "dropbox"]) await expect(catalog.locator(`[data-catalog="${name}"] svg[data-brand="${name}"]`)).toBeVisible();
+  });
+
+  test("connected apps sit above the library, which leaves them out", async ({ page }) => {
+    await openSettings(page, "tools");
+    const mine = await page.getByTestId("your-apps").boundingBox();
+    const library = await page.getByTestId("app-library").boundingBox();
+    expect(mine!.y + mine!.height).toBeLessThanOrEqual(library!.y);
+    await expect(page.getByTestId("app-library")).toContainText("Browse apps");
+    for (const name of ["github", "notion"]) await expect(page.locator(`[data-catalog="${name}"]`)).toHaveCount(0);
+  });
+
+  test("with nothing connected the page says so and still shows the library", async ({ page, host }) => {
+    host.connectors.items = [];
+    await openSettings(page, "tools");
+    await expect(page.getByTestId("no-apps")).toHaveText("No apps connected yet. Pick one below to connect it.");
+    await expect(page.getByTestId("connector-catalog").locator("[data-catalog]").first()).toBeVisible();
   });
 
   test("turning an app off and on follows the host's status", async ({ page, host }) => {
@@ -350,10 +366,13 @@ test.describe("tools", () => {
 
   test("adding from the catalogue sends its address without opening a browser", async ({ page, host }) => {
     await openSettings(page, "tools");
-    await page.getByTestId("add-app-open").click();
-    await page.locator('[data-catalog="linear"]').getByRole("button", { name: "Add" }).click();
-    await expect(page.getByTestId("add-app")).toHaveCount(0);
+    await page.locator('[data-catalog="linear"]').getByRole("button", { name: "Add Linear" }).click();
+    await expect(dialog(page)).toHaveAttribute("data-step", "done");
+    await expect(dialog(page)).toContainText("Linear is connected");
+    await page.getByTestId("connect-close").click();
+    await expect(dialog(page)).toHaveCount(0);
     await expect(row(page, "linear")).toBeVisible();
+    await expect(page.locator('[data-catalog="linear"]')).toHaveCount(0);
     expect(host.sentOfType("connectors.add")).toEqual([
       expect.objectContaining({ url: "https://mcp.linear.example.com/mcp", name: "linear", no_browser: true }),
     ]);
@@ -361,13 +380,26 @@ test.describe("tools", () => {
 
   test("searching the catalogue narrows it and says when nothing matches", async ({ page }) => {
     await openSettings(page, "tools");
+    const search = page.getByRole("searchbox", { name: "Search apps" });
+    await search.fill("drop");
+    await expect(page.locator("[data-catalog]")).toHaveCount(1);
+    await expect(page.locator('[data-catalog="dropbox"]')).toBeVisible();
+    await expect(page.getByTestId("your-apps")).toHaveCount(0);
+    await search.fill("git");
+    await expect(row(page, "github")).toBeVisible();
+    await expect(row(page, "notion")).toHaveCount(0);
+    await search.fill("zzz");
+    await expect(page.getByTestId("no-match")).toContainText('No app matches "zzz"');
+  });
+
+  test("Add a custom app opens only the address form", async ({ page }) => {
+    await openSettings(page, "tools");
     await page.getByTestId("add-app-open").click();
-    const dialog = page.getByTestId("add-app");
-    await dialog.getByRole("searchbox", { name: "Search apps" }).fill("drop");
-    await expect(dialog.locator("[data-catalog]")).toHaveCount(1);
-    await expect(dialog.locator('[data-catalog="dropbox"]')).toBeVisible();
-    await dialog.getByRole("searchbox", { name: "Search apps" }).fill("zzz");
-    await expect(dialog).toContainText('No app matches "zzz"');
+    await expect(dialog(page)).toHaveAttribute("data-step", "address");
+    await expect(dialog(page)).toContainText("Add a custom app");
+    await expect(dialog(page).getByLabel("Server address")).toBeVisible();
+    await expect(dialog(page).locator("[data-catalog]")).toHaveCount(0);
+    await expect(dialog(page).getByRole("searchbox")).toHaveCount(0);
   });
 
   test("adding by address checks it first", async ({ page, host }) => {
@@ -380,7 +412,8 @@ test.describe("tools", () => {
     expect(host.sentOfType("connectors.add")).toHaveLength(0);
     await page.getByLabel("Server address").fill("https://mcp.example.com/mcp");
     await form.getByRole("button", { name: "Add" }).click();
-    await expect(page.getByTestId("add-app")).toHaveCount(0);
+    await expect(dialog(page)).toHaveAttribute("data-step", "done");
+    await expect(dialog(page)).toContainText("mcp.example.com is connected");
     await expect.poll(() => host.sentOfType("connectors.add")).toEqual([
       expect.objectContaining({ url: "https://mcp.example.com/mcp", auth: "none" }),
     ]);
@@ -392,7 +425,7 @@ test.describe("tools", () => {
     let opened = 0;
     context.on("page", () => opened++);
     host.connectorAuth("notion", "browser", { url: "https://notion.example.com/authorize?x=1" });
-    await expect(panel(page)).toContainText("Sign in to Notion");
+    await expect(dialog(page)).toContainText("Sign in to Notion");
     const open = page.getByTestId("sign-in-open");
     await expect(open).toHaveAttribute("href", "https://notion.example.com/authorize?x=1");
     expect(opened).toBe(0);
@@ -428,8 +461,73 @@ test.describe("tools", () => {
     host.connectorAuth("notion", "browser", { url: "https://notion.example.com/authorize", expires_in: 1 });
     await expect(panel(page)).toBeVisible();
     await expect(panel(page)).toHaveCount(0, { timeout: 3000 });
-    await expect(page.getByTestId("sign-in-expired")).toContainText("ran out of time");
-    await expect(row(page, "notion").getByRole("button", { name: "Authenticate" })).toBeEnabled();
+    await expect(page.getByTestId("connect-failed")).toContainText("ran out of time");
+    await page.getByTestId("connect-retry").click();
+    await expect.poll(() => host.sentOfType("connectors.login").length).toBe(2);
+    await expect(dialog(page)).toHaveAttribute("data-step", "working");
+  });
+
+  test("connecting moves through one dialog: connecting, sign-in, then connected @cross", async ({ page, host }) => {
+    host.holdAdd = true;
+    await openSettings(page, "tools");
+    await page.locator('[data-catalog="linear"]').getByRole("button", { name: "Add Linear" }).click();
+    await expect(dialog(page)).toHaveAttribute("data-step", "working");
+    await expect(dialog(page)).toContainText("Connecting to Linear");
+    await expect(page.getByTestId("adding-app")).toBeVisible();
+    host.connectorAuth("linear", "paste", { url: "https://linear.example.com/authorize" });
+    await expect(dialog(page)).toHaveAttribute("data-step", "sign-in");
+    await expect(dialog(page)).toContainText("Sign in to Linear");
+    await expect(panel(page).getByTestId("sign-in-open")).toHaveAttribute("href", "https://linear.example.com/authorize");
+    await page.getByLabel("Address after signing in").fill("http://127.0.0.1/callback?code=x");
+    await panel(page).getByRole("button", { name: "Finish sign-in" }).click();
+    host.finishSignIn("linear");
+    await expect(dialog(page)).toHaveAttribute("data-step", "done");
+    await expect(dialog(page)).toContainText("Linear is connected");
+    await expect(page.locator("[data-testid=connect-dialog]")).toHaveCount(1);
+  });
+
+  test("Cancel during a sign-in closes the dialog and leaves nothing behind", async ({ page, host }) => {
+    host.holdAdd = true;
+    await openSettings(page, "tools");
+    await page.locator('[data-catalog="linear"]').getByRole("button", { name: "Add Linear" }).click();
+    host.connectorAuth("linear", "paste", { url: "https://linear.example.com/authorize" });
+    await expect(dialog(page)).toHaveAttribute("data-step", "sign-in");
+    await page.getByTestId("sign-in-cancel").click();
+    await expect(dialog(page)).toHaveCount(0);
+    await expect.poll(() => host.sentOfType("stop").length).toBe(1);
+    await expect(page.getByTestId("adding-app")).toHaveCount(0);
+    await expect(page.getByTestId("settings-tools")).not.toContainText("Adding");
+    // The stopped request answering late must not reopen the dialog.
+    await page.waitForTimeout(300);
+    await expect(dialog(page)).toHaveCount(0);
+  });
+
+  test("a failed connection says why and can be tried again", async ({ page, host }) => {
+    host.addError = { code: "connector", message: "mcp.example.com didn't answer." };
+    await openSettings(page, "tools");
+    await page.locator('[data-catalog="linear"]').getByRole("button", { name: "Add Linear" }).click();
+    await expect(dialog(page)).toHaveAttribute("data-step", "failed");
+    await expect(page.getByTestId("connect-failed")).toHaveText("mcp.example.com didn't answer.");
+    await page.getByTestId("connect-retry").click();
+    await expect(dialog(page)).toHaveAttribute("data-step", "done");
+    expect(host.sentOfType("connectors.add")).toHaveLength(2);
+  });
+
+  test("a custom app shows its own icon, and its letter when the icon can't be drawn @cross", async ({ page, host }) => {
+    host.connectors.items.push(
+      connectorFixture("mcpemails", "MCP Emails", { icon: "1a2b" }),
+      connectorFixture("broken", "Broken", { icon: "9f" }),
+      connectorFixture("plain", "Plain"),
+    );
+    host.connectorIcons.set("mcpemails", '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8" fill="#0a7"/></svg>');
+    await openSettings(page, "tools");
+    const icon = row(page, "mcpemails").locator("img[data-app-icon]");
+    await expect(icon).toHaveAttribute("src", "/v1/connectors/mcpemails/icon?v=1a2b");
+    await expect.poll(() => icon.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+    await expect(row(page, "broken").locator("[data-letter]")).toHaveText("b");
+    await expect(row(page, "plain").locator("[data-letter]")).toHaveText("p");
+    // Apps with a bundled mark keep it.
+    await expect(row(page, "github").locator('svg[data-brand="github"]')).toBeVisible();
   });
 
   test("a hostile connector name is shown as text", async ({ page, host }) => {
@@ -460,6 +558,9 @@ test("a dropped socket reloads the open section and frees a waiting sign-in", as
   await expect(page.getByTestId("connection-status")).toHaveAttribute("data-phase", "open", { timeout: 10_000 });
   await expect.poll(() => host.sentOfType("connectors.list").length).toBeGreaterThanOrEqual(2);
   await expect(page.getByTestId("connector-sign-in")).toHaveCount(0);
+  // The dialog says the request was lost and offers to try again.
+  await expect(page.getByTestId("connect-failed")).toBeVisible();
+  await page.getByTestId("connect-dialog").getByRole("button", { name: "Close", exact: true }).last().click();
   await expect(page.getByTestId("settings-tools")).not.toContainText("Loading");
   await expect(page.locator('[data-connector="notion"]').getByRole("button", { name: "Authenticate" })).toBeEnabled();
 });
@@ -516,21 +617,21 @@ test.describe("app catalogue", () => {
 
   async function openCatalogue(page: Page) {
     await openSettings(page, "tools");
-    await page.getByTestId("add-app-open").click();
-    return page.getByTestId("add-app").getByTestId("connector-catalog");
+    return page.getByTestId("connector-catalog");
   }
 
   test("apps sit under their headings in order, and the headings go while searching", async ({ page }) => {
     const catalog = await openCatalogue(page);
-    await expect(catalog.locator("h3")).toHaveText(["Work and projects", "Payments", "Design and media", "Automation"]);
+    // Notion is connected, so Work and projects starts at Acme, further down the fixture.
+    await expect(catalog.locator("h4")).toHaveText(["Payments", "Design and media", "Work and projects", "Automation"]);
     await expect(catalog.locator('[data-category="automation"] [data-catalog]')).toHaveCount(3);
-    await page.getByTestId("add-app").getByRole("searchbox").fill("s");
-    await expect(catalog.locator("h3")).toHaveCount(0);
+    await page.getByRole("searchbox", { name: "Search apps" }).fill("s");
+    await expect(catalog.locator("h4")).toHaveCount(0);
   });
 
   test("searching for a plain word finds the apps it describes, with their logos @cross", async ({ page }) => {
     const catalog = await openCatalogue(page);
-    const search = page.getByTestId("add-app").getByRole("searchbox");
+    const search = page.getByRole("searchbox", { name: "Search apps" });
     await search.fill("pay");
     await expect(catalog.locator("[data-catalog]")).toHaveCount(2);
     for (const name of ["stripe", "paypal"]) {
@@ -558,8 +659,9 @@ test.describe("app catalogue", () => {
   test("a catalogue from an older host without categories stays one list", async ({ page, host }) => {
     host.connectors.catalog = host.connectors.catalog.map((item) => ({ ...item, category: null }));
     const catalog = await openCatalogue(page);
-    await expect(catalog.locator("h3")).toHaveCount(0);
-    await expect(catalog.locator("[data-catalog]")).toHaveCount(8);
+    await expect(catalog.locator("h4")).toHaveCount(0);
+    // Notion is connected, so it sits under Your apps instead.
+    await expect(catalog.locator("[data-catalog]")).toHaveCount(7);
   });
 
   test("the catalogue and its logos load nothing from other sites", async ({ page }) => {
@@ -569,7 +671,7 @@ test.describe("app catalogue", () => {
     });
     const catalog = await openCatalogue(page);
     await expect(catalog.locator('[data-catalog="stripe"] svg[data-brand="stripe"]')).toBeVisible();
-    await catalog.evaluate((el) => el.parentElement?.scrollTo(0, el.parentElement.scrollHeight));
+    await catalog.locator("[data-catalog]").last().scrollIntoViewIfNeeded();
     expect(outside).toEqual([]);
   });
 });

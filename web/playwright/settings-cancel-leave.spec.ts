@@ -64,11 +64,11 @@ test.describe("cancel @cross", () => {
     await expect(page.locator('[data-connector="notion"]').getByRole("button", { name: "Authenticate" })).toBeEnabled();
   });
 
-  test("the Add an app dialog has a Cancel button", async ({ page }) => {
+  test("the Add a custom app dialog has a Cancel button", async ({ page }) => {
     await openSettings(page, "tools");
     await page.getByTestId("add-app-open").click();
     await page.getByTestId("add-app-cancel").click();
-    await expect(page.getByTestId("add-app")).toHaveCount(0);
+    await expect(page.getByTestId("connect-dialog")).toHaveCount(0);
   });
 });
 
@@ -129,7 +129,12 @@ test.describe("leaving with unsaved changes @cross", () => {
 
   test("closing or reloading the tab asks the browser to confirm", async ({ page }) => {
     await openSettings(page, "advanced");
-    await page.getByTestId("limit-max_steps").fill("30");
+    // Real key presses: WebKit only asks before leaving after the user has interacted with the page.
+    const steps = page.getByTestId("limit-max_steps");
+    await steps.click();
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.type("30");
+    await expect(steps).toHaveValue("30");
     const dialog = page.waitForEvent("dialog");
     void page.close({ runBeforeUnload: true });
     const shown = await dialog;

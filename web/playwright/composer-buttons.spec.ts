@@ -3,20 +3,37 @@ import type { Page } from "@playwright/test";
 import { expect, openChat, test } from "./fixtures/test";
 
 const input = (page: Page) => page.getByTestId("composer-input");
-const skillsMenu = (page: Page) => page.getByTestId("skills-menu").getByRole("listbox");
-const appsMenu = (page: Page) => page.getByTestId("apps-menu").getByRole("listbox");
+const skillsMenu = (page: Page) => page.getByTestId("skills-button-menu");
+const appsMenu = (page: Page) => page.getByTestId("apps-button-menu");
 
-test.describe("the @ and apps buttons only browse until something is picked @cross", () => {
-  test("@ then Esc leaves the message as it was", async ({ page }) => {
+// Keys only reach the menu once its search box has focus, and the message only once focus is back.
+async function openMenu(page: Page, button: "composer-skills" | "composer-apps-button") {
+  await page.getByTestId(button).click();
+  const menu = button === "composer-skills" ? skillsMenu(page) : appsMenu(page);
+  await expect(menu.getByRole("combobox")).toBeFocused();
+  await expect(menu.getByRole("option").first()).toBeVisible();
+}
+
+test.describe("the @ and apps buttons write nothing until something is picked @cross", () => {
+  test("opening the skills menu leaves the message untouched", async ({ page }) => {
     await openChat(page);
-    await page.getByTestId("composer-skills").click();
-    await expect(skillsMenu(page)).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(skillsMenu(page)).toBeHidden();
-    await expect(input(page)).toHaveValue("");
+    await input(page).fill("hello");
+    await openMenu(page, "composer-skills");
+    await expect(input(page)).toHaveValue("hello");
   });
 
-  test("@ then a click elsewhere leaves the message as it was", async ({ page }) => {
+  test("closing without a pick leaves the message as it was and returns to it", async ({ page }) => {
+    await openChat(page);
+    await input(page).fill("hello");
+    await openMenu(page, "composer-skills");
+    await page.keyboard.type("fi");
+    await page.keyboard.press("Escape");
+    await expect(skillsMenu(page)).toBeHidden();
+    await expect(input(page)).toHaveValue("hello");
+    await expect(input(page)).toBeFocused();
+  });
+
+  test("a click elsewhere closes the menu and changes nothing", async ({ page }) => {
     await openChat(page);
     await page.getByTestId("composer-skills").click();
     await expect(skillsMenu(page)).toBeVisible();
@@ -27,53 +44,52 @@ test.describe("the @ and apps buttons only browse until something is picked @cro
     await expect(input(page)).toHaveValue("");
   });
 
-  test("after some text, @ then Esc takes back the space it added too", async ({ page }) => {
+  test("searching then Enter writes the skill into the message", async ({ page }) => {
+    await openChat(page);
+    await openMenu(page, "composer-skills");
+    await page.keyboard.type("fi");
+    await expect(skillsMenu(page).getByRole("option")).toHaveText([/^files/]);
+    await page.keyboard.press("Enter");
+    await expect(skillsMenu(page)).toBeHidden();
+    await expect(input(page)).toHaveValue("@files ");
+    await expect(input(page)).toBeFocused();
+  });
+
+  test("a clicked skill goes at the caret, with a space before it after a word", async ({ page }) => {
     await openChat(page);
     await input(page).fill("hello");
-    await page.getByTestId("composer-skills").click();
-    await expect(input(page)).toHaveValue("hello @");
-    await page.keyboard.press("Escape");
-    await expect(input(page)).toHaveValue("hello");
+    await openMenu(page, "composer-skills");
+    await skillsMenu(page).getByRole("option", { name: /^memory/ }).click();
+    await expect(input(page)).toHaveValue("hello @memory ");
+    await expect(skillsMenu(page)).toBeHidden();
+    await expect(input(page)).toBeFocused();
+    await page.keyboard.type("now");
+    await expect(input(page)).toHaveValue("hello @memory now");
   });
 
-  test("a search typed into the menu goes too when nothing is picked", async ({ page }) => {
+  test("arrow keys move through the list", async ({ page }) => {
     await openChat(page);
-    await page.getByTestId("composer-skills").click();
-    await page.keyboard.type("fi");
-    await page.keyboard.press("Escape");
-    await expect(input(page)).toHaveValue("");
-  });
-
-  test("picking a skill keeps it", async ({ page }) => {
-    await openChat(page);
-    await page.getByTestId("composer-skills").click();
-    await page.keyboard.type("fi");
+    await openMenu(page, "composer-skills");
+    await expect(skillsMenu(page).getByRole("option")).toHaveCount(4);
+    await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await expect(input(page)).toHaveValue("@files ");
   });
 
-  test("text typed past the menu is the user's and stays", async ({ page }) => {
-    await openChat(page);
-    await page.getByTestId("composer-skills").click();
-    await page.keyboard.type(" hello");
-    await expect(skillsMenu(page)).toBeHidden();
-    await expect(input(page)).toHaveValue("@ hello");
-  });
-
-  test("an @ typed on the keyboard stays when the menu closes", async ({ page }) => {
+  test("an @ typed on the keyboard still opens the inline menu", async ({ page }) => {
     await openChat(page);
     await input(page).click();
     await page.keyboard.type("@");
-    await expect(skillsMenu(page)).toBeVisible();
+    await expect(page.getByTestId("skills-menu").getByRole("listbox")).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(input(page)).toHaveValue("@");
   });
 
-  test("the apps button then Esc leaves the message as it was", async ({ page }) => {
+  test("opening the apps menu leaves the message untouched, and Esc adds no chip", async ({ page }) => {
     await openChat(page);
     await input(page).fill("hello");
-    await page.getByTestId("composer-apps-button").click();
-    await expect(appsMenu(page)).toBeVisible();
+    await openMenu(page, "composer-apps-button");
+    await expect(input(page)).toHaveValue("hello");
     await page.keyboard.press("Escape");
     await expect(input(page)).toHaveValue("hello");
     await expect(page.getByTestId("composer-apps")).toHaveCount(0);
@@ -82,8 +98,7 @@ test.describe("the @ and apps buttons only browse until something is picked @cro
   test("picking an app adds its chip and leaves the text clean", async ({ page }) => {
     await openChat(page);
     await input(page).fill("hello");
-    await page.getByTestId("composer-apps-button").click();
-    await expect(appsMenu(page).getByRole("option").first()).toBeVisible();
+    await openMenu(page, "composer-apps-button");
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("composer-apps").locator("[data-picked-app]")).toHaveCount(1);
     await expect(input(page)).toHaveValue("hello");

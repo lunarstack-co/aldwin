@@ -1,4 +1,4 @@
-// Pure helpers, run in Node; the same cases chat-units.cy.ts covered, plus the new ones.
+// Pure helpers, run in Node.
 import { expect, test } from "@playwright/test";
 
 import { RECONNECT } from "../src/constants/chat";
@@ -226,7 +226,9 @@ test("only changed limits are sent", () => {
 test("brand marks by host name, none for unknown names", () => {
   expect(markFor("openai")?.title).toBe("OpenAI");
   expect(markFor("Tavily")?.title).toBe("Tavily");
-  expect(markFor("linear")?.title).toBe("Linear");
+  expect(markFor("brave")?.title).toBe("Brave");
+  // App marks load on first use, so they are not among the bundled ones.
+  expect(markFor("linear")).toBeNull();
   expect(markFor("acme")).toBeNull();
 });
 
@@ -425,4 +427,22 @@ test("the plan shows for this turn's work or a carried-over answer, never for st
   expect(planCarriesOver(null, answered)).toBe(true);
   expect(planCarriesOver(null, undefined)).toBe(true);
   expect(planCarriesOver(null, stopped)).toBe(false);
+});
+
+test("a reconnect keeps the tab's text once tools have run, so tool positions stay right", () => {
+  const store = useChatStore.getState();
+  store.clearTranscript();
+  store.startTurn("t1", "q", 1);
+  store.appendText("Let me look.", 2);
+  store.addToolCall({ re: "t1", kind: "tool_call", call_id: "c1", name: "grep", args_preview: "", summary: "" } as never);
+  store.appendText("Found it.", 3);
+  const before = useChatStore.getState().turns[0].answer;
+  store.adoptRunningTurn("Let me look.Found it. And more text from the host", null, 4);
+  expect(useChatStore.getState().turns[0].answer).toBe(before);
+
+  store.clearTranscript();
+  store.startTurn("t2", "q", 1);
+  store.appendText("Let me", 2);
+  store.adoptRunningTurn("Let me look at it", null, 3);
+  expect(useChatStore.getState().turns[0].answer).toBe("Let me look at it");
 });

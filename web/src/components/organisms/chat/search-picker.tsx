@@ -35,7 +35,7 @@ export function SearchPicker({ disabled }: { disabled: boolean }) {
   const ready = useConnectionStore((s) => s.phase === "open");
   const started = useChatStore((s) => s.sessionsLoaded);
 
-  // The engine list waits for the conversation, so opening a chat stays as fast as before.
+  // The engine list waits for the conversation, so it never slows opening a chat.
   useEffect(() => {
     if (ready && started && search.status === "idle") void loadSearch(session);
   }, [ready, started, search.status, session]);

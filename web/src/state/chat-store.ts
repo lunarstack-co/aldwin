@@ -37,6 +37,8 @@ export type ToolRow = {
   remoteTool: string | null;
   reason: string | null;
   display: Display | null;
+  /** How much of the answer had streamed when this call started, so it is drawn after that text. */
+  textBefore: number;
 };
 
 export type TurnStatus = "streaming" | "stopping" | "answered" | "stopped" | "max_steps" | "error";
@@ -101,6 +103,8 @@ type ChatState = {
   currentSessionId: string | null;
   /** The host has listed its conversations at least once since this page loaded. */
   sessionsLoaded: boolean;
+  /** Deleted in this tab, so an address that still names one goes to a new chat instead. */
+  deletedSessionIds: string[];
   /** The first history has arrived, so the transcript shows the real conversation. */
   historyLoaded: boolean;
   historyView: HistoryView;
@@ -134,6 +138,7 @@ type ChatState = {
   setHistoryView: (view: HistoryView) => void;
   setNotice: (notice: SessionNotice | null) => void;
   setSessions: (items: SessionMeta[], current: SessionMeta | null) => void;
+  forgetSession: (id: string) => void;
   startTurn: (id: string, text: string, now: number, apps?: PickedApp[]) => void;
   /** Take back a turn the host refused because another is running, keeping its text as a draft. */
   refuseTurn: (id: string) => void;
@@ -205,8 +210,14 @@ function newTurn(id: string, userText: string, now: number, status: TurnStatus):
 const NO_TODOS: Todos = { items: [], done: 0, total: 0 };
 let toastSeq = 0;
 
-function toolRow(callId: string, name: string): ToolRow {
+/** Where a tool call falls in the answer: after the text so far, less any trailing space a paragraph break drops. */
+function textEnd(answer: string): number {
+  return answer.replace(/\s+$/, "").length;
+}
+
+function toolRow(callId: string, name: string, textBefore = 0): ToolRow {
   return {
+    textBefore,
     callId,
     name,
     argsPreview: "",
@@ -239,7 +250,10 @@ function groupHistory(items: HistoryItem[]): Turn[] {
       if (item.at) turn.assistantAt = item.at;
     } else if (item.role === "tool") {
       const failed = item.text.startsWith("✗");
-      turn.tools.push({ ...toolRow(`history_${index}`, item.text.replace(/^[✓✗]\s*/, "")), ok: !failed });
+      turn.tools.push({
+        ...toolRow(`history_${index}`, item.text.replace(/^[✓✗]\s*/, ""), textEnd(turn.answer)),
+        ok: !failed,
+      });
     }
   });
   return turns;
@@ -264,6 +278,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [],
   currentSessionId: null,
   sessionsLoaded: false,
+  deletedSessionIds: [],
   historyLoaded: false,
   historyView: "chat",
   notice: null,
@@ -366,6 +381,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setTurnStatus: (message, activeTool) =>
     set((state) => updateActive(state, (t) => ({ ...t, statusMessage: message, activeTool }))),
 
+  forgetSession: (id) => {
+    if (get().currentSessionId === id) get().clearTranscript();
+    set((state) => ({ deletedSessionIds: [...state.deletedSessionIds, id] }));
+  },
   setSessions: (items, current) =>
     set({ sessions: items, currentSessionId: current?.id ?? null, sessionsLoaded: true }),
 
@@ -430,7 +449,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         tools: [
           ...t.tools,
           {
-            ...toolRow(event.call_id, event.name),
+            ...toolRow(event.call_id, event.name, textEnd(t.answer)),
             argsPreview: event.args_preview,
             summary: event.summary,
             connectorTitle: event.connector ? (event.connector_title ?? event.connector) : null,
@@ -550,7 +569,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (state.activeId !== null) {
         return updateActive(state, (t) => ({
           ...t,
-          answer: partialText && partialText.length > t.answer.length ? partialText : t.answer,
+          // Tool positions are counted in this tab's text, so only an answer with no tools yet is swapped.
+          answer:
+            partialText && t.tools.length === 0 && partialText.length > t.answer.length ? partialText : t.answer,
           statusMessage: message || t.statusMessage,
           activeTool: activeTool ?? t.activeTool,
         }));
@@ -560,7 +581,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       turn.answer = partialText ?? "";
       turn.statusMessage = message;
       turn.activeTool = activeTool;
-      if (activeTool) turn.tools.push(toolRow(`${id}_tool`, activeTool));
+      if (activeTool) turn.tools.push(toolRow(`${id}_tool`, activeTool, textEnd(turn.answer)));
       return { turns: [...state.turns, turn], activeId: id };
     }),
 

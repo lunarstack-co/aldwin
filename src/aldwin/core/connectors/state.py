@@ -61,6 +61,7 @@ class ConnectorSnapshot:
     transport: ConnectorTransport = "http"
     command: str | None = None  # the display form of a local command line
     note: str | None = None
+    icon: str | None = None  # set when an icon is saved; changes when the icon does
 
 
 def tool_infos(

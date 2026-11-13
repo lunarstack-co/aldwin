@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 
+import type { FakeHost } from "./fixtures/fake-host";
 import { expect, openChat, send, session, setDensity, test, useProjectTheme } from "./fixtures/test";
 
 test.beforeEach(async ({ page }, testInfo) => {
@@ -52,6 +53,7 @@ test("no axe violations on onboarding, take over and not found", async ({ page, 
   await axe(page, "personality");
   host.status = { ...host.status, profile_done: true };
   await page.goto("/nope/");
+  await expect(page.getByTestId("not-found")).toBeVisible();
   await axe(page, "not found");
   host.refuseWith = { code: 4409, reason: "already_attached" };
   await page.goto("/");
@@ -166,11 +168,13 @@ test("Settings works without a pointer", async ({ page, host }) => {
   expect(host.settings.limits.max_steps).toBe(20);
 });
 
-test("the Add an app dialog passes axe", async ({ page }) => {
+test("the Tools page and the Add a custom app dialog pass axe", async ({ page }) => {
   await openChat(page, "/settings/?section=tools");
+  await expect(page.getByTestId("connector-catalog").locator("[data-catalog]").first()).toBeVisible();
+  await axe(page, "tools page");
   await page.getByTestId("add-app-open").click();
-  await expect(page.getByTestId("add-app").locator("[data-catalog]").first()).toBeVisible();
-  await axe(page, "add an app");
+  await expect(page.getByTestId("connect-dialog").getByLabel("Server address")).toBeVisible();
+  await axe(page, "add a custom app");
 });
 
 test("the open apps menu and a picked app chip pass axe", async ({ page }) => {
@@ -199,17 +203,19 @@ test("the remove-app dialog passes axe", async ({ page }) => {
   await axe(page, "remove app");
 });
 
-test("approvals, grants, every display, stopped run, context ring and JSON panel pass axe", async ({
-  page,
-  host,
-}) => {
+// One audit conversation in detail density, with a turn running; each test below scans one part of it,
+// so no single test runs ten axe scans against one time limit.
+async function startAudit(page: import("@playwright/test").Page, host: FakeHost) {
   host.sessions = [session("s_a11y", "Audit")];
   host.current = host.sessions[0]!;
   host.conversations.set("s_a11y", { body: { meta: { id: "s_a11y" }, turns: [] } });
   await openChat(page, "/c/?id=s_a11y");
   await setDensity(page, "detail");
-
   await send(page, "audit");
+}
+
+test("a command approval passes axe while asked, running and done", async ({ page, host }) => {
+  await startAudit(page, host);
   host.toolCall({ call_id: "c_cmd", name: "run_command" });
   host.emitApproval({
     approval_id: "ap_1",
@@ -253,7 +259,10 @@ test("approvals, grants, every display, stopped run, context ring and JSON panel
   });
   await expect(page.getByTestId("approval-card")).toContainText("Approved");
   await axe(page, "approval done");
+});
 
+test("a folder grant and its deny reason pass axe", async ({ page, host }) => {
+  await startAudit(page, host);
   host.toolCall({ call_id: "c_grant", name: "read_file" });
   host.emitApproval({
     approval_id: "ap_g",
@@ -270,7 +279,13 @@ test("approvals, grants, every display, stopped run, context ring and JSON panel
   await page.locator('[data-approval-id="ap_g"]').getByTestId("approval-deny-confirm").click();
   await expect(page.locator('[data-approval-id="ap_g"]')).toContainText("Denied");
   await axe(page, "approval denied");
+});
 
+test("every display, a tool failure, a stopped run, the context ring and the JSON panel pass axe", async ({
+  page,
+  host,
+}) => {
+  await startAudit(page, host);
   const displays = [
     {
       id: "d_diff",
@@ -383,9 +398,27 @@ test("the app catalogue with headings, logos and letter marks passes axe", async
     { name: "acme", title: "Acme", purpose: "Tasks", url: "https://mcp.acme.example.com/mcp", auth: "oauth", docs_url: "https://acme.example.com", keywords: ["acme", "tasks"], token_help_url: null, added: false, category: "work" },
   ];
   await openChat(page, "/settings/?section=tools");
-  await page.getByTestId("add-app-open").click();
-  const catalog = page.getByTestId("add-app").getByTestId("connector-catalog");
+  const catalog = page.getByTestId("connector-catalog");
   await expect(catalog.locator('[data-catalog="stripe"] svg[data-brand="stripe"]')).toBeVisible();
   await expect(catalog.locator('[data-catalog="acme"] [data-letter]')).toBeVisible();
   await axe(page, "app catalogue");
+});
+
+test("the conversation menu and the rename and delete dialogs pass axe", async ({ page, host }) => {
+  host.sessions = [session("a", "Alpha")];
+  await openChat(page);
+  const row = page.getByTestId("history-row").filter({ visible: true, hasText: "Alpha" });
+  await row.hover();
+  await row.locator("xpath=..").getByTestId("conversation-options").click();
+  await expect(page.getByTestId("conversation-menu")).toBeVisible();
+  await axe(page, "conversation menu");
+  await page.getByTestId("conversation-rename").click();
+  await expect(page.getByTestId("rename-input")).toBeFocused();
+  await axe(page, "rename dialog");
+  await page.keyboard.press("Escape");
+  await row.hover();
+  await row.locator("xpath=..").getByTestId("conversation-options").click();
+  await page.getByTestId("conversation-delete").click();
+  await expect(page.getByTestId("delete-dialog")).toBeVisible();
+  await axe(page, "delete dialog");
 });

@@ -1,18 +1,17 @@
 "use client";
 
 import { AuiIf, ComposerPrimitive, useAui } from "@assistant-ui/react";
-import { ArrowUp, AtSign, Blocks, Square } from "lucide-react";
+import { ArrowUp, Square } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useEffect, useId, useRef, type KeyboardEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import copy from "@/data/chat/composer.json";
-import appsCopy from "@/data/chat/apps-menu.json";
 import { selectPendingApproval, useChatStore } from "@/state/chat-store";
 import { cn } from "@/utils/cn";
 
 import { AppsPopover } from "./apps-popover";
-import type { ButtonTrigger } from "./button-trigger";
+import { AppsButton, SkillsButton } from "./composer-buttons";
 import { ModelPicker } from "./model-picker";
 import { PickedAppList } from "./picked-apps";
 import { SearchPicker } from "./search-picker";
@@ -52,29 +51,6 @@ export function Composer({
     useChatStore.getState().clearDraft();
   }, [draft, aui]);
 
-  // Types `@` or `/` at the caret as a keystroke would, so the menu opens from the same input event.
-  // What it typed is remembered, so closing the menu without a pick takes it back.
-  const buttonTriggerRef = useRef<ButtonTrigger | null>(null);
-  function startTrigger(char: "@" | "/") {
-    const input = inputRef.current;
-    if (!input) return;
-    input.focus();
-    const start = input.selectionStart ?? input.value.length;
-    const end = input.selectionEnd ?? start;
-    const before = input.value.slice(0, start);
-    const inserted = before === "" || /\s$/.test(before) ? char : ` ${char}`;
-    buttonTriggerRef.current = {
-      char,
-      before,
-      inserted,
-      after: input.value.slice(end),
-      picked: false,
-      seenOpen: false,
-    };
-    input.setRangeText(inserted, start, end, "end");
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  }
-
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Escape" && active !== null && !stopping && !approvalWaiting) {
       event.preventDefault();
@@ -99,8 +75,8 @@ export function Composer({
         testId="composer-apps"
       />
       <ComposerPrimitive.TriggerPopoverRoot>
-        <SkillsPopover buttonTriggerRef={buttonTriggerRef} />
-        <AppsPopover buttonTriggerRef={buttonTriggerRef} />
+        <SkillsPopover />
+        <AppsPopover />
         <ComposerPrimitive.Input
           ref={inputRef}
           data-testid="composer-input"
@@ -124,30 +100,8 @@ export function Composer({
         {copy.hint}
       </p>
       <div className="flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          disabled={inputLocked}
-          onClick={() => startTrigger("@")}
-          aria-label={copy.skills}
-          title={copy.skills}
-          data-testid="composer-skills"
-          className="max-md:size-10"
-        >
-          <AtSign aria-hidden />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          disabled={inputLocked}
-          onClick={() => startTrigger("/")}
-          aria-label={appsCopy.button}
-          title={appsCopy.button}
-          data-testid="composer-apps-button"
-          className="max-md:size-10"
-        >
-          <Blocks aria-hidden />
-        </Button>
+        <SkillsButton inputRef={inputRef} disabled={inputLocked} />
+        <AppsButton inputRef={inputRef} disabled={inputLocked} />
         <ModelPicker placement="composer" fallback={model} disabled={disabled || active !== null} />
         <SearchPicker disabled={disabled} />
         <ContextSlot />

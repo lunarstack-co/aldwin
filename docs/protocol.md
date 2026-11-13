@@ -60,7 +60,7 @@ Every message is a Pydantic v2 model with `model_config = ConfigDict(extra="igno
 
 - `version_mismatch`: client's `v_min..v_max` does not include the host's `PROTOCOL_VERSION`.
 - `protocol`: a request was sent before completing the `hello` handshake.
-- `busy`: a `turn`, `set_model`, `sessions.open` or `sessions.new` was sent while another turn is already running, or a `turn` was sent while another Aldwin window is answering in the same conversation.
+- `busy`: a `turn`, `set_model`, `sessions.open` or `sessions.new` was sent while another turn is already running, a `turn` was sent while another Aldwin window is answering in the same conversation, or a `sessions.rename`, `sessions.pin` or `sessions.delete` reached a conversation that is busy (see [Conversations](#conversations)).
 - `unknown_approval`: `approve` referenced an `approval_id` that does not exist or already finished.
 - `unknown_model`: `set_model` requested an unsupported or blank model name.
 - `auth_failed`: the active model provider rejected the API key (`401` or `403`).
@@ -85,7 +85,7 @@ The tables above list the original `v1` messages. `v2` also has the skills and t
 
 ## Conversations
 
-Each conversation is one file in `~/.aldwin/sessions/`, and the host has exactly one active conversation at a time. These messages let any door list, open and start conversations. They were added without bumping `v` from 2.
+Each conversation is one file in `~/.aldwin/sessions/`, and the host has exactly one active conversation at a time. These messages let any door list, open, start, rename, pin and delete conversations. They were added without bumping `v` from 2.
 
 ### Requests
 
@@ -94,12 +94,15 @@ Each conversation is one file in `~/.aldwin/sessions/`, and the host has exactly
 | `sessions.list` | `SessionsListRequest` | none | List saved conversations and the active one. |
 | `sessions.open` | `SessionsOpenRequest` | `session_id: str` | Make a saved conversation the active one. |
 | `sessions.new` | `SessionsNewRequest` | none | Start a conversation, reusing an empty one when there is one. |
+| `sessions.rename` | `SessionsRenameRequest` | `session_id: str`, `title: str` | Give a conversation a title of the user's own. |
+| `sessions.pin` | `SessionsPinRequest` | `session_id: str`, `pinned: bool` | Pin a conversation, or unpin it. |
+| `sessions.delete` | `SessionsDeleteRequest` | `session_id: str` | Delete a conversation's file. |
 
 ### Event
 
 | `kind` | Model | Fields | Description |
 |---|---|---|---|
-| `sessions` | `SessionsEvent` | `items: list[SessionMetaItem]`, `current: SessionMetaItem \| None` | Each item has `id`, `created_at`, `updated_at`, `model`, `title` and `interrupted`. |
+| `sessions` | `SessionsEvent` | `items: list[SessionMetaItem]`, `current: SessionMetaItem \| None` | Each item has `id`, `created_at`, `updated_at`, `model`, `title`, `interrupted` and `pinned`. |
 
 ### Rules
 
@@ -110,6 +113,11 @@ Each conversation is one file in `~/.aldwin/sessions/`, and the host has exactly
 - While a turn is running, `sessions.open` and `sessions.new` get `error(code="busy")` and the active conversation does not change. The terminal's `/new` is different: it stops the running turn first.
 - A new conversation has an empty `title`. The title comes from the first message.
 - Switching saves the conversation being left without changing its `updated_at`, so opening a conversation and leaving it does not move it up the list.
+- `sessions.rename`, `sessions.pin` and `sessions.delete` reply like `sessions.list`, with `items` and `current`, so a door can redraw its list from the answer.
+- A title is collapsed to one line, loses control and bidi characters, and is cut to 100 characters; a blank title is refused before it reaches the host. A renamed conversation keeps its title, and later messages do not replace it.
+- Renaming and pinning save the file without changing `updated_at`. `pinned` is `false` for files written before it existed. Pinned conversations stay in `items` in the usual order; doors list them separately.
+- `sessions.delete` removes `~/.aldwin/sessions/<id>.json`. Deleting the active conversation moves the host to an empty conversation first, the same one `sessions.new` would pick, and never writes the deleted file back. The memory index drops the conversation the next time it syncs.
+- An unknown id gets `error(code="not_found")`. Deleting the active conversation while its turn runs gets `error(code="busy")`; renaming and pinning it are allowed. Any of the three gets `busy` while another Aldwin window is answering in that conversation. A window whose open conversation was deleted in another window starts a new one with its next message, and says so in a `notice`, instead of writing the file back.
 
 ---
 
@@ -152,8 +160,9 @@ The browser door also reads and writes a few documents over plain HTTP. These ro
 | Route | Does |
 |---|---|
 | `GET /v1/health`, `GET /v1/home` | Version and the Aldwin home folder. |
-| `GET /v1/conversations` | Saved conversations newest first (`id`, `created_at`, `updated_at`, `model`, `title`, `interrupted`). Conversations with no turns are left out. |
+| `GET /v1/conversations` | Saved conversations newest first (`id`, `created_at`, `updated_at`, `model`, `title`, `interrupted`, `pinned`). Conversations with no turns are left out. |
 | `GET /v1/conversations/{id}` | The conversation file exactly as saved in `sessions/`, or 404. |
+| `GET /v1/connectors/{name}/icon` | A connected app's own icon as an image, or 404 when none is saved. Sent with `nosniff` and a sandboxing `Content-Security-Policy`, so an SVG cannot run scripts. |
 | `GET /v1/settings` | `model`, `check_for_updates`, `limits`, `search` and every key masked with its source. |
 | `PATCH /v1/settings` | Changes `model`, `check_for_updates`, `limits.*` or `search.provider`/`search.searxng_url`. Any other field, keys included, is a 400 and nothing is written. |
 | `POST /v1/settings/secrets` | `{kind: "provider" \| "search", name, key, base_url?}`. Checks the key with the provider, saves it only if the check passes, and answers with the key masked. Saving a search key also makes that provider the one `web_search` uses, as `/search` does. A rejected key is a 400; a provider that cannot be reached is a 502. |
@@ -192,7 +201,11 @@ Connectors add MCP servers whose tools join the conversation: remote servers by 
 | `connectors.auth_paste` | `name`, `redirect_url` (never in `repr`) | `done`, or `error(code="connector")` for an address from another sign-in or with no code; the sign-in keeps waiting |
 | `connectors.auth_token` | `name`, `token` (never in `repr`) | `done`; the waiting `connectors.add` carries on with the token |
 
-`connectors.add`, `connectors.enable`, `connectors.reconnect` and `connectors.login` run as owned tasks, so `approve`, `stop` and the `auth_*` answers are still served while they wait. Each still gets exactly one `done` or `error`. A second flow for a name already in progress gets `error(code="busy")`. `stop` cancels a flow that is waiting for the user; that flow ends with `done(reason="stopped")` and saves nothing.
+`connectors.add`, `connectors.enable`, `connectors.reconnect` and `connectors.login` run as owned tasks, so `approve`, `stop` and the `auth_*` answers are still served while they wait. Each still gets exactly one `done` or `error`. A second flow for a name already in progress gets `error(code="busy")`. `stop` cancels a flow that is waiting for the user and, when no answer is running, an add that is still connecting; that flow ends with `done(reason="stopped")` and saves nothing.
+
+A `connectors.add` with `auth: "none"` whose server answers 401 does not fail straight away. If the server publishes OAuth metadata, the add carries on as browser sign-in (a `connector.auth` in `browser` or `paste` mode) and saves `auth: oauth`. Otherwise it asks for a token (`connector.auth` in `token` mode) and saves `auth: bearer`. A door can therefore add any address with `auth: "none"` and let the server decide.
+
+The first time an app that is not in the catalogue connects, the host looks for its icon: first the `icons` the server declares about itself, then `/favicon.svg`, `/apple-touch-icon.png` and `/favicon.ico` on the server's own site. Only the server's host, its parent domain (`example.com` for `mcp.example.com`) and that domain's `www.` form are asked, including after a redirect, with no sign-in, and only a PNG, SVG, JPEG, WebP or ICO of at most 256 KiB is kept, in `~/.aldwin/state/connector-icons/`. Finding the icon never delays the connection: the app reports connected first, and again once its icon is saved. The icon stays until the app is removed. Catalogue apps use the marks doors ship with.
 
 ### Events
 
@@ -204,7 +217,7 @@ Connectors add MCP servers whose tools join the conversation: remote servers by 
 | `connector.auth` | `name`, `title`, `mode: "browser" \| "paste" \| "token"`, `url` (the sign-in address; `null` for `token`), `token_help_url`, `expires_in` (seconds left to answer). Also sent during a `turn`, on the turn's `re`, when `propose_connector` needs the user to sign in; the door answers it the same way (`connectors.auth_paste`, `connectors.auth_token`, or `stop` to give up, which ends the turn) |
 | `connector.probe` | `name`, `title`, `tools: list[ConnectorToolInfo]`, `read: int`, `write: int` |
 
-`ConnectorInfo` has `name`, `title`, `url` (`null` for a local connector), `enabled`, `status`, `auth`, `trust_read_only_hints`, `tools`, `error`, `retry_in_s`, `transport` (`http`, `stdio` or `sse`), `command` (how a local connector starts, for display) and `note`. An `sse` entry is never connected (`error: "SSE is not supported"`); a local entry whose command changed since it was approved shows `error: "needs approval: open /connectors to enable it"` and does not start. `connectors.enable` on such an entry sends `approval` (`tool="connectors.enable"`) first. `ConnectorToolInfo` has `name`, `model_name` (`mcp__<connector>__<tool>`), `title`, `description`, `read_only`, `setting` (the user's choice, or `null`) and `effective` (`auto`, `ask` or `off`).
+`ConnectorInfo` has `name`, `title`, `url` (`null` for a local connector), `enabled`, `status`, `auth`, `trust_read_only_hints`, `tools`, `error`, `retry_in_s`, `transport` (`http`, `stdio` or `sse`), `command` (how a local connector starts, for display), `note` and `icon`. `icon` is `null` until the host holds the app's own icon, then a short string that changes whenever the icon does; a door adds it to the icon address as `?v=` so a new icon is never hidden by a cache. An `sse` entry is never connected (`error: "SSE is not supported"`); a local entry whose command changed since it was approved shows `error: "needs approval: open /connectors to enable it"` and does not start. `connectors.enable` on such an entry sends `approval` (`tool="connectors.enable"`) first. `ConnectorToolInfo` has `name`, `model_name` (`mcp__<connector>__<tool>`), `title`, `description`, `read_only`, `setting` (the user's choice, or `null`) and `effective` (`auto`, `ask` or `off`).
 
 `CatalogItem` has `name`, `title`, `purpose`, `url`, `auth`, `docs_url`, `keywords`, `token_help_url`, `added` (already in `connectors.yaml`) and `category` (`work`, `developer`, `payments`, `design`, `automation`, `data` or `search`; `null` from older hosts). Doors list apps under their category and drop the headings while searching.
 
@@ -223,7 +236,7 @@ Events not tied to a request, such as `connector.status` and a `notice` when a c
 ### Error codes
 
 - `connector`: a user error, with the message to show as is (`Connector URL must use https:// (got <url>)`, `A connector named <name> already exists`, `That address isn't an MCP server (got text/html).`, `Couldn't reach <host>: <reason>.`, `The server refused the token (401).`).
-- `auth_required`: the server answered 401 and no token was given (`<host> needs a token.`). Ask for a token and retry `connectors.add` with it. Also sent when a sign-in is needed and no one can answer it.
+- `auth_required`: the server answered 401 and nobody could be asked for a token or sign-in (`<host> needs a token.`), for example a door that sent no way to answer `connector.auth`. Ask for a token and retry `connectors.add` with it.
 
 ---
 

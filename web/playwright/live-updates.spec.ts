@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 import { connectorFixture } from "./fixtures/settings-fixtures";
 import { expect, openChat, test, type FakeHost } from "./fixtures/test";
 
-// The real host answers changes with `done` alone, as the fake now does: the page must re-read its lists.
+// The real host answers changes with `done` alone, so the page must re-read its lists.
 
 function connectBrave(host: FakeHost) {
   host.search.items = host.search.items.map((i) => (i.name === "brave" ? { ...i, connected: true, source: "file", detail: "key-…9999" } : i));

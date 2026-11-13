@@ -23,13 +23,16 @@ export function LiveDot({ className }: { className?: string }) {
   return <span aria-hidden className={cn("bg-live animate-live-pulse inline-block size-1.5 rounded-full", className)} />;
 }
 
-/** "Working for 8s" (or the host's status line), then "Worked for 12s", or a plain count for history without timing. */
-function useWorkLabel(count: number): { label: string; running: boolean } {
+/**
+ * "Working for 8s" (or the host's status line), then "Worked for 12s", or a plain count for history
+ * without timing. The turn's last group of calls carries its time; an earlier group just counts.
+ */
+function useWorkLabel(count: number, latest: boolean): { label: string; running: boolean } {
   const messageId = useAuiState((s) => s.message.id);
-  const running = useAuiState((s) => s.message.status?.type === "running");
+  const running = useAuiState((s) => s.message.status?.type === "running") && latest;
   const turn = useChatStore((s) => s.turns.find((t) => t.id === turnIdOf(messageId)));
   const seconds = useElapsed(turn?.startedAt ?? 0, turn?.endedAt ?? null, running);
-  const timed = turn !== undefined && turn.startedAt > 0 && (running || turn.endedAt !== null);
+  const timed = latest && turn !== undefined && turn.startedAt > 0 && (running || turn.endedAt !== null);
   const base = running
     ? turn?.statusMessage
       ? fill(copy.workingStatus, { status: turn.statusMessage, seconds })
@@ -48,11 +51,16 @@ function FailedCount({ failed }: { failed: number }) {
 /** Clean mode: the turn's tool calls behind one line, collapsed once done. */
 export function WorkChip() {
   const collapsed = useAuiState((s) => s.chainOfThought.collapsed);
-  const count = useAuiState((s) => s.message.parts.filter((p) => p.type === "tool-call").length);
+  const count = useAuiState((s) => s.chainOfThought.parts.filter((p) => p.type === "tool-call").length);
   const failed = useAuiState(
-    (s) => s.message.parts.filter((p) => p.type === "tool-call" && p.isError === true).length,
+    (s) => s.chainOfThought.parts.filter((p) => p.type === "tool-call" && p.isError === true).length,
   );
-  const { label, running } = useWorkLabel(count);
+  // The last group holds the turn's last tool call.
+  const latest = useAuiState((s) => {
+    const last = s.message.parts.findLast((p) => p.type === "tool-call");
+    return last?.type === "tool-call" && s.chainOfThought.parts.some((p) => p.type === "tool-call" && p.toolCallId === last.toolCallId);
+  });
+  const { label, running } = useWorkLabel(count, latest);
 
   return (
     <ChainOfThoughtPrimitive.Root
@@ -90,7 +98,9 @@ export function DetailToolGroup({
   children?: ReactNode;
 }) {
   const count = endIndex - startIndex + 1;
-  const running = useAuiState((s) => s.message.status?.type === "running");
+  const running = useAuiState(
+    (s) => s.message.status?.type === "running" && !s.message.parts.slice(endIndex + 1).some((p) => p.type === "tool-call"),
+  );
   return (
     <ToolGroupRoot variant="ghost" defaultOpen data-testid="tool-group">
       <ToolGroupTrigger count={count} active={running} />

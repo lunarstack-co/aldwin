@@ -48,7 +48,6 @@ export async function openChat(page: Page, path = "/"): Promise<void> {
   await expect(page.getByTestId(ids.status)).toHaveAttribute("data-phase", "open");
 }
 
-/** Type a message and press Enter. */
 export async function send(page: Page, text: string): Promise<void> {
   await page.getByTestId(ids.input).fill(text);
   await page.getByTestId(ids.input).press("Enter");

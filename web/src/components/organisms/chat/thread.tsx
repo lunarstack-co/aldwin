@@ -81,9 +81,11 @@ export function Thread({ model, disabled }: { model: string; disabled: boolean }
             </ThreadPrimitive.ScrollToBottom>
             <ApprovalPill />
             <PlanSlot />
-            <p data-testid="composer-disclaimer" className="text-muted-foreground -mb-1 text-center text-xs">
-              {composerCopy.disclaimer}
-            </p>
+            {!isEmpty && (
+              <p data-testid="composer-disclaimer" className="text-muted-foreground -mb-1 text-center text-xs">
+                {composerCopy.disclaimer}
+              </p>
+            )}
             <Composer variant={isEmpty ? "centered" : "docked"} model={model} disabled={disabled} />
           </ThreadPrimitive.ViewportFooter>
         </div>

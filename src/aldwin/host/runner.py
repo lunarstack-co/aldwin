@@ -56,6 +56,7 @@ from aldwin.core.connectors.errors import (
     ConnectorError,
     NeedsSignIn,
 )
+from aldwin.core.connectors.icons import fetch_icon
 from aldwin.core.connectors.local import parse_command_line
 from aldwin.core.connectors.oauth_messages import needs_sign_in
 from aldwin.core.connectors.picks import build_picked_apps
@@ -191,10 +192,13 @@ from aldwin.protocol import (
     SearchProvidersEvent,
     SearchUseRequest,
     SessionMetaItem,
+    SessionsDeleteRequest,
     SessionsEvent,
     SessionsListRequest,
     SessionsNewRequest,
     SessionsOpenRequest,
+    SessionsPinRequest,
+    SessionsRenameRequest,
     SetModelRequest,
     SkillBodyEvent,
     SkillsEvent,
@@ -229,6 +233,9 @@ CIRCUIT_BREAKER_NOTICE: Final[str] = (
 CONVERSATION_BUSY_MESSAGE: Final[str] = (
     "Another Aldwin window is answering in this conversation. "
     "Wait for it to finish, then try again."
+)
+DELETED_ELSEWHERE: Final[str] = (
+    "That conversation was deleted in another window, so this message starts a new one."
 )
 # Lets a reloading browser tab come back and answer waiting approvals.
 APPROVAL_RECONNECT_GRACE_S: Final[float] = 60.0
@@ -792,6 +799,7 @@ class AldwinHost:
             loaded_cap=config.limits.connector_tools,
             workspace_root=lambda: self._workspace.root,
             turn_auth=self._auth_during_turn,
+            find_icon=fetch_icon,
         )
         self._import_paths = list(config.connectors.import_paths)
         self._connectors_started = False
@@ -840,12 +848,10 @@ class AldwinHost:
 
     @property
     def policy_session(self) -> PolicySession:
-        """Return the active `PolicySession`."""
         return self._policy_session
 
     @property
     def workspace(self) -> Workspace:
-        """Return the active `Workspace`."""
         return self._workspace
 
     @property
@@ -1053,12 +1059,10 @@ class AldwinHost:
 
     @property
     def model(self) -> str:
-        """Return the currently configured model name."""
         return self._model
 
     @property
     def stored_session(self) -> StoredSession:
-        """Return the active `StoredSession`."""
         return self._stored_session
 
     async def start(self) -> None:
@@ -1121,9 +1125,16 @@ class AldwinHost:
                 self._approvals.disconnect_all()
 
     def _reload_session_if_changed(self) -> bool:
-        """Load the session file if another process saved it; False if unreadable."""
+        """Load the session file if another process saved it; False if unreadable.
+
+        A file this host saved that has since gone was deleted in another window,
+        so the host moves to an empty conversation instead of writing it back.
+        """
         path = self._stored_session.path
         fingerprint = session_file_fingerprint(path)
+        if fingerprint == (0, 0) and self._session_fingerprint != (0, 0):
+            self._activate_session(self._empty_or_new_session(), save_current=False)
+            return True
         if fingerprint in (self._session_fingerprint, (0, 0)):
             return True
         reloaded = self._session_store.load_file(path)
@@ -1211,6 +1222,9 @@ class AldwinHost:
         active = self._stored_session
         if not session_has_turns(active.turns, active.meta.title):
             return active
+        return self._empty_or_new_session()
+
+    def _empty_or_new_session(self) -> StoredSession:
         saved = self._session_store.list_metas(include_empty=True)
         if saved and not saved[0].has_turns:
             latest = self._session_store.load_id(saved[0].id)
@@ -1218,13 +1232,20 @@ class AldwinHost:
                 return latest
         return self._session_store.create_new(model=self._model)
 
-    def _activate_session(self, stored: StoredSession) -> None:
-        """Make `stored` the active conversation; the caller checks it is idle."""
+    def _activate_session(
+        self, stored: StoredSession, *, save_current: bool = True
+    ) -> None:
+        """Make `stored` the active conversation; the caller checks it is idle.
+
+        `save_current=False` is for a conversation just deleted, which must not
+        be written back.
+        """
         if stored.meta.id == self._stored_session.meta.id:
             return
-        self._persist_session(
-            interrupted=self._stored_session.meta.interrupted, touch=False
-        )
+        if save_current:
+            self._persist_session(
+                interrupted=self._stored_session.meta.interrupted, touch=False
+            )
         self._policy_session.reset_turn()
         self._todo = list(stored.todo or [])
         # Later turns run on the host's model, so the conversation records it.
@@ -1245,7 +1266,91 @@ class AldwinHost:
             model=source.model,
             title=source.title,
             interrupted=source.interrupted,
+            pinned=source.pinned,
         )
+
+    def _sessions_event(self, re_id: str) -> SessionsEvent:
+        items = [self._session_item(m) for m in self._session_store.list_metas()]
+        return SessionsEvent(
+            re=re_id, items=items, current=self._session_item(self._stored_session)
+        )
+
+    async def _handle_session_change(
+        self,
+        scope: RequestScope,
+        req: SessionsRenameRequest | SessionsPinRequest | SessionsDeleteRequest,
+    ) -> None:
+        """Rename, pin or delete a conversation, then reply with the new list."""
+        active = req.session_id == self._stored_session.meta.id
+        running_here = active and self._turn_in_flight()
+        if running_here and isinstance(req, SessionsDeleteRequest):
+            await scope.error(
+                "busy",
+                "Aldwin is still working in this conversation. "
+                "Stop it before deleting it.",
+            )
+            return
+        if not active and self._session_store.load_id(req.session_id) is None:
+            await scope.error("not_found", "That conversation no longer exists.")
+            return
+        # A running turn here already holds the lock; anyone else holding it is
+        # another window answering in that conversation.
+        lock = None if running_here else ConversationLock(self._home, req.session_id)
+        if lock is not None and not lock.try_acquire():
+            await scope.error(
+                "busy",
+                "Another Aldwin window is answering in that conversation. "
+                "Try again when it finishes.",
+            )
+            return
+        try:
+            changed = self._change_session(
+                req, active=active, running_here=running_here
+            )
+        finally:
+            if lock is not None:
+                lock.release()
+        if not changed:
+            await scope.error("not_found", "That conversation no longer exists.")
+            return
+        await scope.emit(self._sessions_event(req.id))
+        await scope.done("ok")
+
+    def _change_session(
+        self,
+        req: SessionsRenameRequest | SessionsPinRequest | SessionsDeleteRequest,
+        *,
+        active: bool,
+        running_here: bool,
+    ) -> bool:
+        """Apply the change; False when the conversation is gone (deleted elsewhere)."""
+        if active and not running_here:
+            self._reload_session_if_changed()
+            if self._stored_session.meta.id != req.session_id:
+                return False
+        target = (
+            self._stored_session
+            if active
+            else self._session_store.load_id(req.session_id)
+        )
+        if target is None:
+            return False
+        if isinstance(req, SessionsDeleteRequest):
+            self._session_store.delete(target)
+            if active:
+                self._activate_session(self._empty_or_new_session(), save_current=False)
+            return True
+        if isinstance(req, SessionsRenameRequest):
+            target.meta.title = req.title
+        else:
+            target.meta.pinned = req.pinned
+        if active:
+            self._persist_session(interrupted=target.meta.interrupted, touch=False)
+        else:
+            self._session_store.save(
+                target, target.memory, interrupted=target.meta.interrupted, touch=False
+            )
+        return True
 
     async def _handle_sessions(
         self,
@@ -1253,14 +1358,7 @@ class AldwinHost:
         req: SessionsListRequest | SessionsOpenRequest | SessionsNewRequest,
     ) -> None:
         if isinstance(req, SessionsListRequest):
-            items = [self._session_item(m) for m in self._session_store.list_metas()]
-            await scope.emit(
-                SessionsEvent(
-                    re=req.id,
-                    items=items,
-                    current=self._session_item(self._stored_session),
-                )
-            )
+            await scope.emit(self._sessions_event(req.id))
             await scope.done("ok")
             return
 
@@ -1362,6 +1460,10 @@ class AldwinHost:
                 req, SessionsListRequest | SessionsOpenRequest | SessionsNewRequest
             ):
                 await self._handle_sessions(scope, req)
+            elif isinstance(
+                req, SessionsRenameRequest | SessionsPinRequest | SessionsDeleteRequest
+            ):
+                await self._handle_session_change(scope, req)
             elif isinstance(req, SetModelRequest):
                 await self._handle_set_model(scope, req)
             elif isinstance(req, ModelsListRequest):
@@ -1483,9 +1585,7 @@ class AldwinHost:
         | ConnectorsReconnectRequest
         | ConnectorsLoginRequest,
     ) -> None:
-        """Run a long connector flow as an owned task, so `approve` and `stop`
-        are still served while it waits on the network.
-        """
+        """Run a long connector flow as a task, so `approve` and `stop` still run."""
         scope = RequestScope(
             req.id, self._transport.send_event, version=self._negotiated_version
         )
@@ -1670,10 +1770,12 @@ class AldwinHost:
     async def _handle_stop(self, scope: RequestScope) -> None:
         self._approvals.cancel_all()
         waiting = self._connectors.waiting_for_user()
+        idle = not self._turn_in_flight()
+        # With no answer running, Stop also ends an add that is still connecting.
         stopped = [
             task
             for req_id, task in self._connector_tasks.items()
-            if self._connector_flow_names.get(req_id) in waiting
+            if idle or self._connector_flow_names.get(req_id) in waiting
         ]
         for req_id, task in list(self._connector_tasks.items()):
             if task in stopped:
@@ -1697,7 +1799,7 @@ class AldwinHost:
         if status == "ok":
             await scope.done("ok")
         elif status == "digest_mismatch":
-            # ignore mismatched digest, log as error, keep waiting
+            # The broker logged the mismatch; the approval keeps waiting.
             await scope.done("ok")
         else:
             await scope.error(
@@ -2259,6 +2361,7 @@ class AldwinHost:
             self._ensure_attach_watch()
             try:
                 # Under the lock, so another window's finished turn is complete.
+                asked_in = self._stored_session.meta.id
                 if not self._reload_session_if_changed():
                     await scope.error(
                         "internal",
@@ -2267,6 +2370,8 @@ class AldwinHost:
                         "/new; the file stays in ~/.aldwin/sessions.",
                     )
                     return
+                if self._stored_session.meta.id != asked_in:
+                    await scope.emit(NoticeEvent(re=req.id, message=DELETED_ELSEWHERE))
                 await self._run_turn_steps(scope, req)
             finally:
                 # No await: the door may send its next request right after `done`.
@@ -2800,6 +2905,7 @@ def _connector_info(snapshot: ConnectorSnapshot) -> ConnectorInfo:
         transport=snapshot.transport,
         command=snapshot.command,
         note=snapshot.note,
+        icon=snapshot.icon,
     )
 
 

@@ -18,7 +18,7 @@ from aldwin.protocol import HistoryApp, HistoryItem
 def test_session_save_creates_file_with_0600_and_derives_60_char_title(
     aldwin_home: Path,
 ) -> None:
-    """TC-24: First user message sets `meta.title` (<= 60 chars) and file mode 0600."""
+    """First user message sets `meta.title` (<= 60 chars) and file mode 0600."""
     store = SessionStore()
     stored = store.create_new(model="gpt-4o")
     assert stored.path.exists()
@@ -53,7 +53,7 @@ def test_session_save_creates_file_with_0600_and_derives_60_char_title(
 def test_crash_after_step_2_reloads_steps_and_sets_interrupted_true(
     aldwin_home: Path,
 ) -> None:
-    """TC-11: Crash after step 2 reloads steps 1-2 intact with `interrupted=True`."""
+    """Crash after step 2 reloads steps 1-2 intact with `interrupted=True`."""
     store = SessionStore()
     stored = store.create_new(model="gpt-4o")
 
@@ -100,7 +100,7 @@ def test_crash_after_step_2_reloads_steps_and_sets_interrupted_true(
 def test_create_new_starts_clean_session_and_leaves_previous_file_untouched(
     aldwin_home: Path,
 ) -> None:
-    """TC-12: `create_new` creates a new session file without modifying the old one."""
+    """`create_new` creates a new session file without modifying the old one."""
     store = SessionStore()
     first = store.create_new(model="gpt-4o")
     first.memory.add(TaskStep(task="First conversation"))
@@ -122,7 +122,7 @@ def test_atomic_save_survives_interrupted_write_and_skips_corrupt_file(
     aldwin_home: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """TC-23: Mid-write failure leaves original file intact; corrupt file is skipped."""
+    """Mid-write failure leaves original file intact; corrupt file is skipped."""
     store = SessionStore()
     stored = store.create_new(model="gpt-4o")
     stored.memory.add(TaskStep(task="Safe turn"))
@@ -162,7 +162,7 @@ def test_atomic_save_survives_interrupted_write_and_skips_corrupt_file(
 def test_render_history_windows_last_limit_and_summarises_tools(
     aldwin_home: Path,
 ) -> None:
-    """TC-26: `render_history` returns last `limit` messages + 1-line tool summaries."""
+    """`render_history` returns last `limit` messages + 1-line tool summaries."""
     store = SessionStore()
     memory = Memory()
 
@@ -422,7 +422,7 @@ def _turn(text: str) -> dict[str, object]:
 
 
 def test_list_metas_hides_zero_turn_sessions(aldwin_home: Path) -> None:
-    """TC-01: empty sessions are left out of the history list."""
+    """Empty sessions are left out of the history list."""
     sessions_dir = aldwin_home / "sessions"
     _write_session(sessions_dir, "2026-11-01_full", title="Hi", turns=[_turn("Hi")])
     _write_session(sessions_dir, "2026-11-01_empty")
@@ -440,7 +440,7 @@ def test_list_metas_hides_zero_turn_sessions(aldwin_home: Path) -> None:
 def test_list_metas_skips_corrupt_files(
     aldwin_home: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """TC-02: corrupt JSON and wrong shapes are skipped; the rest are listed."""
+    """Corrupt JSON and wrong shapes are skipped; the rest are listed."""
     sessions_dir = aldwin_home / "sessions"
     _write_session(sessions_dir, "2026-11-01_good", title="Ok", turns=[_turn("Ok")])
     (sessions_dir / "2026-11-01_broken.json").write_text("{not json", "utf-8")
@@ -459,7 +459,7 @@ def test_list_metas_skips_corrupt_files(
 
 
 def test_list_metas_orders_newest_first(aldwin_home: Path) -> None:
-    """TC-03: newest `updated_at` first, then the newer file on a tie."""
+    """Newest `updated_at` first, then the newer file on a tie."""
     sessions_dir = aldwin_home / "sessions"
     turns = [_turn("x")]
     old = _write_session(
@@ -500,7 +500,7 @@ def test_list_metas_orders_newest_first(aldwin_home: Path) -> None:
 
 
 def test_list_metas_ignores_non_json_and_dotfiles(aldwin_home: Path) -> None:
-    """TC-04: only visible `*.json` files are sessions."""
+    """Only visible `*.json` files are sessions."""
     sessions_dir = aldwin_home / "sessions"
     _write_session(sessions_dir, "real", title="r", turns=[_turn("r")])
     _write_session(
@@ -513,7 +513,7 @@ def test_list_metas_ignores_non_json_and_dotfiles(aldwin_home: Path) -> None:
 
 
 def test_list_metas_lists_legacy_titled_without_turns(aldwin_home: Path) -> None:
-    """TC-05: an older file with a title but no `turns` key still has turns."""
+    """An older file with a title but no `turns` key still has turns."""
     sessions_dir = aldwin_home / "sessions"
     legacy = Memory()
     legacy.add(TaskStep(task="Old question"))
@@ -531,7 +531,7 @@ def test_list_metas_lists_legacy_titled_without_turns(aldwin_home: Path) -> None
 
 
 def test_list_metas_hides_legacy_empty_title_without_turns(aldwin_home: Path) -> None:
-    """TC-06: no `turns` key and no title counts as an empty session."""
+    """No `turns` key and no title counts as an empty session."""
     sessions_dir = aldwin_home / "sessions"
     _write_session(sessions_dir, "legacy_empty")
 
@@ -539,7 +539,7 @@ def test_list_metas_hides_legacy_empty_title_without_turns(aldwin_home: Path) ->
 
 
 def test_list_metas_empty_turns_list_is_zero_turn(aldwin_home: Path) -> None:
-    """TC-07: `turns: []` with an empty title is an empty session."""
+    """`turns: []` with an empty title is an empty session."""
     sessions_dir = aldwin_home / "sessions"
     _write_session(sessions_dir, "empty_turns", turns=[])
 
@@ -551,7 +551,7 @@ def test_list_metas_empty_turns_list_is_zero_turn(aldwin_home: Path) -> None:
 def test_list_metas_does_not_call_memory_load_json(
     aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-08: listing reads metadata only, never the conversation."""
+    """Listing reads metadata only, never the conversation."""
     sessions_dir = aldwin_home / "sessions"
     _write_session(sessions_dir, "one", title="One", turns=[_turn("One")])
 
@@ -564,7 +564,7 @@ def test_list_metas_does_not_call_memory_load_json(
 
 
 def test_load_id_returns_stored_session(aldwin_home: Path) -> None:
-    """TC-09: a saved session loads by its id."""
+    """A saved session loads by its id."""
     store = SessionStore()
     stored = store.create_new(model="gpt-4o")
     stored.memory.add(TaskStep(task="Find me"))
@@ -584,7 +584,7 @@ def test_load_id_returns_stored_session(aldwin_home: Path) -> None:
     ["2026-11-01_missing", "../sessions/x", "a/b", ".hidden", "", "x.json"],
 )
 def test_load_id_missing_returns_none(aldwin_home: Path, session_id: str) -> None:
-    """TC-10: unknown ids and ids that are not plain file names return `None`."""
+    """Unknown ids and ids that are not plain file names return `None`."""
     store = SessionStore()
     store.create_new(model="gpt-4o")
 
@@ -592,7 +592,7 @@ def test_load_id_missing_returns_none(aldwin_home: Path, session_id: str) -> Non
 
 
 def test_load_id_corrupt_returns_none(aldwin_home: Path) -> None:
-    """TC-11: a corrupt file, or one whose stored id differs, returns `None`."""
+    """A corrupt file, or one whose stored id differs, returns `None`."""
     sessions_dir = aldwin_home / "sessions"
     sessions_dir.mkdir(parents=True, exist_ok=True)
     (sessions_dir / "broken.json").write_text("{not json", "utf-8")
@@ -604,7 +604,7 @@ def test_load_id_corrupt_returns_none(aldwin_home: Path) -> None:
 
 
 def test_zero_turn_meta_title_is_empty(aldwin_home: Path) -> None:
-    """TC-12: a new session, saved or reloaded, keeps an empty title."""
+    """A new session, saved or reloaded, keeps an empty title."""
     store = SessionStore()
     stored = store.create_new(model="gpt-4o")
     store.save(stored, stored.memory, interrupted=False)
@@ -616,7 +616,7 @@ def test_zero_turn_meta_title_is_empty(aldwin_home: Path) -> None:
 
 
 def test_session_disk_schema_keys_unchanged(aldwin_home: Path) -> None:
-    """TC-13: the on-disk layout is still `meta`, `memory`, `todo`, `turns`."""
+    """The on-disk layout is still `meta`, `memory`, `todo`, `turns`."""
     store = SessionStore()
     stored = store.create_new(model="gpt-4o")
     raw = json.loads(stored.path.read_text("utf-8"))
@@ -628,6 +628,7 @@ def test_session_disk_schema_keys_unchanged(aldwin_home: Path) -> None:
         "model",
         "title",
         "interrupted",
+        "pinned",
     }
 
     stored.memory.add(TaskStep(task="Plan"))
@@ -674,7 +675,7 @@ def test_list_metas_treats_malformed_turns_as_empty(aldwin_home: Path) -> None:
 
 
 def test_session_file_fingerprint_tracks_saves(aldwin_home: Path) -> None:
-    """TC-14: a save changes the fingerprint; a missing file is zeros."""
+    """A save changes the fingerprint; a missing file is zeros."""
     from aldwin.host.sessions import session_file_fingerprint
 
     store = SessionStore()

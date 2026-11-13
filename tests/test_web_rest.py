@@ -13,6 +13,7 @@ import yaml
 from fastapi.routing import APIRoute, APIWebSocketRoute
 from fastapi.testclient import TestClient
 
+from aldwin.core.connectors.icons import save_icon
 from aldwin.core.providers.base import AccessStatus, ModelInfo
 from aldwin.core.providers.discovery import LocalProviderStatus
 from aldwin.core.settings import load_config, load_secrets
@@ -20,6 +21,7 @@ from aldwin.core.tools.web_search.hosted import KeyCheck, KeyCheckResult
 from aldwin.host.sessions import SessionStore
 from aldwin.web.app import create_app
 from aldwin.web.auth import COOKIE_NAME, Authenticator
+from aldwin.web.routes.connectors import connectors_router
 from aldwin.web.routes.conversations import conversations_router
 from aldwin.web.routes.settings import settings_router
 from aldwin.web.routes.setup import setup_router
@@ -37,6 +39,7 @@ HTTP_ROUTES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
     ("GET", "/v1/home", None),
     ("GET", "/v1/conversations", None),
     ("GET", "/v1/conversations/2026-11-10_abc", None),
+    ("GET", "/v1/connectors/mail/icon", None),
     ("GET", "/v1/settings", None),
     ("PATCH", "/v1/settings", {}),
     ("POST", "/v1/settings/secrets", {"kind": "provider", "name": "x", "key": "k"}),
@@ -123,14 +126,14 @@ def _ok_search(monkeypatch: pytest.MonkeyPatch, outcome: KeyCheck) -> None:
 def test_every_route_refuses_a_signed_out_request(
     anon: TestClient, method: str, path: str, body: dict[str, Any] | None
 ) -> None:
-    """TC-26: no cookie means 401 on every route, before any handler runs."""
+    """No cookie means 401 on every route, before any handler runs."""
     response = _call(anon, method, path, body)
     assert response.status_code == 401, path
     assert "aldwin web" in response.json()["detail"]
 
 
 def test_inventory_lists_the_websocket_ticket_route() -> None:
-    """TC-08: the WebSocket ticket route is covered by the signed-out check."""
+    """The WebSocket ticket route is covered by the signed-out check."""
     assert ("POST", "/v1/ws-ticket") in {(m, p) for m, p, _ in HTTP_ROUTES}
 
 
@@ -139,6 +142,7 @@ def test_inventory_covers_every_rest_route(tmp_path: Path) -> None:
     served = set()
     for router in (
         conversations_router(tmp_path),
+        connectors_router(tmp_path),
         settings_router(tmp_path, WebHostRuntime(home=tmp_path)),
         setup_router(tmp_path, WebHostRuntime(home=tmp_path)),
         ws_router(WebHostRuntime(home=tmp_path), Authenticator.mint("127.0.0.1", PORT)),
@@ -149,22 +153,47 @@ def test_inventory_covers_every_rest_route(tmp_path: Path) -> None:
             assert isinstance(route, APIRoute)
             for method in route.methods or ():
                 served.add((method, f"/v1{route.path}"))
+    patterns = {
+        "/v1/conversations/2026-11-10_abc": "/v1/conversations/{session_id}",
+        "/v1/connectors/mail/icon": "/v1/connectors/{name}/icon",
+    }
     listed = {
-        (method, "/v1/conversations/{session_id}" if "conversations/" in p else p)
+        (method, patterns.get(p, p))
         for method, p, _ in HTTP_ROUTES
         if p not in ("/v1/health", "/v1/home")
     }
     assert served == listed
 
 
+def test_a_saved_app_icon_is_served_locked_down(
+    api: TestClient, aldwin_home: Path
+) -> None:
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+    save_icon(aldwin_home, "mail", (svg, "image/svg+xml"))
+
+    response = api.get("/v1/connectors/mail/icon")
+
+    assert response.status_code == 200
+    assert response.content == svg
+    assert response.headers["content-type"] == "image/svg+xml"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert "default-src 'none'" in response.headers["content-security-policy"]
+    assert "sandbox" in response.headers["content-security-policy"]
+
+
+@pytest.mark.parametrize("name", ["nope", "..%2Fsecrets", "UPPER"])
+def test_an_app_without_a_saved_icon_is_404(api: TestClient, name: str) -> None:
+    assert api.get(f"/v1/connectors/{name}/icon").status_code == 404
+
+
 def test_wrong_cookie_is_401(anon: TestClient) -> None:
-    """TC-28: a cookie from another run does not sign in."""
+    """A cookie from another run does not sign in."""
     anon.cookies.set(COOKIE_NAME, "not-this-run")
     assert anon.get("/v1/conversations").status_code == 401
 
 
 def test_foreign_origin_cannot_change_settings(api: TestClient) -> None:
-    """TC-27: a write from another page is refused even with the cookie."""
+    """A write from another page is refused even with the cookie."""
     before = load_config().check_for_updates
     for headers in (
         {"Origin": "http://evil.example"},
@@ -179,7 +208,7 @@ def test_foreign_origin_cannot_change_settings(api: TestClient) -> None:
 
 
 def test_no_rest_route_starts_or_replays_a_conversation(api: TestClient) -> None:
-    """TC-35: starting a conversation and its history stay on the protocol."""
+    """Starting a conversation and its history stay on the protocol."""
     assert api.post("/v1/conversations", json={}).status_code == 405
     assert api.get("/v1/conversations/x/history").status_code == 404
 
@@ -190,7 +219,7 @@ def test_no_rest_route_starts_or_replays_a_conversation(api: TestClient) -> None
 def test_list_hides_conversations_with_no_turns(
     api: TestClient, aldwin_home: Path
 ) -> None:
-    """TC-01, TC-11: the list shows saved conversations, not empty ones."""
+    """The list shows saved conversations, not empty ones."""
     kept = _session_with_turn(aldwin_home, "Plan my week")
     empty = _store(aldwin_home).create_new().meta.id
 
@@ -207,12 +236,13 @@ def test_list_hides_conversations_with_no_turns(
         "model",
         "title",
         "interrupted",
+        "pinned",
     }
     assert api.get(f"/v1/conversations/{empty}").status_code == 200
 
 
 def test_detail_returns_the_file_as_saved(api: TestClient, aldwin_home: Path) -> None:
-    """TC-03: the detail is the session file itself, not a second schema."""
+    """The detail is the session file itself, not a second schema."""
     session_id = _session_with_turn(aldwin_home, "Hello")
     on_disk = json.loads(
         (aldwin_home / "sessions" / f"{session_id}.json").read_text("utf-8")
@@ -227,13 +257,13 @@ def test_detail_returns_the_file_as_saved(api: TestClient, aldwin_home: Path) ->
 
 @pytest.mark.parametrize("session_id", ["2026-01-01_missing", "..", "a.b", "%2e%2e"])
 def test_missing_or_odd_id_is_404(api: TestClient, session_id: str) -> None:
-    """TC-09: an unknown id, or one that is not a file name, is not found."""
+    """An unknown id, or one that is not a file name, is not found."""
     response = api.get(f"/v1/conversations/{session_id}")
     assert response.status_code == 404
 
 
 def test_corrupt_conversation_is_404(api: TestClient, aldwin_home: Path) -> None:
-    """TC-10: a damaged file is not found rather than a server error."""
+    """A damaged file is not found rather than a server error."""
     sessions = aldwin_home / "sessions"
     sessions.mkdir(exist_ok=True)
     (sessions / "2026-01-01_broken.json").write_text("{not json", encoding="utf-8")
@@ -246,7 +276,7 @@ def test_corrupt_conversation_is_404(api: TestClient, aldwin_home: Path) -> None
 def test_settings_show_keys_masked_with_their_source(
     api: TestClient, aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-12: keys appear masked with where they came from, never in full."""
+    """Keys appear masked with where they came from, never in full."""
     (aldwin_home / "secrets.yaml").write_text(
         yaml.safe_dump({"openai_api_key": OPENAI_KEY}), encoding="utf-8"
     )
@@ -269,7 +299,7 @@ def test_settings_show_keys_masked_with_their_source(
 
 
 def test_patch_limits_persists_for_the_terminal(api: TestClient) -> None:
-    """TC-04: a limit saved from the browser is what the terminal loads."""
+    """A limit saved from the browser is what the terminal loads."""
     response = api.patch("/v1/settings", json={"limits": {"context_exchanges": 12}})
     assert response.status_code == 200
     assert response.json()["limits"]["context_exchanges"] == 12
@@ -277,14 +307,14 @@ def test_patch_limits_persists_for_the_terminal(api: TestClient) -> None:
 
 
 def test_patch_model(api: TestClient) -> None:
-    """TC-13: the model can be changed."""
+    """The model can be changed."""
     response = api.patch("/v1/settings", json={"model": "openai/gpt-4o-mini"})
     assert response.status_code == 200
     assert load_config().model == "openai/gpt-4o-mini"
 
 
 def test_patch_search(api: TestClient) -> None:
-    """TC-14: the search provider and SearXNG address can be changed."""
+    """The search provider and SearXNG address can be changed."""
     response = api.patch(
         "/v1/settings",
         json={"search": {"provider": "brave", "searxng_url": "http://127.0.0.1:8888"}},
@@ -295,7 +325,7 @@ def test_patch_search(api: TestClient) -> None:
 
 
 def test_patch_check_for_updates(api: TestClient) -> None:
-    """TC-15: update checks can be turned off and on."""
+    """Update checks can be turned off and on."""
     assert (
         api.patch("/v1/settings", json={"check_for_updates": False}).status_code == 200
     )
@@ -307,7 +337,7 @@ def test_patch_check_for_updates(api: TestClient) -> None:
 
 
 def test_empty_patch_changes_nothing(api: TestClient, aldwin_home: Path) -> None:
-    """TC-16: an empty patch returns the current settings untouched."""
+    """An empty patch returns the current settings untouched."""
     config = aldwin_home / "config.yaml"
     before = config.read_text("utf-8")
     response = api.patch("/v1/settings", json={})
@@ -335,7 +365,7 @@ def test_empty_patch_changes_nothing(api: TestClient, aldwin_home: Path) -> None
 def test_refused_patch_writes_nothing(
     api: TestClient, aldwin_home: Path, patch: dict[str, Any], message: str
 ) -> None:
-    """TC-05: a disallowed or bad field is a 400 that names it."""
+    """A disallowed or bad field is a 400 that names it."""
     config = aldwin_home / "config.yaml"
     before = config.read_text("utf-8")
     response = api.patch("/v1/settings", json=patch)
@@ -348,7 +378,7 @@ def test_refused_patch_writes_nothing(
 def test_patch_mixing_a_secret_with_safe_fields_applies_none(
     api: TestClient, aldwin_home: Path
 ) -> None:
-    """TC-17: one refused field means none of the patch is applied."""
+    """One refused field means none of the patch is applied."""
     before = (aldwin_home / "config.yaml").read_text("utf-8")
     response = api.patch(
         "/v1/settings",
@@ -366,7 +396,7 @@ def test_patch_body_must_be_an_object(api: TestClient) -> None:
 def test_secret_saved_after_check_and_not_echoed(
     api: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-06: the key is checked, then saved; the reply shows it masked only."""
+    """The key is checked, then saved; the reply shows it masked only."""
     seen = _ok_provider(monkeypatch, AccessStatus.OK)
 
     response = api.post(
@@ -400,7 +430,7 @@ def test_secret_saved_after_check_and_not_echoed(
 def test_rejected_secret_is_not_saved_or_echoed(
     api: TestClient, monkeypatch: pytest.MonkeyPatch, status: AccessStatus, code: int
 ) -> None:
-    """TC-18: a key that fails its check is never written."""
+    """A key that fails its check is never written."""
     _ok_provider(monkeypatch, status)
     response = api.post(
         "/v1/settings/secrets",
@@ -429,7 +459,7 @@ def test_env_key_still_wins_after_a_save(
 def test_search_secret_saved_after_check(
     api: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-19: a search key goes through the search provider's own check."""
+    """A search key goes through the search provider's own check."""
     _ok_search(monkeypatch, KeyCheck.OK)
     response = api.post(
         "/v1/settings/secrets",
@@ -488,7 +518,7 @@ def test_invalid_body_never_echoes_the_key(api: TestClient) -> None:
 
 
 def test_setup_status_on_a_fresh_home(api: TestClient) -> None:
-    """TC-20: a new home has no keys and no profile yet."""
+    """A new home has no keys and no profile yet."""
     response = api.get("/v1/setup/status")
     assert response.status_code == 200
     body = response.json()
@@ -501,7 +531,7 @@ def test_setup_status_on_a_fresh_home(api: TestClient) -> None:
 def test_check_key_never_saves(
     api: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-21: checking a key answers ok without writing it."""
+    """Checking a key answers ok without writing it."""
     _ok_provider(monkeypatch, AccessStatus.OK)
     response = api.post(
         "/v1/setup/check-key",
@@ -533,7 +563,7 @@ def test_check_key_reports_a_rejection(
 def test_provider_key_saves_and_opens_the_keys_gate(
     api: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-07: a working key saved during setup makes the keys step pass."""
+    """A working key saved during setup makes the keys step pass."""
     _ok_provider(monkeypatch, AccessStatus.OK)
     response = api.post(
         "/v1/setup/provider-key", json={"name": "openai", "key": OPENAI_KEY}
@@ -549,7 +579,7 @@ def test_provider_key_saves_and_opens_the_keys_gate(
 def test_detect_local_lists_runtimes(
     api: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-22: local runtimes come back with their models."""
+    """Local runtimes come back with their models."""
     model = ModelInfo(
         id="llama3",
         title="Llama 3",
@@ -580,7 +610,7 @@ def test_detect_local_lists_runtimes(
 def test_models_lists_a_providers_models(
     api: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-23: the model picker gets the provider's models."""
+    """The model picker gets the provider's models."""
     asked: list[str] = []
 
     async def fake(provider: str, home: Path | None = None) -> list[ModelInfo]:
@@ -607,7 +637,7 @@ def test_models_lists_a_providers_models(
 def test_setup_save_checks_keys_then_saves_keys_and_model(
     api: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-24: the terminal's first-run answers can be saved from the browser."""
+    """The terminal's first-run answers can be saved from the browser."""
     _ok_provider(monkeypatch, AccessStatus.OK)
     _ok_search(monkeypatch, KeyCheck.OK)
     response = api.post(
@@ -628,7 +658,7 @@ def test_setup_save_checks_keys_then_saves_keys_and_model(
 
 
 def test_setup_save_refuses_theme(api: TestClient, aldwin_home: Path) -> None:
-    """TC-24: the browser's appearance is not a terminal setting."""
+    """The browser's appearance is not a terminal setting."""
     before = (aldwin_home / "config.yaml").read_text("utf-8")
     response = api.post("/v1/setup/save", json={"theme": "light"})
     assert response.status_code == 422
@@ -677,7 +707,7 @@ def test_setup_save_failing_key_write_leaves_the_model(
 def test_profile_is_saved_and_marks_the_step_done(
     api: TestClient, aldwin_home: Path
 ) -> None:
-    """TC-25: answers are drafts until the finish, in state/onboarding.json (0600)."""
+    """Answers are drafts until the finish, in state/onboarding.json (0600)."""
     response = api.post(
         "/v1/setup/profile",
         json={"first_name": " Ada ", "occupation": "Engineer"},
@@ -730,17 +760,21 @@ DOCS = Path(__file__).resolve().parent.parent / "docs"
 
 
 def test_protocol_doc_lists_every_rest_route() -> None:
-    """TC-37: each route is documented next to the protocol it does not replace."""
+    """Each route is documented next to the protocol it does not replace."""
     doc = (DOCS / "protocol.md").read_text(encoding="utf-8")
     section = doc.split("## REST helpers in `aldwin web`", 1)[1].split("\n## ", 1)[0]
     for method, path, _ in HTTP_ROUTES:
-        documented = "/v1/conversations/{id}" if "conversations/" in path else path
+        documented = (
+            "/v1/conversations/{id}"
+            if "conversations/" in path
+            else path.replace("/mail/", "/{name}/")
+        )
         assert f"{method} {documented}" in section, (method, path)
     assert "not a second protocol" in section
 
 
 def test_privacy_doc_covers_onboarding_and_masked_keys() -> None:
-    """TC-36: the privacy page says what the profile step stores and how keys show."""
+    """The privacy page says what the profile step stores and how keys show."""
     doc = (DOCS / "privacy.md").read_text(encoding="utf-8")
     assert "onboarding.json" in doc
     assert "no answer from the server ever contains one" in doc

@@ -67,7 +67,7 @@ Anything else leaves the app out, with the reason. Before a release, `uv run pyt
 
 Logos come from the pinned versions of [Simple Icons](https://simpleicons.org) (CC0) and [LobeHub icons](https://github.com/lobehub/lobe-icons) (MIT), as plain path data. An SVG with anything beyond paths, such as scripts, images, links, `<use>` or transforms, is refused, and the app gets a letter mark instead.
 - **Colours:** near-black and near-white brand colours are dropped, so those marks follow the text colour in both themes.
-- **Hand-kept marks:** the marks in `marks.ts` always win over generated ones. Use `logo: hand` for a mark drawn there from the brand's own assets when neither icon set has it; the report flags a `hand` app with no mark in `marks.ts`.
+- **Hand-kept marks:** the marks in `marks.ts` (models and search) and `hand-app-marks.ts` (apps) always win over generated ones. Use `logo: hand` for a mark drawn there from the brand's own assets when neither icon set has it; the report flags a `hand` app with no mark in `marks.ts`.
 - **NOTICE:** list every new mark under its source in `NOTICE`.
 
 ## Apps that aren't in the catalogue yet

@@ -1,7 +1,7 @@
 "use client";
 
 import { ThreadListPrimitive } from "@assistant-ui/react";
-import { Bug, ChevronRight, Plus, Search, Settings } from "lucide-react";
+import { Bug, ChevronRight, Search, Settings, SquarePen } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -16,11 +16,19 @@ import { cn } from "@/utils/cn";
 
 import { HistoryList } from "./history-list";
 
-/** Rows the rail shows: the most recent, plus the open one when it is older. */
-function railIds(sessions: SessionMeta[], currentId: string | null): string[] {
+/** Recent rows: the newest unpinned ones, plus the open one when it is older. */
+function recentIds(sessions: SessionMeta[], currentId: string | null): string[] {
   const ids = sessions.slice(0, RAIL_HISTORY_LIMIT).map((s) => s.id);
   const current = sessions.findIndex((s) => s.id === currentId);
   return current >= RAIL_HISTORY_LIMIT ? [...ids, sessions[current].id] : ids;
+}
+
+function SectionHeading({ children, testId }: { children: string; testId: string }) {
+  return (
+    <h2 className="text-sidebar-foreground/70 px-2 pb-1 text-xs font-medium" data-testid={testId}>
+      {children}
+    </h2>
+  );
 }
 
 export function Rail({
@@ -28,6 +36,7 @@ export function Rail({
   currentId,
   disabled,
   newChatDisabled,
+  newChatCurrent,
   onSeeAll,
   onSearch,
   seeAllOpen,
@@ -37,6 +46,8 @@ export function Rail({
   currentId: string | null;
   disabled: boolean;
   newChatDisabled: boolean;
+  /** The page is already an empty new chat, so the button reads as the current page. */
+  newChatCurrent: boolean;
   onSeeAll: () => void;
   onSearch: () => void;
   seeAllOpen: boolean;
@@ -45,69 +56,83 @@ export function Rail({
   // Until the host lists them, "no conversations" would be a guess.
   const listed = useChatStore((s) => s.sessionsLoaded);
   const onSettings = isSettingsPage(usePathname());
+  const pinned = sessions.filter((s) => s.pinned);
+  const recent = sessions.filter((s) => !s.pinned);
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
-      <Lockup onNavigate={onNavigate} className="self-start" />
-      <div className="flex flex-col gap-0.5">
-        <ThreadListPrimitive.New
-          render={
-            <Button
-              variant="ghost"
-              disabled={newChatDisabled}
-              data-testid="new-chat"
-              className="justify-start max-md:h-10"
-            />
-          }
-          onClick={onNavigate}
-        >
-          <Plus aria-hidden />
-          {copy.newChat}
-        </ThreadListPrimitive.New>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex items-center justify-between gap-2">
+        <Lockup onNavigate={onNavigate} className="ms-1" />
         <Button
           variant="ghost"
+          size="icon"
           onClick={onSearch}
           disabled={disabled}
+          aria-label={copy.search}
+          title={copy.search}
           data-testid="rail-search"
-          className="justify-start max-md:h-10"
+          className="max-md:size-10"
         >
           <Search aria-hidden />
-          {copy.search}
         </Button>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-1">
-        <h2 className="text-sidebar-foreground/70 px-2 text-xs font-medium" data-testid="history-eyebrow">
-          {copy.history}
-        </h2>
-        {!listed ? null : sessions.length === 0 ? (
-          <p className="text-sidebar-foreground/70 animate-in fade-in px-2 py-1.5 text-sm duration-300" data-testid="history-empty">
-            {copy.noHistory}
-          </p>
-        ) : (
-          <div className="animate-in fade-in min-h-0 overflow-y-auto duration-300">
-            <HistoryList ids={railIds(sessions, currentId)} disabled={disabled} onChoose={onNavigate} />
-          </div>
-        )}
-        {sessions.length === 0 ? null : (
+      <ThreadListPrimitive.New
+        render={
           <Button
             variant="ghost"
-            onClick={onSeeAll}
-            disabled={disabled}
-            aria-current={seeAllOpen ? "page" : undefined}
-            data-testid="see-all"
-            className="justify-between max-md:h-10"
-          >
-            {copy.seeAll}
-            <ChevronRight aria-hidden />
-          </Button>
-        )}
+            disabled={newChatDisabled}
+            aria-current={newChatCurrent ? "page" : undefined}
+            data-testid="new-chat"
+            className={cn(
+              "text-sidebar-foreground mt-3 h-9 justify-start gap-2.5 px-2 font-medium max-md:h-10",
+              newChatCurrent && "bg-sidebar-accent text-sidebar-accent-foreground disabled:opacity-100",
+            )}
+          />
+        }
+        onClick={onNavigate}
+      >
+        <SquarePen aria-hidden />
+        {copy.newChat}
+      </ThreadListPrimitive.New>
+      <div className="mt-6 flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto">
+        {pinned.length > 0 ? (
+          <section className="flex flex-col" data-testid="pinned-section">
+            <SectionHeading testId="pinned-eyebrow">{copy.pinned}</SectionHeading>
+            <HistoryList ids={pinned.map((s) => s.id)} disabled={disabled} testId="pinned-row" onChoose={onNavigate} />
+          </section>
+        ) : null}
+        <section className="flex flex-col">
+          <SectionHeading testId="history-eyebrow">{copy.recents}</SectionHeading>
+          {!listed ? null : sessions.length === 0 ? (
+            <p className="text-sidebar-foreground/70 animate-in fade-in px-2 py-1.5 text-sm duration-300" data-testid="history-empty">
+              {copy.noHistory}
+            </p>
+          ) : (
+            <div className="animate-in fade-in duration-300">
+              <HistoryList ids={recentIds(recent, currentId)} disabled={disabled} onChoose={onNavigate} />
+            </div>
+          )}
+          {sessions.length === 0 ? null : (
+            <Button
+              variant="ghost"
+              onClick={onSeeAll}
+              disabled={disabled}
+              aria-current={seeAllOpen ? "page" : undefined}
+              data-testid="see-all"
+              className="mt-0.5 justify-between px-2 max-md:h-10"
+            >
+              {copy.seeAll}
+              <ChevronRight aria-hidden />
+            </Button>
+          )}
+        </section>
       </div>
-      <div className="flex flex-col gap-1 border-t pt-3">
+      <div className="mt-3 flex flex-col gap-1 border-t pt-3">
         <a
           href={REPORT_BUG_URL}
           target="_blank"
           rel="noopener noreferrer"
           data-testid="report-bug"
-          className={cn(buttonVariants({ variant: "ghost" }), "justify-start max-md:h-10")}
+          className={cn(buttonVariants({ variant: "ghost" }), "justify-start px-2 max-md:h-10")}
         >
           <Bug aria-hidden />
           {copy.reportBug}
@@ -120,7 +145,7 @@ export function Rail({
           data-testid="settings"
           className={cn(
             buttonVariants({ variant: "ghost" }),
-            "justify-start max-md:h-10",
+            "justify-start px-2 max-md:h-10",
             onSettings && "bg-sidebar-accent text-sidebar-accent-foreground",
           )}
         >

@@ -21,6 +21,7 @@ export function useConversationRoute(session: ChatSession): void {
   const open = connected && listed;
   const currentId = useChatStore((s) => s.currentSessionId);
   const hasTurns = useChatStore((s) => s.turns.length > 0);
+  const deleted = useChatStore((s) => s.deletedSessionIds);
 
   const onConversation = isConversationPage(pathname);
   // Other pages, such as Settings, leave the open conversation alone.
@@ -48,6 +49,10 @@ export function useConversationRoute(session: ChatSession): void {
       router.replace(ROUTES.home);
       return;
     }
+    if (deleted.includes(routeId)) {
+      router.replace(ROUTES.home);
+      return;
+    }
     if (refused.current !== routeId) refused.current = null;
     if (routeId === currentId) {
       requested.current = null;
@@ -64,7 +69,7 @@ export function useConversationRoute(session: ChatSession): void {
         router.replace(chatHref(state.currentSessionId, state.turns.length > 0));
       }
     });
-  }, [open, onConversation, routeId, currentId, session, router]);
+  }, [open, onConversation, routeId, currentId, deleted, session, router]);
 
   // Arriving at `/` from a conversation means a new chat.
   useEffect(() => {

@@ -86,7 +86,7 @@ export function AdvancedSection() {
 
   return (
     <form onSubmit={save} className="flex flex-col gap-6" data-testid="advanced-form">
-      <fieldset className="grid gap-4 sm:grid-cols-2">
+      <fieldset className="grid gap-4 @lg:grid-cols-2">
         <legend className="mb-3 text-sm font-medium">{copy.limitsLabel}</legend>
         {LIMIT_FIELDS.map((field) => {
           const id = `limit-${field}`;

@@ -16,6 +16,7 @@ from starlette.websockets import WebSocketClose
 
 import aldwin.client as client
 from aldwin.web.auth import COOKIE_NAME, TOKEN_QUERY, Authenticator
+from aldwin.web.routes.connectors import connectors_router
 from aldwin.web.routes.conversations import conversations_router
 from aldwin.web.routes.settings import settings_router
 from aldwin.web.routes.setup import setup_router
@@ -116,6 +117,7 @@ def create_app(
         return {"home": home_display, "version": version}
 
     api.include_router(conversations_router(home))
+    api.include_router(connectors_router(home))
     api.include_router(settings_router(home, host_runtime))
     api.include_router(setup_router(home, host_runtime))
     api.include_router(ws_router(host_runtime, authenticator))

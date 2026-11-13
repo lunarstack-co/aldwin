@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,6 +20,7 @@ from aldwin.client import AldwinClient, ProtocolError
 from aldwin.core.agent import build_agent
 from aldwin.core.connectors.config import connectors_path
 from aldwin.core.connectors.credentials import FileCredentialStore
+from aldwin.core.connectors.icons import load_icon
 from aldwin.core.settings import AldwinConfig, SecretsConfig
 from aldwin.host import AldwinHost, InProcessTransport
 from aldwin.protocol import (
@@ -337,3 +339,121 @@ async def test_manager_refuses_a_sign_in_nobody_can_answer(
         await rig.host._connectors.add(config, token=None, dry_run=False)
     assert info.value.message == "Fixture needs you to sign in: /connectors."
     assert oauth_server.requests["well_known"] == 0
+
+
+async def test_an_address_added_without_sign_in_asks_for_a_token_when_refused(
+    rig: Rig, fixture_server: Any, fixture_url: str, aldwin_home: Path
+) -> None:
+    """A custom address answering 401 with no sign-in page gets a token box."""
+    fixture_server.require_bearer("letmein")
+
+    async def type_token(client: AldwinClient, event: ConnectorAuthEvent) -> None:
+        assert (event.mode, event.url) == ("token", None)
+        await client.connectors_auth_token(event.name, "letmein")
+
+    events = await _sign_in(rig, type_token, url=f"{fixture_url}/mcp", auth="none")
+
+    assert isinstance(events[-1], DoneEvent) and events[-1].reason == "ok"
+    status = [e for e in events if isinstance(e, ConnectorStatusEvent)][-1]
+    assert (status.status, status.tools) == ("connected", 5)
+    assert _saved(aldwin_home)["auth"] == "bearer"
+    record = rig.store.get("fixture")
+    assert record is not None and record["token"] == "letmein"
+
+
+async def test_an_address_added_without_sign_in_signs_in_when_the_server_offers_it(
+    rig: Rig, oauth_server: OAuthFixture, aldwin_home: Path
+) -> None:
+    """A custom address that publishes OAuth metadata goes to browser sign-in."""
+    events = await _sign_in(
+        rig, paste, url=oauth_server.mcp_url, auth="none", no_browser=True
+    )
+
+    [prompt] = [e for e in events if isinstance(e, ConnectorAuthEvent)]
+    assert prompt.mode == "paste"
+    assert isinstance(events[-1], DoneEvent) and events[-1].reason == "ok"
+    assert _saved(aldwin_home)["auth"] == "oauth"
+
+
+async def test_a_custom_app_keeps_its_own_icon_until_it_is_removed(
+    start_rig: Callable[[], Awaitable[Rig]],
+    fixture_url: str,
+    aldwin_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asked: list[str] = []
+
+    async def find_icon(config: Any, _declared: Any) -> tuple[bytes, str]:
+        asked.append(config.name)
+        return b"<svg/>", "image/svg+xml"
+
+    monkeypatch.setattr("aldwin.host.runner.fetch_icon", find_icon)
+    rig = await start_rig()
+    try:
+        await _sign_in(rig, browser, url=f"{fixture_url}/mcp")
+        # The icon is found after the app reports connected, never before.
+        for _ in range(50):
+            if load_icon(aldwin_home, "fixture") is not None:
+                break
+            await asyncio.sleep(0.02)
+        [listed] = (await rig.client.connectors_list()).items
+        assert listed.icon is not None
+        assert load_icon(aldwin_home, "fixture") == (b"<svg/>", "image/svg+xml")
+
+        await rig.client.connectors_reconnect("fixture")
+        assert asked == ["fixture"]
+
+        await rig.client.connectors_remove("fixture")
+        assert load_icon(aldwin_home, "fixture") is None
+    finally:
+        await rig.client.close()
+        await rig.host.stop_host()
+
+
+async def test_a_slow_icon_never_holds_up_connected(
+    start_rig: Callable[[], Awaitable[Rig]],
+    fixture_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def never(_config: Any, _declared: Any) -> None:
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr("aldwin.host.runner.fetch_icon", never)
+    rig = await start_rig()
+    try:
+        events = await asyncio.wait_for(
+            _sign_in(rig, browser, url=f"{fixture_url}/mcp"), timeout=3
+        )
+        status = [e for e in events if isinstance(e, ConnectorStatusEvent)][-1]
+        assert status.status == "connected"
+        # Removing the app stops the lookup still waiting for an icon.
+        await asyncio.wait_for(rig.client.connectors_remove("fixture"), timeout=3)
+    finally:
+        await rig.client.close()
+        await rig.host.stop_host()
+
+
+async def test_stop_ends_an_add_that_is_still_connecting(
+    rig: Rig, fixture_server: Any, fixture_url: str, aldwin_home: Path
+) -> None:
+    fixture_server.delay_connect(10)
+
+    async def add() -> list[Event]:
+        return [
+            e
+            async for e in rig.client.connectors_sign_in(
+                name="fixture", url=f"{fixture_url}/mcp", auth="none"
+            )
+        ]
+
+    adding = asyncio.create_task(add())
+    for _ in range(100):
+        if fixture_server.server.sessions:
+            break
+        await asyncio.sleep(0.02)
+    await rig.client.stop()
+    events = await asyncio.wait_for(adding, timeout=5)
+    assert isinstance(events[-1], DoneEvent) and events[-1].reason == "stopped"
+    assert not connectors_path(
+        aldwin_home
+    ).exists() or "fixture" not in connectors_path(aldwin_home).read_text("utf-8")
