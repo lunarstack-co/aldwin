@@ -17,7 +17,7 @@ from aldwin.core.home import DIR_MODE, FILE_MODE, ensure_permissions, home_dir
 logger = logging.getLogger("aldwin.core.approval_log")
 
 APPROVAL_LOG_REL_PATH: Final[str] = "logs/approvals.jsonl"
-MAX_APPROVAL_LOG_BYTES: Final[int] = 10 * 1024 * 1024  # 10 MB
+MAX_APPROVAL_LOG_BYTES: Final[int] = 10 * 1024 * 1024
 APPROVAL_LOG_BACKUP_COUNT: Final[int] = 3
 MAX_TARGET_CHARS: Final[int] = 512
 REDACTED_PLACEHOLDER: Final[str] = "‹redacted›"

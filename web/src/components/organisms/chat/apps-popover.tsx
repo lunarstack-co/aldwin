@@ -11,14 +11,13 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { settingsHref } from "@/constants/routes";
 import copy from "@/data/chat/apps-menu.json";
 import { useSession } from "@/providers/chat-session-provider";
-import { useChatStore } from "@/state/chat-store";
+import { useChatStore, type PickedApp } from "@/state/chat-store";
 import { useSettingsStore } from "@/state/settings-store";
 import { MAX_PICKED_APPS, pickableApps, searchApps, toAppTriggerItem } from "@/utils/apps";
 import { cn } from "@/utils/cn";
 import { loadConnectors } from "@/utils/settings/actions";
 import { fill } from "@/utils/text";
 
-import { ClearUnusedTrigger, markPicked, type ButtonTriggerRef } from "./button-trigger";
 import { CloseOnOutsidePointer } from "./skills-popover";
 
 const keepFocus = (event: MouseEvent) => event.preventDefault();
@@ -27,7 +26,17 @@ const keepFocus = (event: MouseEvent) => event.preventDefault();
 const APP_QUERY = /(?:^|\s)\/([A-Za-z0-9 _-]*)$/;
 const toolsLabel = (count: number) => (count === 1 ? copy.oneTool : fill(copy.tools, { count }));
 
-export function AppsPopover({ buttonTriggerRef }: { buttonTriggerRef?: ButtonTriggerRef }) {
+/** Adds an app chip for the next message; past the limit it says so instead. */
+export function addPickedApp(app: PickedApp): void {
+  const store = useChatStore.getState();
+  if (store.pickedApps.length >= MAX_PICKED_APPS && !store.pickedApps.some((a) => a.name === app.name)) {
+    store.pushToast(copy.limit);
+    return;
+  }
+  store.pickApp({ name: app.name, title: app.title });
+}
+
+export function AppsPopover() {
   const session = useSession();
   const connectors = useSettingsStore((s) => s.connectors);
   const apps = useMemo(() => pickableApps(connectors.data.items), [connectors.data.items]);
@@ -51,7 +60,7 @@ export function AppsPopover({ buttonTriggerRef }: { buttonTriggerRef?: ButtonTri
   }, [apps]);
 
   // `/` opens the menu only for an app-like word that some app matches, so `/etc/hosts` and `/new` stay
-  // plain text and Enter sends them. A bare `/` (or the apps button) always opens it.
+  // plain text and Enter sends them. A bare `/` always opens it.
   const matcher = useCallback<TriggerMatcher>(
     (text, _char, cursor) => {
       const found = APP_QUERY.exec(text.slice(0, cursor));
@@ -66,14 +75,7 @@ export function AppsPopover({ buttonTriggerRef }: { buttonTriggerRef?: ButtonTri
 
   function pick(item: TriggerItem) {
     const app = apps.find((a) => a.name === item.id);
-    if (!app) return;
-    const store = useChatStore.getState();
-    if (store.pickedApps.length >= MAX_PICKED_APPS && !store.pickedApps.some((a) => a.name === app.name)) {
-      store.pushToast(copy.limit);
-      return;
-    }
-    store.pickApp({ name: app.name, title: app.title });
-    markPicked(buttonTriggerRef, "/");
+    if (app) addPickedApp(app);
   }
 
   const failed = connectors.status === "error";
@@ -98,7 +100,6 @@ export function AppsPopover({ buttonTriggerRef }: { buttonTriggerRef?: ButtonTri
         className="static m-0 max-h-[min(20rem,45dvh)] w-full overflow-y-auto rounded-none border-0 max-md:[&_[role=option]]:min-h-10"
       >
         <CloseOnOutsidePointer />
-        {buttonTriggerRef ? <ClearUnusedTrigger char="/" triggerRef={buttonTriggerRef} /> : null}
       </ComposerTriggerPopover>
       <div className="flex flex-col gap-1 border-t p-1">
         {failed ? (

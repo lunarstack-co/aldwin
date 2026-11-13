@@ -361,7 +361,7 @@ def test_cli_workspace_option_rejects_invalid_paths_with_exit_2(
 
 
 def test_web_help_lists_its_options() -> None:
-    """TC-24: `aldwin web --help` works and names every option."""
+    """`aldwin web --help` works and names every option."""
     res = runner.invoke(app, ["web", "--help"])
     assert res.exit_code == 0
     plain_output = re.sub(r"\x1b\[[0-9;]*m", "", res.output)
@@ -371,7 +371,7 @@ def test_web_help_lists_its_options() -> None:
 
 @pytest.mark.parametrize("host", ["0.0.0.0", "8.8.8.8", "::", "example.com"])
 def test_web_refuses_non_loopback_host(aldwin_home: Path, host: str) -> None:
-    """TC-04: a host other computers can reach is refused before binding."""
+    """A host other computers can reach is refused before binding."""
     res = runner.invoke(app, ["web", "--host", host, "--no-open"])
     assert res.exit_code == 2
     assert "only listens on this computer" in res.output
@@ -394,7 +394,7 @@ def test_web_reports_a_busy_explicit_port(aldwin_home: Path) -> None:
 
 
 def test_chat_warns_when_web_is_running(aldwin_home: Path) -> None:
-    """TC-27: the terminal notes a live `aldwin web` and keeps going."""
+    """The terminal notes a live `aldwin web` and keeps going."""
     from io import StringIO
 
     from aldwin.cli.theme import create_console

@@ -82,6 +82,7 @@ class SessionMeta:
     model: str
     title: str
     interrupted: bool
+    pinned: bool = False
 
 
 @dataclass(frozen=True)
@@ -95,6 +96,7 @@ class SessionMetaSummary:
     title: str
     interrupted: bool
     has_turns: bool
+    pinned: bool = False
 
 
 def session_has_turns(turns: Any, title: str) -> bool:
@@ -129,7 +131,7 @@ class StoredSession:
     meta: SessionMeta
     memory: Memory
     todo: list[dict[str, str]] | None = None
-    # Parallel to TaskSteps: original user text + resolved skill names (not bodies).
+    # One entry per TaskStep: the typed text and resolved skill names, not bodies.
     turns: list[dict[str, Any]] | None = None
 
 
@@ -178,8 +180,10 @@ def _normalise_turns_payload(raw: Any) -> list[dict[str, Any]]:
 
 
 def _stored_apps(raw: object) -> list[HistoryApp]:
-    """The apps saved with a turn. Accepts `{name, title}` objects, bare names
-    from older saves, or nothing; a malformed value gives no apps."""
+    """Return the apps saved with a turn as `{name, title}` objects.
+
+    Bare names, as older files store them, are accepted; a malformed value gives none.
+    """
     if raw is None:
         return []
     if not isinstance(raw, list):
@@ -210,7 +214,7 @@ class SessionStore:
 
     @property
     def sessions_dir(self) -> Path:
-        """Resolve the active `sessions/` directory dynamically via `home_dir()`."""
+        """Return `sessions/` under `home_dir()`, resolved on each call."""
         if self._sessions_dir is not None:
             return self._sessions_dir.expanduser().resolve()
         return home_dir() / SESSIONS_SUBDIR
@@ -347,10 +351,15 @@ class SessionStore:
                 title=title,
                 interrupted=bool(raw_meta.get("interrupted", False)),
                 has_turns=session_has_turns(raw_obj.get("turns"), title),
+                pinned=raw_meta.get("pinned") is True,
             )
         except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
             logger.warning("Skipping unreadable session file %s: %s", path, exc)
             return None
+
+    def delete(self, stored: StoredSession) -> None:
+        """Remove a conversation's file; a file already gone is not an error."""
+        stored.path.unlink(missing_ok=True)
 
     def load_file(self, path: Path) -> StoredSession | None:
         """Parse one session file, returning `None` if corrupt."""
@@ -382,6 +391,7 @@ class SessionStore:
                 title=str(raw_meta.get("title", ""))
                 or derive_session_title(memory, turns or None),
                 interrupted=interrupted,
+                pinned=raw_meta.get("pinned") is True,
             )
             todo = _normalise_todo_payload(raw_obj.get("todo"))
             return StoredSession(

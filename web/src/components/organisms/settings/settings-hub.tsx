@@ -38,15 +38,16 @@ export function SettingsHub() {
   const text = copy.sections[section];
 
   return (
-    <div data-testid="settings-hub" className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6 md:flex-row md:gap-10">
-        <div className="flex shrink-0 flex-col gap-3 md:sticky md:top-6 md:w-48 md:self-start">
+    // Sized by the space beside the sidebar, not the window, so the nav moves on top when it is narrow.
+    <div data-testid="settings-hub" className="@container flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-6 @md:px-6 @2xl:flex-row @2xl:gap-10">
+        <div className="flex min-w-0 shrink-0 flex-col gap-3 @2xl:sticky @2xl:top-6 @2xl:w-48 @2xl:self-start">
           <Link href={back} className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "self-start max-md:h-10")}>
             <ArrowLeft aria-hidden />
             {copy.back}
           </Link>
           <nav aria-label={copy.label} data-testid="settings-nav">
-            <ul className="-mx-1 flex gap-1 overflow-x-auto px-1 md:flex-col md:overflow-visible">
+            <ul className="-mx-1 flex gap-1 overflow-x-auto px-1 @2xl:flex-col @2xl:overflow-visible">
               {SETTINGS_SECTIONS.map((id) => (
                 <li key={id} className="shrink-0">
                   <Link
@@ -67,7 +68,7 @@ export function SettingsHub() {
         </div>
         <section
           aria-labelledby="settings-section-title"
-          className="flex min-w-0 flex-1 flex-col gap-5"
+          className="@container flex min-w-0 flex-1 flex-col gap-5"
           data-testid={`settings-${section}`}
         >
           <header className="flex flex-col gap-1">

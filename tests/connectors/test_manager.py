@@ -1,4 +1,4 @@
-"""`ConnectorManager` against the fixture server (`FR-10`, `FR-13` to `FR-18`)."""
+"""`ConnectorManager` against the fixture server."""
 
 from __future__ import annotations
 
@@ -339,7 +339,7 @@ async def test_long_name_is_stable_across_managers(
     recorder: Recorder,
     fixture_server: FixtureControls,
 ) -> None:
-    """`TC-06`: the same 64-character name after a restart."""
+    """The same 64-character name after a restart."""
     save_connectors(
         aldwin_home, {"fixture": ConnectorConfig(name="fixture", url=FIXTURE_URL)}
     )
@@ -474,7 +474,6 @@ async def test_server_restart_reconnects_with_backoff(
     recorder: Recorder,
     agent_session: AgentSession,
 ) -> None:
-    """`TC-09`."""
     controls = build_fixture_server()
     sleep = FakeSleep()
     async with serve_http(controls) as url:
@@ -519,7 +518,7 @@ async def test_server_restart_reconnects_with_backoff(
 async def test_second_process_picks_up_new_connector(
     aldwin_home: Path, workspace: Workspace
 ) -> None:
-    """`TC-11`: B starts its next turn and sees what A added; B keeps the rest."""
+    """B starts its next turn and sees what A added; B keeps the rest."""
     fixture, other = build_fixture_server(), build_fixture_server()
     factory = _in_process(("fixture", fixture), ("other", other))
     save_connectors(

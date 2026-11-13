@@ -13,6 +13,7 @@ from pydantic import (
     Field,
     Tag,
     TypeAdapter,
+    field_validator,
     model_validator,
 )
 
@@ -111,6 +112,7 @@ class SessionMetaItem(BaseModel):
     model: str
     title: str = ""
     interrupted: bool = False
+    pinned: bool = False
 
 
 class TodoItem(BaseModel):
@@ -233,6 +235,49 @@ class SessionsNewRequest(RequestBase):
     """Start a conversation, reusing the latest one if it is still empty."""
 
     type: Literal["sessions.new"] = "sessions.new"
+
+
+MAX_SESSION_TITLE_CHARS: Final = 100
+# Bidi controls can make a title display reversed or out of order.
+_BIDI_CONTROLS: Final = frozenset(
+    "\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069"
+)
+
+
+class SessionsRenameRequest(RequestBase):
+    """Give a saved conversation a title of the user's own."""
+
+    type: Literal["sessions.rename"] = "sessions.rename"
+    session_id: str = Field(min_length=1)
+    title: str
+
+    @field_validator("title")
+    @classmethod
+    def _one_line(cls, value: str) -> str:
+        visible = "".join(
+            ch
+            for ch in value
+            if ch.isspace() or (ch.isprintable() and ch not in _BIDI_CONTROLS)
+        )
+        cleaned = " ".join(visible.split())[:MAX_SESSION_TITLE_CHARS]
+        if not cleaned:
+            raise ValueError("title must not be blank")
+        return cleaned
+
+
+class SessionsPinRequest(RequestBase):
+    """Pin a saved conversation to the top of the list, or unpin it."""
+
+    type: Literal["sessions.pin"] = "sessions.pin"
+    session_id: str = Field(min_length=1)
+    pinned: bool
+
+
+class SessionsDeleteRequest(RequestBase):
+    """Delete a saved conversation's file; the active one is replaced by a new chat."""
+
+    type: Literal["sessions.delete"] = "sessions.delete"
+    session_id: str = Field(min_length=1)
 
 
 class SetModelRequest(RequestBase):
@@ -446,6 +491,9 @@ Request = Annotated[
     | SessionsListRequest
     | SessionsOpenRequest
     | SessionsNewRequest
+    | SessionsRenameRequest
+    | SessionsPinRequest
+    | SessionsDeleteRequest
     | SetModelRequest
     | SkillsListRequest
     | SkillsShowRequest
@@ -496,7 +544,7 @@ class TextEvent(EventBase):
 
 
 class ToolCallEvent(EventBase):
-    """Notification that the agent is invoking a tool."""
+    """The agent is calling a tool."""
 
     kind: Literal["tool_call"] = "tool_call"
     call_id: str = Field(min_length=1)
@@ -522,7 +570,7 @@ class ToolResultEvent(EventBase):
 
 
 class ApprovalEvent(EventBase):
-    """Host request asking the door for user approval before an action."""
+    """Asks the door for the user's approval before an action runs."""
 
     kind: Literal["approval"] = "approval"
     approval_id: str = Field(min_length=1)
@@ -717,6 +765,8 @@ class ConnectorInfo(BaseModel):
     transport: ConnectorTransport = "http"
     command: str | None = None  # how a local connector is started, for display
     note: str | None = None
+    # Set when the host holds the app's own icon; changes when the icon does.
+    icon: str | None = None
 
 
 class CatalogItem(BaseModel):
@@ -768,8 +818,9 @@ class ImportRowInfo(BaseModel):
 
 
 class ConnectorsImportEvent(EventBase):
-    """The answer to `connectors.import`: the files found and, unless it was a
-    dry run, what was imported from them.
+    """The answer to `connectors.import`: the files found and what was imported.
+
+    `rows` is empty after a dry run.
     """
 
     kind: Literal["connectors.import"] = "connectors.import"
@@ -781,8 +832,10 @@ class ConnectorsImportEvent(EventBase):
 
 
 class ConnectorAuthEvent(EventBase):
-    """A flow needs the user: open `url` (browser), paste the return address
-    (paste), or type a token (token). `expires_in` is the seconds left to answer.
+    """A sign-in or token flow is waiting for the user.
+
+    The user opens `url` (browser), pastes the return address (paste), or types
+    a token (token). `expires_in` is the seconds left to answer.
     """
 
     kind: Literal["connector.auth"] = "connector.auth"

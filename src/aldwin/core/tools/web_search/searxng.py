@@ -19,8 +19,8 @@ from aldwin.core.tools.web_search.shared import (
     SearchResult,
 )
 
-# Serialize + space local SearXNG calls so upstream engines (Brave, Google, …)
-# are less likely to CAPTCHA or suspend the instance IP.
+# Serialise and space out local SearXNG calls so upstream engines are less
+# likely to show a CAPTCHA or suspend the instance's IP.
 SEARXNG_MIN_INTERVAL_SECONDS: Final[float] = 1.5
 _searxng_pace_lock: asyncio.Lock | None = None
 _searxng_pace_loop: asyncio.AbstractEventLoop | None = None

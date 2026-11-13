@@ -48,7 +48,6 @@ class TodoViewState:
 
     @property
     def dropped_count(self) -> int:
-        """Number of dropped items."""
         return sum(1 for item in self.items if item.status == "dropped")
 
 

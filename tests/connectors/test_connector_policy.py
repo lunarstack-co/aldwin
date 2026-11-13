@@ -1,4 +1,4 @@
-"""Connector policy entries and the engine branches they use (`FR-8` to `FR-12`)."""
+"""Connector policy entries and the engine branches they use."""
 
 from __future__ import annotations
 
@@ -177,7 +177,6 @@ def test_tool_call_labels(registered: dict[str, ToolPolicy]) -> None:
 async def test_hint_auto_runs_and_logs_source_hint(
     registered: dict[str, ToolPolicy], session: PolicySession, aldwin_home: Path
 ) -> None:
-    """`TC-02` (policy half)."""
     approver = _Approver()
     [tool] = wrap_tools_with_policy(
         [_FakeRemote("mcp__fixture__read_thing", result="read ok")],
@@ -227,7 +226,7 @@ async def test_ask_is_grantable_per_tool_for_the_session(
 async def test_denials_count_toward_the_circuit_breaker(
     registered: dict[str, ToolPolicy], session: PolicySession
 ) -> None:
-    """`TC-03` (policy half): connector denials count like any other."""
+    """Connector denials count like any other."""
     tripped: list[bool] = []
     session.on_circuit_breaker = lambda: tripped.append(True)
     approver = _Approver(*["no"] * CIRCUIT_BREAKER_LIMIT)

@@ -950,7 +950,7 @@ class TurnRenderer:
             self._live = None
 
     def close(self) -> None:
-        """Ensure turn and checklist Live regions are stopped; clear DEC 2026."""
+        """Stop the turn and checklist Live regions and clear DEC 2026 sync."""
         self._stop_live()
         self._chat.todo_view.freeze()
 

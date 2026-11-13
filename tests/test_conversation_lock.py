@@ -14,7 +14,7 @@ SESSION = "2026-11-10_abcd1234"
 
 
 def test_lock_path_is_under_state_locks(tmp_path: Path) -> None:
-    """TC-07: one lock file per conversation, named after its id."""
+    """One lock file per conversation, named after its id."""
     lock = ConversationLock(tmp_path, SESSION)
     assert lock.path == tmp_path / "state" / "locks" / f"{SESSION}.lock"
 
@@ -27,7 +27,7 @@ def test_lock_rejects_ids_that_are_not_file_names(tmp_path: Path, bad: str) -> N
 
 
 def test_acquire_creates_private_folder_and_file(tmp_path: Path) -> None:
-    """TC-08: the folder is 0700 and the lock file 0600."""
+    """The folder is 0700 and the lock file 0600."""
     lock = ConversationLock(tmp_path, SESSION)
     assert lock.try_acquire()
     try:
@@ -38,7 +38,7 @@ def test_acquire_creates_private_folder_and_file(tmp_path: Path) -> None:
 
 
 def test_second_instance_cannot_acquire_while_held(tmp_path: Path) -> None:
-    """TC-09: a second holder for the same conversation is refused."""
+    """A second holder for the same conversation is refused."""
     first = ConversationLock(tmp_path, SESSION)
     second = ConversationLock(tmp_path, SESSION)
     assert first.try_acquire()
@@ -51,7 +51,7 @@ def test_second_instance_cannot_acquire_while_held(tmp_path: Path) -> None:
 
 
 def test_release_is_idempotent_and_lock_can_be_taken_again(tmp_path: Path) -> None:
-    """TC-10: releasing twice is harmless; the next holder gets the lock."""
+    """Releasing twice is harmless; the next holder gets the lock."""
     first = ConversationLock(tmp_path, SESSION)
     assert first.try_acquire()
     assert first.try_acquire()
@@ -65,7 +65,7 @@ def test_release_is_idempotent_and_lock_can_be_taken_again(tmp_path: Path) -> No
 
 
 def test_leftover_lock_file_does_not_block(tmp_path: Path) -> None:
-    """TC-11: an empty lock file left by a crashed process is free to take."""
+    """An empty lock file left by a crashed process is free to take."""
     path = tmp_path / "state" / "locks" / f"{SESSION}.lock"
     path.parent.mkdir(parents=True)
     path.write_text("", encoding="utf-8")
@@ -76,7 +76,7 @@ def test_leftover_lock_file_does_not_block(tmp_path: Path) -> None:
 
 
 def test_context_manager_acquires_and_releases(tmp_path: Path) -> None:
-    """TC-12: the with-block holds the lock and frees it on exit."""
+    """The with-block holds the lock and frees it on exit."""
     with ConversationLock(tmp_path, SESSION) as lock:
         assert lock.held
         with pytest.raises(ConversationBusyError):
@@ -98,7 +98,7 @@ if lock.held:
 
 
 def test_lock_is_shared_across_processes(tmp_path: Path) -> None:
-    """TC-03: two processes, as the terminal and the browser door are, contend."""
+    """Two processes, as the terminal and the browser door are, contend."""
     lock = ConversationLock(tmp_path, SESSION)
     assert lock.try_acquire()
     try:

@@ -38,7 +38,7 @@ from aldwin.core.settings import (
 
 
 def test_load_config_missing_file_returns_defaults(aldwin_home: Path) -> None:
-    """TC-05: Missing config.yaml returns all default settings without error."""
+    """Missing config.yaml returns all default settings without error."""
     cfg = load_config(aldwin_home)
     assert cfg == AldwinConfig(
         model="gpt-4o",
@@ -57,7 +57,7 @@ def test_load_config_missing_file_returns_defaults(aldwin_home: Path) -> None:
 
 
 def test_starter_assets_are_valid(aldwin_home: Path) -> None:
-    """TC-17: Starter config.yaml and packaged default skills load cleanly."""
+    """Starter config.yaml and packaged default skills load cleanly."""
     from aldwin.core.skills import build_catalogue
 
     ensure_home(aldwin_home)
@@ -76,7 +76,7 @@ def test_starter_assets_are_valid(aldwin_home: Path) -> None:
 
 
 def test_load_config_empty_or_comments_only(aldwin_home: Path) -> None:
-    """TC-18: Empty or comment-only config.yaml returns defaults."""
+    """Empty or comment-only config.yaml returns defaults."""
     config_path = aldwin_home / "config.yaml"
     atomic_write(config_path, "# only a comment\n")
 
@@ -84,7 +84,7 @@ def test_load_config_empty_or_comments_only(aldwin_home: Path) -> None:
 
 
 def test_load_config_invalid_value_raises_config_error(aldwin_home: Path) -> None:
-    """TC-06 (unit): Invalid limits.max_steps names file, field, and expected type."""
+    """Invalid limits.max_steps names file, field, and expected type."""
     config_path = aldwin_home / "config.yaml"
     atomic_write(config_path, 'limits:\n  max_steps: "lots"\n')
 
@@ -149,7 +149,7 @@ def test_load_config_error_for_unmapped_field_keeps_detail(
 def test_load_config_unknown_keys_logged_and_ignored(
     aldwin_home: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """TC-07: Unknown keys in config.yaml are ignored and logged as warnings."""
+    """Unknown keys in config.yaml are ignored and logged as warnings."""
     config_path = aldwin_home / "config.yaml"
     atomic_write(
         config_path,
@@ -167,7 +167,7 @@ def test_load_config_unknown_keys_logged_and_ignored(
 def test_load_config_malformed_yaml_or_non_dict_raises_config_error(
     aldwin_home: Path,
 ) -> None:
-    """TC-19: Corrupted YAML or non-mapping root raises ConfigError."""
+    """Corrupted YAML or non-mapping root raises ConfigError."""
     config_path = aldwin_home / "config.yaml"
 
     atomic_write(config_path, "model: [unclosed\n")
@@ -204,7 +204,7 @@ def test_load_config_rejects_out_of_range_limits_and_bad_theme(
     expected_field: str,
     expected_type: str,
 ) -> None:
-    """TC-20: Boundary validation on LimitsConfig, model, and theme."""
+    """Boundary validation on LimitsConfig, model, and theme."""
     config_path = aldwin_home / "config.yaml"
     atomic_write(config_path, yaml_text)
 
@@ -226,7 +226,7 @@ def test_load_config_empty_limits_section_uses_defaults(aldwin_home: Path) -> No
 
 
 def test_update_config_model_preserves_comments(aldwin_home: Path) -> None:
-    """TC-21: update_config_model updates model: while preserving comments and 0600."""
+    """Update_config_model updates model: while preserving comments and 0600."""
     ensure_home(aldwin_home)
     config_path = aldwin_home / "config.yaml"
 
@@ -260,7 +260,7 @@ def test_update_config_search_provider_preserves_comments(aldwin_home: Path) -> 
 def test_resolve_key_env_takes_priority_over_file(
     aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-08: OPENAI_API_KEY in environment overrides secrets.yaml."""
+    """OPENAI_API_KEY in environment overrides secrets.yaml."""
     save_secrets(
         SecretsConfig(openai_api_key=SecretStr("sk-file-key-1111")),
         aldwin_home,
@@ -273,7 +273,7 @@ def test_resolve_key_env_takes_priority_over_file(
 
 
 def test_save_and_load_secrets_permissions_and_masking(aldwin_home: Path) -> None:
-    """TC-09: Secrets saved with mode 0600, valid YAML, and masked str/repr."""
+    """Secrets saved with mode 0600, valid YAML, and masked str/repr."""
     secrets = SecretsConfig(
         openai_api_key=SecretStr("sk-proj-12345678a1b2"),
         tavily_api_key=SecretStr("tvly-dev-98765432z9y8"),
@@ -301,7 +301,7 @@ def test_save_and_load_secrets_permissions_and_masking(aldwin_home: Path) -> Non
 def test_load_secrets_repairs_loose_file_permissions(
     aldwin_home: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """TC-22: secrets.yaml found with mode 0644 is repaired to 0600 with warning."""
+    """Secrets.yaml found with mode 0644 is repaired to 0600 with warning."""
     secrets_path = save_secrets(
         SecretsConfig(openai_api_key=SecretStr("sk-proj-12345678a1b2")),
         aldwin_home,
@@ -319,7 +319,7 @@ def test_load_secrets_repairs_loose_file_permissions(
 def test_resolve_key_file_and_missing_sources(
     aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-23: Blank env var falls back to secrets.yaml; absent key returns missing."""
+    """Blank env var falls back to secrets.yaml; absent key returns missing."""
     monkeypatch.setenv("OPENAI_API_KEY", "   ")
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
     save_secrets(
@@ -337,7 +337,7 @@ def test_resolve_key_file_and_missing_sources(
 
 
 def test_mask_secret_and_resolved_key_repr() -> None:
-    """TC-24: mask_secret and ResolvedKey never leak short or full keys."""
+    """Mask_secret and ResolvedKey never leak short or full keys."""
     assert mask_secret(None) == ""
     assert mask_secret("") == ""
     assert mask_secret("   ") == ""
@@ -664,7 +664,7 @@ def _slow_reads(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_concurrent_update_config_maintains_yaml_integrity(
     aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-01: concurrent writers serialise, so no update is lost or torn."""
+    """Concurrent writers serialise, so no update is lost or torn."""
     import asyncio
 
     _slow_reads(monkeypatch)
@@ -698,7 +698,7 @@ async def test_concurrent_update_config_maintains_yaml_integrity(
 
 
 def test_nested_config_then_secrets_lock_order_no_deadlock(aldwin_home: Path) -> None:
-    """TC-02: two writers nesting config then secrets both finish."""
+    """Two writers nesting config then secrets both finish."""
     import threading
 
     finished: list[int] = []
@@ -719,7 +719,7 @@ def test_nested_config_then_secrets_lock_order_no_deadlock(aldwin_home: Path) ->
 
 
 def test_no_production_helper_nests_secrets_before_config() -> None:
-    """TC-02: no code takes the config lock while holding the secrets lock."""
+    """No code takes the config lock while holding the secrets lock."""
     import ast
 
     src = Path(__file__).resolve().parent.parent / "src" / "aldwin"
@@ -754,7 +754,7 @@ def test_no_production_helper_nests_secrets_before_config() -> None:
 def test_update_config_limits_single_rewrite_multi_key(
     aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-04: several limits change in one locked write."""
+    """Several limits change in one locked write."""
     import aldwin.core.settings as settings_module
 
     writes: list[Path] = []
@@ -776,7 +776,7 @@ def test_update_config_limits_single_rewrite_multi_key(
 
 
 def test_config_locked_creates_lock_file_mode_0600(tmp_path: Path) -> None:
-    """TC-05: the lock lives beside config.yaml and only the owner can read it."""
+    """The lock lives beside config.yaml and only the owner can read it."""
     home = tmp_path / "home"
     with config_locked(home):
         lock = home / "config.yaml.lock"
@@ -785,14 +785,14 @@ def test_config_locked_creates_lock_file_mode_0600(tmp_path: Path) -> None:
 
 
 def test_config_secrets_fingerprint_changes_on_config(aldwin_home: Path) -> None:
-    """TC-06: rewriting config.yaml changes the fingerprint."""
+    """Rewriting config.yaml changes the fingerprint."""
     before = config_secrets_fingerprint(aldwin_home)
     update_config_limits({"max_steps": 99}, aldwin_home)
     assert config_secrets_fingerprint(aldwin_home)[:2] != before[:2]
 
 
 def test_config_secrets_fingerprint_changes_on_secrets(aldwin_home: Path) -> None:
-    """TC-07: saving secrets.yaml changes the fingerprint."""
+    """Saving secrets.yaml changes the fingerprint."""
     before = config_secrets_fingerprint(aldwin_home)
     save_secrets(SecretsConfig(openai_api_key=SecretStr("sk-new-value")), aldwin_home)
     after = config_secrets_fingerprint(aldwin_home)
@@ -801,7 +801,7 @@ def test_config_secrets_fingerprint_changes_on_secrets(aldwin_home: Path) -> Non
 
 
 def test_config_secrets_fingerprint_ignores_lock_files(aldwin_home: Path) -> None:
-    """TC-08: taking or touching the lock files is not a settings change."""
+    """Taking or touching the lock files is not a settings change."""
     before = config_secrets_fingerprint(aldwin_home)
     with config_locked(aldwin_home), secrets_locked(aldwin_home):
         (aldwin_home / "config.yaml.lock").write_text("x", encoding="utf-8")
@@ -810,7 +810,7 @@ def test_config_secrets_fingerprint_ignores_lock_files(aldwin_home: Path) -> Non
 
 
 def test_config_secrets_fingerprint_missing_files_are_zeros(tmp_path: Path) -> None:
-    """TC-09: a missing file counts as zeros for its pair."""
+    """A missing file counts as zeros for its pair."""
     assert config_secrets_fingerprint(tmp_path) == (0, 0, 0, 0)
     (tmp_path / "config.yaml").write_text("model: gpt-4o\n", encoding="utf-8")
     fingerprint = config_secrets_fingerprint(tmp_path)
@@ -819,7 +819,7 @@ def test_config_secrets_fingerprint_missing_files_are_zeros(tmp_path: Path) -> N
 
 
 def test_config_secrets_fingerprint_tuple_shape(aldwin_home: Path) -> None:
-    """TC-10: four integers: config mtime and size, then secrets."""
+    """Four integers: config mtime and size, then secrets."""
     fingerprint = config_secrets_fingerprint(aldwin_home)
     assert len(fingerprint) == 4
     assert all(isinstance(part, int) for part in fingerprint)
@@ -828,7 +828,7 @@ def test_config_secrets_fingerprint_tuple_shape(aldwin_home: Path) -> None:
 def test_update_config_writers_use_config_locked(
     aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-11: every config.yaml writer takes the config lock."""
+    """Every config.yaml writer takes the config lock."""
     from contextlib import contextmanager
 
     import aldwin.core.settings as settings_module
@@ -871,7 +871,7 @@ def test_update_config_writers_use_config_locked(
 
 
 def test_update_config_limits_partial_merge(aldwin_home: Path) -> None:
-    """TC-13: keys not in the update keep their values."""
+    """Keys not in the update keep their values."""
     update_config_limits({"notes_days": 4}, aldwin_home)
     update_config_limits({"max_steps": 25}, aldwin_home)
 
@@ -882,7 +882,7 @@ def test_update_config_limits_partial_merge(aldwin_home: Path) -> None:
 
 
 def test_update_config_limits_empty_dict_noop(aldwin_home: Path) -> None:
-    """TC-14: an empty update leaves the file and limits unchanged."""
+    """An empty update leaves the file and limits unchanged."""
     config_path = aldwin_home / "config.yaml"
     before = config_path.read_text(encoding="utf-8")
 
@@ -908,7 +908,7 @@ def test_update_config_limits_empty_dict_noop(aldwin_home: Path) -> None:
 def test_update_config_limits_invalid_raises_config_error(
     aldwin_home: Path, updates: dict[str, object], field: str
 ) -> None:
-    """TC-15: a bad or unknown limit names the field and writes nothing."""
+    """A bad or unknown limit names the field and writes nothing."""
     config_path = aldwin_home / "config.yaml"
     before = config_path.read_text(encoding="utf-8")
 
@@ -920,7 +920,7 @@ def test_update_config_limits_invalid_raises_config_error(
 
 
 def test_update_config_limits_preserves_surrounding_comments(aldwin_home: Path) -> None:
-    """TC-16: comments around and inside the limits block survive."""
+    """Comments around and inside the limits block survive."""
     config_path = aldwin_home / "config.yaml"
     before = config_path.read_text(encoding="utf-8")
     comments = [line for line in before.splitlines() if line.lstrip().startswith("#")]
@@ -959,7 +959,7 @@ def test_update_config_limits_writes_a_missing_or_flow_block(
 
 
 def test_config_writers_keep_file_mode_0600(aldwin_home: Path) -> None:
-    """TC-24: writes under the lock still leave config.yaml at 0600."""
+    """Writes under the lock still leave config.yaml at 0600."""
     config_path = aldwin_home / "config.yaml"
     update_config_limits({"max_steps": 18}, aldwin_home)
     assert (config_path.stat().st_mode & 0o777) == 0o600
@@ -968,7 +968,7 @@ def test_config_writers_keep_file_mode_0600(aldwin_home: Path) -> None:
 
 
 def test_sequential_config_then_secrets_writes_succeed(aldwin_home: Path) -> None:
-    """TC-25: a config write then a secrets write, each locked alone, both land."""
+    """A config write then a secrets write, each locked alone, both land."""
     update_config_limits({"max_steps": 19}, aldwin_home)
     save_secrets(SecretsConfig(openai_api_key=SecretStr("sk-seq-value")), aldwin_home)
 
@@ -979,7 +979,7 @@ def test_sequential_config_then_secrets_writes_succeed(aldwin_home: Path) -> Non
 
 
 def test_privacy_md_lists_config_yaml_lock() -> None:
-    """TC-26: the home folder layout in the privacy doc mentions the lock files."""
+    """The home folder layout in the privacy doc mentions the lock files."""
     doc = (Path(__file__).resolve().parent.parent / "docs" / "privacy.md").read_text(
         encoding="utf-8"
     )

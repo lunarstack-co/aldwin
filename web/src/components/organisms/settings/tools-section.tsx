@@ -1,7 +1,7 @@
 "use client";
 
-import { Plus } from "lucide-react";
-import { useCallback, useState, type FormEvent } from "react";
+import { CircleCheck, Loader2, Plus } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import { BrandMark } from "@/components/brand/brand-mark";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import type { CatalogItem, ConnectorInfo } from "@/types/protocol";
 import type { Outcome } from "@/utils/ws/session";
 import {
   addConnector,
+  cancelSignIn,
   loadConnectors,
   removeConnector,
   setConnectorEnabled,
@@ -28,12 +29,20 @@ import {
 } from "@/utils/settings/actions";
 import { fill } from "@/utils/text";
 
-import { ConnectorSignIn } from "./connector-sign-in";
+import { SignInStep } from "./connector-sign-in";
 import { byTone, StatusPill, type Tone } from "./status";
 
 function toneOf(connector: ConnectorInfo): Tone {
   if (connector.status === "connected") return "ok";
   return connector.status === "disabled" ? "off" : "attention";
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
 }
 
 function isWebAddress(text: string): boolean {
@@ -90,7 +99,7 @@ function RemoveDialog({ connector, onClose }: { connector: ConnectorInfo; onClos
   );
 }
 
-function ConnectorRow({ connector }: { connector: ConnectorInfo }) {
+function ConnectorRow({ connector, onAuthenticate }: { connector: ConnectorInfo; onAuthenticate: () => void }) {
   const session = useSession();
   const { problem, run } = useRowAction();
   const signingIn = useSettingsStore((s) => s.signIn?.name === connector.name);
@@ -105,20 +114,20 @@ function ConnectorRow({ connector }: { connector: ConnectorInfo }) {
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <BrandMark name={connector.name} kind="connector" className="size-5" />
-        <span className="min-w-0 truncate font-medium">{connector.title}</span>
+        <span className="max-w-full min-w-0 truncate font-medium">{connector.title}</span>
         <StatusPill tone={toneOf(connector)}>{copy.status[connector.status]}</StatusPill>
         {connector.status === "connected" ? (
           <span className="text-muted-foreground text-xs">
             {count === 1 ? copy.oneTool : fill(copy.tools, { count })}
           </span>
         ) : null}
-        <span className="ms-auto flex items-center gap-1">
+        <span className="ms-auto flex flex-wrap items-center justify-end gap-1">
           {connector.status === "needs_auth" ? (
             <Button
               variant="outline"
               size="sm"
               disabled={signingIn}
-              onClick={() => void run(() => signInConnector(session, connector.name))}
+              onClick={onAuthenticate}
               className="max-md:h-10"
             >
               {copy.authenticate}
@@ -178,7 +187,7 @@ export function groupCatalog(items: CatalogItem[], searching: boolean): CatalogG
   return groups;
 }
 
-function AddByUrl({ onAdd }: { onAdd: (target: AddTarget) => void }) {
+function AddByUrl({ onAdd, onCancel }: { onAdd: (target: AddTarget) => void; onCancel: () => void }) {
   const [url, setUrl] = useState("");
   useUnsavedChanges(url.trim() !== "");
   const [invalid, setInvalid] = useState(false);
@@ -205,107 +214,194 @@ function AddByUrl({ onAdd }: { onAdd: (target: AddTarget) => void }) {
           className="max-md:h-10"
         />
       </Field>
-      <Button type="submit" size="sm" variant="outline" disabled={url.trim() === ""} className="self-start max-md:h-10">
-        {copy.add}
-      </Button>
+      <DialogFooter className="mt-2">
+        <Button type="button" variant="outline" onClick={onCancel} data-testid="add-app-cancel" className="max-md:h-10">
+          {common.cancel}
+        </Button>
+        <Button type="submit" disabled={url.trim() === ""} className="max-md:h-10">
+          {copy.add}
+        </Button>
+      </DialogFooter>
     </form>
   );
 }
 
-function AddAppDialog({
-  catalog,
-  connected,
-  onAdd,
+/** Where the connect dialog is: the address form, working (with or without a sign-in), done, or failed. */
+type Flow =
+  | { step: "address" }
+  | { step: "working"; id: number; title: string; url: string | null; retry: () => void }
+  | { step: "done"; title: string; url: string | null }
+  | { step: "failed"; title: string; message: string; retry: () => void };
+
+function ConnectDialog({
+  flow,
+  onAddress,
+  onCancel,
   onClose,
 }: {
-  catalog: CatalogItem[];
-  connected: Set<string>;
-  onAdd: (target: AddTarget) => void;
+  flow: Flow;
+  onAddress: (target: AddTarget) => void;
+  onCancel: () => void;
   onClose: () => void;
 }) {
-  const [query, setQuery] = useState("");
-  const shown = catalog.filter((item) => matches(item, query));
+  const signIn = useSettingsStore((s) => s.signIn);
+  const connected = useSettingsStore((s) =>
+    flow.step === "done" ? s.connectors.data.items.find((c) => c.url === flow.url) : undefined,
+  );
+  const signingIn = flow.step === "working" && signIn !== null;
+  const title =
+    flow.step === "address"
+      ? copy.addTitle
+      : signingIn
+        ? fill(signInCopy.title, { title: signIn.title })
+        : flow.step === "done"
+          ? fill(copy.connectedTitle, { title: flow.title })
+          : flow.step === "failed"
+            ? fill(copy.failedTitle, { title: flow.title })
+            : fill(copy.connectingTitle, { title: flow.title });
+  // Closing while something is running cancels it, the same as the Cancel button.
+  const dismiss = flow.step === "working" ? onCancel : onClose;
+
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent data-testid="add-app" className="flex max-h-[min(40rem,90dvh)] flex-col gap-4 sm:max-w-lg">
-        <DialogTitle>{copy.addTitle}</DialogTitle>
-        <DialogDescription>{copy.addLede}</DialogDescription>
-        <Input
-          type="search"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={copy.searchLabel}
-          aria-label={copy.searchLabel}
-          className="h-11 text-base"
-        />
-        <div className="-mx-1 flex min-h-0 flex-col gap-4 overflow-y-auto px-1">
-          {shown.length === 0 ? (
-            <p className="text-muted-foreground text-sm">{fill(copy.noMatch, { query: query.trim() })}</p>
-          ) : (
-            <div className="flex flex-col gap-4" data-testid="connector-catalog">
-              {groupCatalog(shown, query.trim() !== "").map((group) => (
-                <section key={group.key} data-category={group.key} className="flex flex-col gap-2">
-                  {group.label ? (
-                    <h3 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">{group.label}</h3>
-                  ) : null}
-                  <ul className="flex flex-col gap-2">
-                    {group.items.map((item) => {
-                      const added = item.added || connected.has(item.name);
-                      return (
-                        <li key={item.name} className="flex items-start gap-3 rounded-lg border p-3" data-catalog={item.name}>
-                          <BrandMark name={item.name} kind="connector" className="mt-0.5 size-5" />
-                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                            <span className="font-medium">{item.title}</span>
-                            <span className="text-muted-foreground text-sm">{item.purpose}</span>
-                          </span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={added}
-                            onClick={() => onAdd({ url: item.url, item })}
-                            className="shrink-0 max-md:h-10"
-                          >
-                            {added ? copy.added : copy.add}
-                          </Button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </section>
-              ))}
-            </div>
-          )}
-          <div className="flex flex-col gap-2 border-t pt-4">
-            <h3 className="text-sm font-medium">{copy.addUrl}</h3>
-            <AddByUrl onAdd={onAdd} />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} data-testid="add-app-cancel" className="max-md:h-10">
-            {common.cancel}
-          </Button>
-        </DialogFooter>
+    <Dialog open onOpenChange={(open) => !open && dismiss()}>
+      <DialogContent data-testid="connect-dialog" data-step={signingIn ? "sign-in" : flow.step} className="sm:max-w-md">
+        <DialogTitle className="pe-6">{title}</DialogTitle>
+        {flow.step === "address" ? (
+          <>
+            <DialogDescription>{copy.addLede}</DialogDescription>
+            <AddByUrl onAdd={onAddress} onCancel={onClose} />
+          </>
+        ) : flow.step === "working" ? (
+          <>
+            {signingIn ? (
+              <SignInStep signIn={signIn} />
+            ) : (
+              <DialogDescription className="flex items-center gap-2" data-testid="adding-app">
+                <Loader2 aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />
+                {copy.connecting}
+              </DialogDescription>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={onCancel} data-testid="sign-in-cancel" className="max-md:h-10">
+                {common.cancel}
+              </Button>
+            </DialogFooter>
+          </>
+        ) : flow.step === "done" ? (
+          <>
+            <DialogDescription className="flex items-center gap-2" data-testid="connect-done">
+              <CircleCheck aria-hidden className="text-live size-4" />
+              {connected && connected.tools.length > 0
+                ? fill(connected.tools.length === 1 ? copy.connectedOneTool : copy.connectedTools, {
+                    count: connected.tools.length,
+                  })
+                : copy.connectedBody}
+            </DialogDescription>
+            <DialogFooter>
+              <Button onClick={onClose} data-testid="connect-close" className="max-md:h-10">
+                {copy.done}
+              </Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
+            <DialogDescription role="alert" className="text-destructive" data-testid="connect-failed">
+              {flow.message}
+            </DialogDescription>
+            <DialogFooter>
+              <Button variant="outline" onClick={onClose} className="max-md:h-10">
+                {copy.close}
+              </Button>
+              <Button onClick={flow.retry} data-testid="connect-retry" className="max-md:h-10">
+                {copy.tryAgain}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function Library({ items, searching, onAdd }: { items: CatalogItem[]; searching: boolean; onAdd: (target: AddTarget) => void }) {
+  return (
+    <div className="flex flex-col gap-5" data-testid="connector-catalog">
+      {groupCatalog(items, searching).map((group) => (
+        <section key={group.key} data-category={group.key} className="flex flex-col gap-2">
+          {group.label ? (
+            <h4 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">{group.label}</h4>
+          ) : null}
+          <ul className="grid gap-2 @lg:grid-cols-2">
+            {group.items.map((item) => (
+              <li key={item.name} className="flex items-start gap-3 rounded-lg border p-3" data-catalog={item.name}>
+                <BrandMark name={item.name} kind="connector" className="mt-0.5 size-5" />
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5 [overflow-wrap:anywhere]">
+                  <span className="font-medium">{item.title}</span>
+                  <span className="text-muted-foreground text-sm">{item.purpose}</span>
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onAdd({ url: item.url, item })}
+                  aria-label={fill(copy.addNamed, { title: item.title })}
+                  className="shrink-0 max-md:h-10"
+                >
+                  {copy.add}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
   );
 }
 
 export function ToolsSection() {
   const session = useSession();
   const connectors = useConnectors();
-  const [expired, setExpired] = useState<string | null>(null);
-  const onExpired = useCallback((title: string) => setExpired(title), []);
-  const [picking, setPicking] = useState(false);
-  const [adding, setAdding] = useState<string | null>(null);
-  const { problem, run } = useRowAction();
+  const signIn = useSettingsStore((s) => s.signIn);
+  const [flow, setFlow] = useState<Flow | null>(null);
+  const [query, setQuery] = useState("");
+  // Each run gets an id; a run that was cancelled or replaced is ignored when it answers.
+  const runs = useRef(0);
 
-  // The dialog closes at once; a sign-in, if the app needs one, shows on the page.
-  async function add(target: AddTarget) {
-    setPicking(false);
-    setExpired(null);
-    setAdding(target.item?.title ?? target.url);
-    await run(() => addConnector(session, target.url, target.item));
-    setAdding(null);
+  function connect(title: string, url: string | null, request: () => Promise<Outcome>) {
+    const id = ++runs.current;
+    const retry = () => connect(title, url, request);
+    setFlow({ step: "working", id, title, url, retry });
+    void request().then((outcome) => {
+      if (runs.current !== id) return;
+      if (outcome.ok) setFlow({ step: "done", title, url });
+      else setFlow({ step: "failed", title, message: outcome.message, retry });
+    });
+  }
+
+  // The host gives up on a sign-in nobody answered; the dialog says so instead of waiting on.
+  useEffect(() => {
+    if (signIn === null || flow?.step !== "working") return;
+    const { title, retry } = flow;
+    const timer = window.setTimeout(
+      () => {
+        runs.current += 1;
+        useSettingsStore.getState().setSignIn(null);
+        setFlow({ step: "failed", title, message: fill(signInCopy.expired, { title: signIn.title }), retry });
+      },
+      Math.max(0, signIn.expiresAt - Date.now()),
+    );
+    return () => window.clearTimeout(timer);
+  }, [signIn, flow]);
+
+  function add(target: AddTarget) {
+    connect(target.item?.title ?? hostOf(target.url), target.url, () =>
+      addConnector(session, target.url, target.item),
+    );
+  }
+
+  function cancel() {
+    runs.current += 1;
+    cancelSignIn(session);
+    setFlow(null);
   }
 
   if (connectors.status === "error") {
@@ -320,55 +416,76 @@ export function ToolsSection() {
   if (connectors.status !== "ready") return <p className="text-muted-foreground text-sm">{common.loading}</p>;
 
   const { items, catalog } = connectors.data;
-  const addButton = (
-    <Button onClick={() => setPicking(true)} data-testid="add-app-open" className="max-md:h-10">
-      <Plus aria-hidden />
-      {copy.addApp}
-    </Button>
-  );
+  const searching = query.trim() !== "";
+  const needle = query.trim().toLowerCase();
+  const connected = new Set(items.map((connector) => connector.name));
+  const mine = searching ? items.filter((c) => `${c.title} ${c.name}`.toLowerCase().includes(needle)) : items;
+  // Apps already connected sit under Your apps, so the library lists only the rest.
+  const library = catalog.filter((item) => !item.added && !connected.has(item.name) && matches(item, query));
+  const nothingFound = searching && mine.length === 0 && library.length === 0;
+
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-sm font-medium">{copy.connected}</h3>
-        {addButton}
-      </div>
-      <ConnectorSignIn onExpired={onExpired} />
-      {expired !== null ? (
-        <p role="status" className="text-sm" data-testid="sign-in-expired">
-          {fill(signInCopy.expired, { title: expired })}
-        </p>
-      ) : null}
-      {adding !== null ? (
-        <p role="status" className="text-muted-foreground text-sm" data-testid="adding-app">
-          {fill(copy.adding, { title: adding })}
-        </p>
-      ) : null}
-      {problem !== null ? (
-        <p role="alert" className="text-destructive text-sm">
-          {problem}
-        </p>
-      ) : null}
-      {items.length === 0 ? (
-        <div className="flex flex-col items-start gap-3 rounded-lg border border-dashed p-6" data-testid="no-apps">
-          <p className="text-sm">{copy.none}</p>
-        </div>
-      ) : (
-        <>
-          <p className="text-muted-foreground text-sm">{copy.toolsHint}</p>
-          <ul className="flex flex-col gap-2" data-testid="connector-list">
-            {byTone(items, toneOf).map((connector) => (
-              <ConnectorRow key={connector.name} connector={connector} />
-            ))}
-          </ul>
-        </>
-      )}
-      {picking ? (
-        <AddAppDialog
-          catalog={catalog}
-          connected={new Set(items.map((connector) => connector.name))}
-          onAdd={(target) => void add(target)}
-          onClose={() => setPicking(false)}
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-2 @md:flex-row">
+        <Input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={copy.searchLabel}
+          aria-label={copy.searchLabel}
+          className="h-10 min-w-0 @md:flex-1"
         />
+        <Button
+          variant="outline"
+          onClick={() => setFlow({ step: "address" })}
+          data-testid="add-app-open"
+          className="h-10 self-start @md:self-auto"
+        >
+          <Plus aria-hidden />
+          {copy.addApp}
+        </Button>
+      </div>
+      {nothingFound ? (
+        <p className="text-muted-foreground text-sm" data-testid="no-match">
+          {fill(copy.noMatch, { query: query.trim() })}
+        </p>
+      ) : null}
+      {searching && mine.length === 0 ? null : (
+        <section className="flex flex-col gap-2" data-testid="your-apps">
+          <h3 className="text-sm font-medium">{copy.connected}</h3>
+          {items.length === 0 ? (
+            <p className="text-muted-foreground rounded-lg border border-dashed p-4 text-sm" data-testid="no-apps">
+              {copy.none}
+            </p>
+          ) : (
+            <>
+              <p className="text-muted-foreground text-sm">{copy.toolsHint}</p>
+              <ul className="flex flex-col gap-2" data-testid="connector-list">
+                {byTone(mine, toneOf).map((connector) => (
+                  <ConnectorRow
+                    key={connector.name}
+                    connector={connector}
+                    onAuthenticate={() =>
+                      connect(connector.title, connector.url, () => signInConnector(session, connector.name))
+                    }
+                  />
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
+      )}
+      {library.length > 0 ? (
+        <section className="flex flex-col gap-3" data-testid="app-library">
+          <div className="flex flex-col gap-1">
+            <h3 className="text-sm font-medium">{copy.library}</h3>
+            <p className="text-muted-foreground text-sm">{copy.libraryHint}</p>
+          </div>
+          <Library items={library} searching={searching} onAdd={add} />
+        </section>
+      ) : null}
+      {flow !== null ? (
+        <ConnectDialog flow={flow} onAddress={add} onCancel={cancel} onClose={() => setFlow(null)} />
       ) : null}
     </div>
   );

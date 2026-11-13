@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { ExternalLink, Loader2 } from "lucide-react";
+import { useState, type FormEvent } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import common from "@/data/settings/common.json";
 import { useUnsavedChanges } from "@/hooks/use-unsaved-changes";
 import copy from "@/data/settings/sign-in.json";
 import { useSession } from "@/providers/chat-session-provider";
-import { useSettingsStore, type SignIn } from "@/state/settings-store";
-import { cancelSignIn, pasteSignIn, tokenSignIn } from "@/utils/settings/actions";
+import type { SignIn } from "@/state/settings-store";
+import { cn } from "@/utils/cn";
+import { pasteSignIn, tokenSignIn } from "@/utils/settings/actions";
 import { fill } from "@/utils/text";
 
 import { SecretInput } from "../secret-input";
@@ -68,34 +70,10 @@ function Answer({ signIn }: { signIn: SignIn }) {
   );
 }
 
-/** The sign-in page opens only on a click; the panel closes when the host's time runs out. */
-export function ConnectorSignIn({ onExpired }: { onExpired: (title: string) => void }) {
-  const session = useSession();
-  const signIn = useSettingsStore((s) => s.signIn);
-
-  useEffect(() => {
-    if (signIn === null) return;
-    const timer = window.setTimeout(
-      () => {
-        useSettingsStore.getState().setSignIn(null);
-        onExpired(signIn.title);
-      },
-      Math.max(0, signIn.expiresAt - Date.now()),
-    );
-    return () => window.clearTimeout(timer);
-  }, [signIn, onExpired]);
-
-  if (signIn === null) return null;
+/** The sign-in step of the connect dialog. The sign-in page opens only on a click. */
+export function SignInStep({ signIn }: { signIn: SignIn }) {
   return (
-    <section
-      aria-labelledby="sign-in-title"
-      data-testid="connector-sign-in"
-      data-mode={signIn.mode}
-      className="border-live/40 flex flex-col gap-3 rounded-lg border p-3"
-    >
-      <h3 id="sign-in-title" className="text-sm font-medium">
-        {fill(copy.title, { title: signIn.title })}
-      </h3>
+    <div data-testid="connector-sign-in" data-mode={signIn.mode} className="flex flex-col gap-3">
       <p className="text-muted-foreground text-sm">
         {signIn.mode === "browser"
           ? copy.browser
@@ -109,9 +87,10 @@ export function ConnectorSignIn({ onExpired }: { onExpired: (title: string) => v
           target="_blank"
           rel="noreferrer noopener"
           data-testid="sign-in-open"
-          className="self-start text-sm font-medium underline underline-offset-4"
+          className={cn(buttonVariants({ variant: "default" }), "self-start max-md:h-10")}
         >
           {copy.open}
+          <ExternalLink aria-hidden />
         </a>
       ) : null}
       {signIn.mode === "token" && signIn.tokenHelpUrl !== null ? (
@@ -125,21 +104,13 @@ export function ConnectorSignIn({ onExpired }: { onExpired: (title: string) => v
         </a>
       ) : null}
       {signIn.mode === "browser" ? (
-        <p role="status" className="text-muted-foreground text-sm">
+        <p role="status" className="text-muted-foreground flex items-center gap-2 text-sm">
+          <Loader2 aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />
           {copy.waiting}
         </p>
       ) : (
         <Answer key={`${signIn.name}-${signIn.mode}`} signIn={signIn} />
       )}
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => cancelSignIn(session)}
-        data-testid="sign-in-cancel"
-        className="self-start max-md:h-10"
-      >
-        {copy.cancel}
-      </Button>
-    </section>
+    </div>
   );
 }

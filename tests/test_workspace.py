@@ -83,7 +83,6 @@ def test_nonexistent_intermediate_dotdot_resolves_outside(tmp_path: Path) -> Non
 def test_symlink_inside_workspace_pointing_outside_counts_as_outside(
     tmp_path: Path,
 ) -> None:
-    """Symlink inside workspace pointing outside resolves outside."""
     ws_dir = tmp_path / "ws"
     outside_dir = tmp_path / "outside"
     ws_dir.mkdir()

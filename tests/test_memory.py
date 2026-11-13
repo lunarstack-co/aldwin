@@ -1,4 +1,4 @@
-"""Unit, concurrency, and integration tests for `aldwin.core.memory` (`ENG-381`)."""
+"""Unit, concurrency, and integration tests for `aldwin.core.memory`."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ from aldwin.core.tools import RecallTool, RememberTool, build_memory_tools
 
 
 async def test_remember_appends_note_with_metadata_comment(aldwin_home: Path) -> None:
-    """TC-01: `remember("Fola prefers short answers")` appends line with id/at/src."""
+    """`remember("Fola prefers short answers")` appends line with id/at/src."""
     ensure_home(aldwin_home)
     fixed_now = datetime(2026, 10, 17, 14, 23, 5, tzinfo=timezone.utc)
 
@@ -72,7 +72,7 @@ async def test_remember_appends_note_with_metadata_comment(aldwin_home: Path) ->
 def test_remember_rejects_duplicate_within_7_days_normalised(
     aldwin_home: Path,
 ) -> None:
-    """TC-02: Same text (case/whitespace normalised) within 7 days is rejected."""
+    """Same text (case/whitespace normalised) within 7 days is rejected."""
     ensure_home(aldwin_home)
     day_1 = datetime(2026, 10, 17, 9, 0, tzinfo=timezone.utc)
     day_4 = datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc)
@@ -105,7 +105,7 @@ def test_remember_rejects_duplicate_within_7_days_normalised(
 def test_remember_strips_html_comments_and_leading_markdown(
     aldwin_home: Path,
 ) -> None:
-    """TC-03: Text with `<!-- x -->` and leading `# ` has markers stripped."""
+    """Text with `<!-- x -->` and leading `# ` has markers stripped."""
     ensure_home(aldwin_home)
     fixed_now = datetime(2026, 10, 17, 15, 0, tzinfo=timezone.utc)
 
@@ -161,7 +161,7 @@ async def test_remember_rejects_empty_and_over_500_chars(aldwin_home: Path) -> N
 async def test_recall_matches_all_words_newest_first_capped_at_20(
     aldwin_home: Path,
 ) -> None:
-    """TC-05: `recall("agentling docs")` returns <= 20 matches newest-first."""
+    """`recall("agentling docs")` returns <= 20 matches newest-first."""
     ensure_home(aldwin_home)
     base_day = date(2026, 10, 17)
 
@@ -207,7 +207,7 @@ async def test_recall_matches_all_words_newest_first_capped_at_20(
 def test_notes_older_than_7_days_excluded_from_memory_block_but_recalled(
     aldwin_home: Path,
 ) -> None:
-    """TC-06: Notes > 7 days old fade from `memory_block` but stay in `recall`."""
+    """Notes > 7 days old fade from `memory_block` but stay in `recall`."""
     ensure_home(aldwin_home)
     today = date(2026, 10, 17)
     old_ts = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
@@ -229,7 +229,7 @@ def test_profile_over_cap_truncated_in_prompt_and_warns_once(
     aldwin_home: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """TC-07: 5,000-char profile uses first 4,000 in prompt and warns once."""
+    """5,000-char profile uses first 4,000 in prompt and warns once."""
     ensure_home(aldwin_home)
     while pop_profile_truncation_warning() is not None:
         pass
@@ -277,7 +277,7 @@ def test_memory_block_escapes_injection_tags(aldwin_home: Path) -> None:
 
 
 def test_memory_block_order_and_empty_sections(aldwin_home: Path) -> None:
-    """TC-08: Profile before notes, newest first, wrapped in `<memory>`."""
+    """Profile before notes, newest first, wrapped in `<memory>`."""
     ensure_home(aldwin_home)
     today = date(2026, 10, 17)
     limits = LimitsConfig()
@@ -342,7 +342,7 @@ async def test_hand_edit_to_profile_persona_and_notes_mid_conversation(
     aldwin_home: Path,
     fake_model: FakeModel,
 ) -> None:
-    """TC-11: Hand edits to profile, persona, and notes apply on the next call."""
+    """Hand edits to profile, persona, and notes apply on the next call."""
     ensure_home(aldwin_home)
     fake_model.add_turns(
         FakeTurn.text(["Turn 1 reply."]),
@@ -388,7 +388,7 @@ async def test_hand_edit_to_profile_persona_and_notes_mid_conversation(
 async def test_concurrent_remember_and_file_writes_under_flock(
     aldwin_home: Path,
 ) -> None:
-    """TC-12: Concurrent `remember` calls under `fcntl.flock` lose zero lines."""
+    """Concurrent `remember` calls under `fcntl.flock` lose zero lines."""
     ensure_home(aldwin_home)
     fixed_now = datetime(2026, 10, 17, 12, 0, tzinfo=timezone.utc)
 
@@ -425,7 +425,7 @@ async def test_concurrent_remember_and_file_writes_under_flock(
 
 
 def test_notes_over_cap_drop_oldest_whole_lines_first(aldwin_home: Path) -> None:
-    """TC-14: Notes over `notes_chars` drop oldest lines first and keep whole lines."""
+    """Notes over `notes_chars` drop oldest lines first and keep whole lines."""
     ensure_home(aldwin_home)
     today = date(2026, 10, 17)
 
@@ -459,7 +459,7 @@ def test_corrupted_note_lines_and_stray_files_logged_and_ignored(
     aldwin_home: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """TC-15: Corrupted lines and non-date files are logged and ignored safely."""
+    """Corrupted lines and non-date files are logged and ignored safely."""
     ensure_home(aldwin_home)
     notes_dir = aldwin_home / "memory" / "notes"
     today = date(2026, 10, 17)
@@ -499,7 +499,7 @@ def test_corrupted_note_lines_and_stray_files_logged_and_ignored(
 
 
 async def test_remember_tool_schema_forbids_target_paths(aldwin_home: Path) -> None:
-    """TC-18: `RememberTool` accepts only `text` and cannot touch profile or persona."""
+    """`RememberTool` accepts only `text` and cannot touch profile or persona."""
     ensure_home(aldwin_home)
     remember_tool = RememberTool(aldwin_home)
     params = remember_tool.definition.parameters
@@ -521,7 +521,7 @@ async def test_remember_tool_schema_forbids_target_paths(aldwin_home: Path) -> N
 
 
 def test_memory_summary_via_core_and_client(aldwin_home: Path) -> None:
-    """TC-19: `memory_summary()` and `get_memory_summary()` return profile and notes."""
+    """`memory_summary()` and `get_memory_summary()` return profile and notes."""
     ensure_home(aldwin_home)
     today = date(2026, 10, 17)
     atomic_write(aldwin_home / "memory" / "profile.md", "Fola · London · Founder\n")
@@ -681,7 +681,7 @@ async def test_remember_tool_updates_session_id_on_new_conversation(
 
 
 def test_memory_block_under_10ms_with_30_days_of_notes(aldwin_home: Path) -> None:
-    """TC-20: `memory_block` completes in < 10 ms with 30 days of notes."""
+    """`memory_block` completes in < 10 ms with 30 days of notes."""
     ensure_home(aldwin_home)
     today = date(2026, 10, 17)
     atomic_write(aldwin_home / "memory" / "profile.md", "P" * 3500)

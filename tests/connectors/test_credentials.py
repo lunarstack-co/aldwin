@@ -1,4 +1,4 @@
-"""Connector credential store (`FR-2`)."""
+"""Connector credential store."""
 
 from __future__ import annotations
 

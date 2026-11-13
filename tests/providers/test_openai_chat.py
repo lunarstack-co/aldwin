@@ -372,11 +372,11 @@ async def test_openai_chat_check_access_and_describe() -> None:
     assert described is not None
     assert described.id == "gpt-4o"
 
-    # Missing model returns None (Finding 1)
+    # Missing model returns None
     missing = await backend.describe_model("custom-model")
     assert missing is None
 
-    # Auth error check_access: 401 -> INVALID_KEY, 403 -> NO_ACCESS (Finding 7)
+    # Auth error check_access: 401 -> INVALID_KEY, 403 -> NO_ACCESS
     backend_auth = OpenAIChatBackend(
         entry,
         api_key="k",

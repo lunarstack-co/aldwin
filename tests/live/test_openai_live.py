@@ -23,7 +23,7 @@ async def _deny_ask(_summary: str, _detail: str = "") -> bool:
 
 @pytest.mark.live
 async def test_openai_live_key_models_and_turn(aldwin_home: Path) -> None:
-    """TC-12: Real OpenAI API key check, model list, and 1-turn streamed answer."""
+    """Real OpenAI API key check, model list, and 1-turn streamed answer."""
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         pytest.skip("OPENAI_API_KEY not set in environment.")
@@ -57,7 +57,7 @@ async def test_openai_live_key_models_and_turn(aldwin_home: Path) -> None:
 
 @pytest.mark.live
 async def test_tavily_live_search(aldwin_home: Path) -> None:
-    """FR-9 & TC-21: Real Tavily search returns numbered results when key is set."""
+    """Real Tavily search returns numbered results when key is set."""
     tavily_key = os.environ.get("TAVILY_API_KEY", "").strip()
     if not tavily_key:
         pytest.skip("TAVILY_API_KEY not set in environment.")

@@ -240,6 +240,53 @@ def test_hand_edit_reindexes(tmp_path: Path) -> None:
     assert "Elm" not in result
 
 
+def test_deleted_files_leave_the_index_and_others_stay(tmp_path: Path) -> None:
+    idx = _index(tmp_path)
+    kept = _write_note(idx.notes_dir, "2026-10-01", ["- kept walnut note"])
+    dropped = _write_note(idx.notes_dir, "2026-10-02", ["- dropped walnut note"])
+    _write_session(
+        idx.sessions_dir,
+        "gone",
+        updated_at="2026-10-02T12:00:00+00:00",
+        steps=[{"type": "task", "data": {"task": "walnut question"}}],
+    )
+    idx.sync()
+    assert "dropped" in idx.search("walnut")
+    assert "walnut question" in idx.search("walnut", scope="conversations")
+
+    dropped.unlink()
+    (idx.sessions_dir / "gone.json").unlink()
+    idx.sync()
+
+    result = idx.search("walnut")
+    assert "kept" in result
+    assert "dropped" not in result
+    assert "walnut question" not in idx.search("walnut", scope="conversations")
+    assert kept.exists()
+
+
+def test_an_unchanged_sync_never_opens_the_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    idx = _index(tmp_path)
+    _write_note(idx.notes_dir, "2026-10-01", ["- pecan note"])
+    idx.sync()
+    opened: list[str] = []
+    real_connect = MemoryIndex._connect
+
+    def counting_connect(self: MemoryIndex) -> sqlite3.Connection:
+        opened.append("open")
+        return real_connect(self)
+
+    monkeypatch.setattr(MemoryIndex, "_connect", counting_connect)
+    idx.sync()
+    assert opened == []
+
+    idx.index_path.unlink()
+    assert "pecan" in idx.search("pecan")
+    assert opened
+
+
 def test_synthetic_id_stable(tmp_path: Path) -> None:
     idx = _index(tmp_path)
     path = _write_note(idx.notes_dir, "2026-10-04", ["- bare note without id"])
@@ -263,7 +310,7 @@ def test_fallback_without_fts5(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.setattr(MemoryIndex, "fts5_available", staticmethod(lambda: False))
-    # Reset module fallback log flag.
+    # The fallback warning is logged once per process, so reset its flag.
     import aldwin.core.memory_index as mi
 
     monkeypatch.setattr(mi, "_FTS5_FALLBACK_LOGGED", False)
@@ -323,7 +370,7 @@ def test_perf_budget_rebuild_and_query(tmp_path: Path) -> None:
                 {"type": "final", "data": {"answer": f"answer {i}"}},
             ],
         )
-    # Ensure note files exist with headers for days we appended to blindly.
+    # The appends above skipped the day header, so add it where missing.
     for path in idx.notes_dir.glob("*.md"):
         text = path.read_text(encoding="utf-8")
         if not text.startswith("#"):

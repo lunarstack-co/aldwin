@@ -117,10 +117,13 @@ from aldwin.protocol import (
     SearchListRequest,
     SearchProvidersEvent,
     SearchUseRequest,
+    SessionsDeleteRequest,
     SessionsEvent,
     SessionsListRequest,
     SessionsNewRequest,
     SessionsOpenRequest,
+    SessionsPinRequest,
+    SessionsRenameRequest,
     SetModelRequest,
     SkillBodyEvent,
     SkillsEvent,
@@ -194,14 +197,12 @@ class AldwinClient:
 
     @property
     def model(self) -> str:
-        """Return the currently active model name."""
         if self._model_getter is not None:
             return self._model_getter()
         return self._fallback_model
 
     @property
     def session_id(self) -> str:
-        """Return the active conversation session ID."""
         if self._session_id_getter is not None:
             return self._session_id_getter()
         return self._fallback_session_id
@@ -384,6 +385,28 @@ class AldwinClient:
         """
         return await self._one(SessionsNewRequest(), SessionsEvent)
 
+    async def sessions_rename(self, session_id: str, title: str) -> SessionsEvent:
+        """Retitle a conversation; replies with the updated list."""
+        return await self._one(
+            SessionsRenameRequest(session_id=session_id, title=title), SessionsEvent
+        )
+
+    async def sessions_pin(self, session_id: str, pinned: bool) -> SessionsEvent:
+        """Pin or unpin a conversation; replies with the updated list."""
+        return await self._one(
+            SessionsPinRequest(session_id=session_id, pinned=pinned), SessionsEvent
+        )
+
+    async def sessions_delete(self, session_id: str) -> SessionsEvent:
+        """Delete a conversation's file; replies with the updated list.
+
+        Raises `ProtocolError` with code `busy` when a turn runs in it, or
+        `not_found`.
+        """
+        return await self._one(
+            SessionsDeleteRequest(session_id=session_id), SessionsEvent
+        )
+
     async def status(self) -> StatusEvent:
         """Fetch the current turn's progress; empty fields when no turn runs."""
         return await self._one(StatusRequest(), StatusEvent)
@@ -430,7 +453,7 @@ class AldwinClient:
         provider: str | None = None,
         refresh: bool = False,
     ) -> ModelsEvent:
-        """Fetch model inventory from host via `models.list` protocol request."""
+        """Fetch every provider's models with a `models.list` request."""
         self._ensure_reader()
         request = ModelsListRequest(provider=provider, refresh=refresh)
         queue: asyncio.Queue[Event | None] = asyncio.Queue()
@@ -658,9 +681,9 @@ class AldwinClient:
         dry_run: bool = False,
         on_approval: ApprovalHandler | None = None,
     ) -> ConnectorProbeEvent | ConnectorStatusEvent:
-        """Probe (`dry_run`) or add a connector: a remote `url` or a local
-        `command`. A local add asks first through `on_approval`; without one
-        the answer is no.
+        """Probe (`dry_run`) or add a connector: a remote `url` or a local `command`.
+
+        A local add asks first through `on_approval`; without one the answer is no.
 
         Raises `ProtocolError` with `code="auth_required"` when the server needs
         a token, or `code="connector"` with the message to show.
@@ -691,8 +714,7 @@ class AldwinClient:
         client_id: str | None = None,
         no_browser: bool = False,
     ) -> AsyncGenerator[Event, None]:
-        """Add a connector (`url` given) or sign one in again, yielding events
-        until `done` or `error`.
+        """Add a connector (`url` given) or sign one in again, yielding its events.
 
         A `connector.auth` event means the user must act: open its `url`, paste
         the address the browser ended on (`connectors_auth_paste`), or type a

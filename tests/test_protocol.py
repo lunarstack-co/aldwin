@@ -349,14 +349,14 @@ async def test_in_process_transport_rejects_send_after_close() -> None:
 
 
 async def test_in_process_attached_true_while_open() -> None:
-    """TC-03: an open CLI transport is attached and not closed."""
+    """An open CLI transport is attached and not closed."""
     transport = InProcessTransport()
     assert transport.attached is True
     assert transport.closed is False
 
 
 async def test_in_process_close_detaches_and_ends_requests() -> None:
-    """TC-04: closing detaches for good and wakes `receive_request` with `None`."""
+    """Closing detaches for good and wakes `receive_request` with `None`."""
     transport = InProcessTransport()
     await transport.close()
     assert transport.attached is False
@@ -496,7 +496,7 @@ def test_tc46_tool_event_preview_fields() -> None:
     assert round_result.v == 2
 
 
-# --- connectors (`FR-23`) ----------------------------------------------------
+# --- connectors ---------------------------------------------------------
 
 
 def _connector_messages() -> list[Any]:
@@ -810,7 +810,7 @@ def _session_item(session_id: str) -> SessionMetaItem:
 
 
 def test_sessions_protocol_models_round_trip() -> None:
-    """TC-14: `sessions.*` requests and the `sessions` event survive JSON."""
+    """`sessions.*` requests and the `sessions` event survive JSON."""
     for request in (
         SessionsListRequest(id="req_l"),
         SessionsOpenRequest(id="req_o", session_id="2026-11-10_abcd1234"),
@@ -832,7 +832,7 @@ def test_sessions_protocol_models_round_trip() -> None:
 
 
 def test_sessions_models_ignore_unknown_fields() -> None:
-    """TC-15: newer doors and hosts may add fields without breaking parsing."""
+    """Newer doors and hosts may add fields without breaking parsing."""
     request = parse_request(
         json.dumps(
             {"type": "sessions.open", "id": "r1", "session_id": "s1", "pin": True}
@@ -860,7 +860,7 @@ def test_sessions_models_ignore_unknown_fields() -> None:
 
 
 def test_sessions_open_requires_non_empty_id() -> None:
-    """TC-16: opening needs a session id."""
+    """Opening needs a session id."""
     with pytest.raises(ValidationError):
         SessionsOpenRequest(session_id="")
     with pytest.raises(ValidationError):
@@ -868,7 +868,7 @@ def test_sessions_open_requires_non_empty_id() -> None:
 
 
 def test_status_request_and_progress_fields_round_trip() -> None:
-    """TC-27: the status pull and its progress fields survive JSON."""
+    """The status pull and its progress fields survive JSON."""
     request = StatusRequest(id="req_s")
     assert parse_request(request.model_dump_json()) == request
 
@@ -882,7 +882,7 @@ def test_status_request_and_progress_fields_round_trip() -> None:
 
 
 def test_status_event_old_shape_still_parses() -> None:
-    """TC-27: a status event with only a message gets empty progress fields."""
+    """A status event with only a message gets empty progress fields."""
     parsed = parse_event(
         json.dumps({"type": "event", "kind": "status", "re": "r1", "message": "x"})
     )

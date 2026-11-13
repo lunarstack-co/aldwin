@@ -1,5 +1,6 @@
 {
   "label": "Connected apps",
+  "search": "Search apps",
   "button": "Use a connected app (/)",
   "loading": "Loading your apps…",
   "none": "No apps are connected yet.",

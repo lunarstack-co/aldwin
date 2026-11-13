@@ -18,7 +18,7 @@ When you use a local model on a loopback address (`127.0.0.1`, `localhost`, `::1
 - **Outbound network features:**
   - `web_search`: sends search queries to the configured provider (SearXNG URL and/or a hosted API key) only when set up and called. See [Set up SearXNG](searxng.md).
   - `web_fetch` and `download_file`: make HTTP GET requests to target URLs only when invoked.
-  - Remote MCP connectors: talk to their configured remote server URLs.
+  - Remote MCP connectors: talk to their configured remote server URLs. The first time an app outside the built-in list connects, Aldwin also asks that app's own site (its host or parent domain only) for its icon (no sign-in is sent) and keeps it on this computer.
   - PyPI update check: set `check_for_updates: false` in `~/.aldwin/config.yaml` to disable the startup version check.
 - When `check_for_updates: false` is set and web tools or remote connectors are not used, Aldwin operates in a complete air-gapped, zero-outbound-network posture.
 
@@ -44,7 +44,7 @@ All local data lives in `~/.aldwin`. Set `ALDWIN_HOME=/path/to/dir` to use a dif
 │   ├── notes/
 │   │   └── YYYY-MM-DD.md   daily notes written by `remember`
 │   └── index.sqlite        rebuildable search index over notes and sessions
-├── state/                  migration marker, last-shown tip, recent skills for @, locks/<session id>.lock held while a turn runs, web.lock (pid, address and start time of a running `aldwin web`), and onboarding.json (the browser's optional profile step: first name, occupation and answer styles, or a note that it was skipped)
+├── state/                  migration marker, last-shown tip, recent skills for @, locks/<session id>.lock held while a turn runs, web.lock (pid, address and start time of a running `aldwin web`), connector-icons/ (the icons of apps you connected by address), and onboarding.json (the browser's optional profile step: first name, occupation and answer styles, or a note that it was skipped)
 ├── tmp/                    trimmed tool output, cleared after 7 days
 ├── history                 prompt_toolkit input history
 └── logs/

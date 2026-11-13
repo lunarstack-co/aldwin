@@ -17,7 +17,10 @@ from pydantic import ValidationError
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "scripts/connectors/import_catalog.py"
 SHIPPED_CATALOG = REPO / "src/aldwin/core/assets/connectors/catalog.yaml"
-SHIPPED_MARKS = REPO / "web/src/components/brand/logos/marks.ts"
+SHIPPED_MARKS = (
+    REPO / "web/src/components/brand/logos/marks.ts",
+    REPO / "web/src/components/brand/logos/hand-app-marks.ts",
+)
 
 
 def _load_script() -> ModuleType:
@@ -347,8 +350,8 @@ async def test_an_expected_sign_in_must_match(oauth_server: Any) -> None:
 
 def _offline_paths(
     tmp_path: Path, allowlist: list[Any], old: str | None
-) -> dict[str, Path]:
-    paths = {
+) -> dict[str, Any]:
+    paths: dict[str, Any] = {
         "allowlist": tmp_path / "allowlist.yaml",
         "catalog_path": tmp_path / "catalog.yaml",
         "marks_path": tmp_path / "app-marks.ts",
@@ -374,7 +377,7 @@ def _offline_paths(
     return paths
 
 
-async def _run(paths: dict[str, Path], **options: Any) -> tuple[int, Any]:
+async def _run(paths: dict[str, Any], **options: Any) -> tuple[int, Any]:
     async with httpx2.AsyncClient() as http:
         return await ic.build(ic.Options(offline=True, **options), http, **paths)
 
@@ -427,7 +430,7 @@ async def test_a_vendor_missing_from_the_cache_suggests_refresh(
 
 def test_a_hand_logo_missing_from_marks_ts_is_named() -> None:
     report = ic.Report(missing_hand=["acme"])
-    assert report.render() == "No hand-drawn mark in marks.ts: acme"
+    assert report.render() == "No hand-drawn mark in hand-app-marks.ts: acme"
 
 
 async def test_a_dry_run_writes_nothing(tmp_path: Path) -> None:

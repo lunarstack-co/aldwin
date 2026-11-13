@@ -73,6 +73,7 @@ class MemoryIndex:
         self.notes_dir = notes_dir
         self.sessions_dir = sessions_dir
         self.index_path = index_path
+        self._synced_state: tuple[object, ...] | None = None
 
     @staticmethod
     def fts5_available() -> bool:
@@ -178,8 +179,40 @@ class MemoryIndex:
                     raise
         raise sqlite3.DatabaseError("unable to open memory index")
 
+    def _folder_state(self) -> tuple[tuple[str, int, int], ...]:
+        entries: list[tuple[str, int, int]] = []
+        for folder, suffix in ((self.notes_dir, ".md"), (self.sessions_dir, ".json")):
+            try:
+                with os.scandir(folder) as found:
+                    for entry in found:
+                        if entry.name.endswith(suffix):
+                            st = entry.stat()
+                            entries.append((entry.path, st.st_mtime_ns, st.st_size))
+            except OSError:
+                continue
+        return tuple(sorted(entries))
+
+    def _index_state(self) -> tuple[int, int] | None:
+        try:
+            st = self.index_path.stat()
+        except OSError:
+            return None
+        return (st.st_mtime_ns, st.st_size)
+
     def sync(self) -> None:
-        """Re-index notes and session files whose mtime or size changed."""
+        """Re-index notes and session files whose mtime or size changed.
+
+        When no file and not the index itself changed since this object's last
+        sync, the database is not opened at all, so a no-op sync stays cheap.
+        """
+        folders = self._folder_state()
+        if self._synced_state == (folders, self._index_state()):
+            return
+        if self._sync_files():
+            self._synced_state = (folders, self._index_state())
+
+    def _sync_files(self) -> bool:
+        """Bring the index up to date with the files; False when it could not."""
         for attempt in range(2):
             try:
                 conn = self._connect()
@@ -188,12 +221,12 @@ class MemoryIndex:
                     self._unlink_index()
                     continue
                 logger.warning("Could not open memory index for sync")
-                return
+                return False
             try:
                 self._sync_notes(conn)
                 self._sync_sessions(conn)
                 conn.commit()
-                return
+                return True
             except sqlite3.DatabaseError:
                 logger.info("Memory index rebuilt")
                 self._unlink_index()
@@ -203,6 +236,7 @@ class MemoryIndex:
                 except sqlite3.Error:
                     logger.debug("Error closing memory index", exc_info=True)
         logger.warning("Memory index sync failed after rebuild")
+        return False
 
     def _tracked_files(self, conn: sqlite3.Connection) -> dict[str, tuple[int, int]]:
         rows = conn.execute("SELECT path, mtime_ns, size FROM files").fetchall()
@@ -254,14 +288,29 @@ class MemoryIndex:
                 self._index_notes_file(conn, path)
                 self._set_file_meta(conn, path, st.st_mtime_ns, st.st_size)
 
-        notes_root = self.notes_dir.resolve()
-        for key in list(tracked):
+        for key in self._gone(tracked, present, self.notes_dir, self.sessions_dir):
+            self._delete_file_rows(conn, Path(key), "notes")
+
+    @staticmethod
+    def _gone(
+        tracked: dict[str, tuple[int, int]], present: set[str], root: Path, other: Path
+    ) -> list[str]:
+        """Tracked files under `root` that are no longer on disk.
+
+        Resolving a path costs file-system calls, so only keys that are missing
+        and not plainly in the other folder are resolved.
+        """
+        resolved_root = root.resolve()
+        gone: list[str] = []
+        for key in tracked:
+            if key in present or Path(key).parent == other:
+                continue
             try:
-                under_notes = Path(key).resolve().is_relative_to(notes_root)
+                if Path(key).resolve().is_relative_to(resolved_root):
+                    gone.append(key)
             except (OSError, ValueError):
-                under_notes = False
-            if under_notes and key not in present:
-                self._delete_file_rows(conn, Path(key), "notes")
+                continue
+        return gone
 
     def _index_notes_file(self, conn: sqlite3.Connection, path: Path) -> None:
         day = path.stem
@@ -305,14 +354,8 @@ class MemoryIndex:
                 self._index_session_file(conn, path)
                 self._set_file_meta(conn, path, st.st_mtime_ns, st.st_size)
 
-        sessions_root = self.sessions_dir.resolve()
-        for key in list(tracked):
-            try:
-                under_sessions = Path(key).resolve().is_relative_to(sessions_root)
-            except (OSError, ValueError):
-                under_sessions = False
-            if under_sessions and key not in present:
-                self._delete_file_rows(conn, Path(key), "sessions")
+        for key in self._gone(tracked, present, self.sessions_dir, self.notes_dir):
+            self._delete_file_rows(conn, Path(key), "sessions")
 
     def _session_day(self, meta: dict[str, object], path: Path) -> str:
         for field in ("updated_at", "created_at"):

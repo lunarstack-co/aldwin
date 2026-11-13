@@ -42,6 +42,9 @@ export type ChatSession = {
   /** Opens a saved conversation; `onSettled` hears whether the host switched. */
   openConversation: (id: string, onSettled?: (opened: boolean) => void) => void;
   refreshSessions: () => void;
+  renameConversation: (id: string, title: string) => Promise<Outcome>;
+  pinConversation: (id: string, pinned: boolean) => Promise<Outcome>;
+  deleteConversation: (id: string) => Promise<Outcome>;
   listSkills: () => void;
   /** Events for the request go to `onEvent`; the promise settles on `done`, `error`, or a dropped socket. */
   request: (body: RequestBody, onEvent?: Reply) => Promise<Outcome>;
@@ -202,6 +205,15 @@ export function createChatSession(
 
   function refreshSessions() {
     ask("sessions.list", (event) => {
+      if (event.kind === "sessions") chat().setSessions(event.items, event.current);
+    });
+  }
+
+  // Each change replies with the whole list, so the rail updates from the answer.
+  function changeConversation(
+    body: { type: "sessions.rename"; session_id: string; title: string } | { type: "sessions.pin"; session_id: string; pinned: boolean },
+  ): Promise<Outcome> {
+    return request(body, (event) => {
       if (event.kind === "sessions") chat().setSessions(event.items, event.current);
     });
   }
@@ -371,6 +383,14 @@ export function createChatSession(
       connection.send({ type: "sessions.open", id: reqId, session_id: id });
     },
     refreshSessions,
+    renameConversation: (id, title) => changeConversation({ type: "sessions.rename", session_id: id, title }),
+    pinConversation: (id, pinned) => changeConversation({ type: "sessions.pin", session_id: id, pinned }),
+    deleteConversation: (id) =>
+      request({ type: "sessions.delete", session_id: id }, (event) => {
+        if (event.kind !== "sessions") return;
+        chat().forgetSession(id);
+        chat().setSessions(event.items, event.current);
+      }),
     listSkills,
     request,
     refreshConnectors,

@@ -112,7 +112,6 @@ def _loaded(host: AldwinHost) -> set[str]:
 async def test_read_only_tool_runs_auto_with_hint_reason(
     rig: Rig, aldwin_home: Path
 ) -> None:
-    """`TC-02`."""
     status = await _add(rig)
     assert (status.status, status.tools) == ("connected", 5)
     rig.model.add_turns(
@@ -134,7 +133,6 @@ async def test_read_only_tool_runs_auto_with_hint_reason(
 
 
 async def test_write_tool_asks_with_connector_and_counts_denial(rig: Rig) -> None:
-    """`TC-03`."""
     await _add(rig)
     rig.model.add_turns(
         _find("write_thing"),
@@ -157,7 +155,6 @@ async def test_write_tool_asks_with_connector_and_counts_denial(rig: Rig) -> Non
 
 
 async def test_trust_hints_off_makes_read_tool_ask(rig: Rig) -> None:
-    """`TC-04`."""
     await _add(rig)
     listing = await rig.client.connectors_trust_hints("fixture", False)
     assert listing.items[0].trust_read_only_hints is False
@@ -268,7 +265,7 @@ async def test_dry_run_probe_saves_nothing(rig: Rig) -> None:
 
 
 async def test_add_errors_have_exact_messages_and_save_nothing(rig: Rig) -> None:
-    """`TC-12` (bad URL, taken name, needs a token)."""
+    """A bad URL, a taken name and a missing token are each refused."""
     with pytest.raises(ProtocolError) as bad:
         await rig.client.connectors_add(url="http://example.com/mcp")
     assert bad.value.code == "connector"

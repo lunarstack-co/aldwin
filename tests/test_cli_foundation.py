@@ -28,7 +28,7 @@ runner = CliRunner()
 
 @pytest.mark.uninitialized_home
 def test_cli_first_run_creates_home(aldwin_home: Path) -> None:
-    """TC-01: First run creates home (0700), copies assets, prints Created once."""
+    """First run creates home (0700), copies assets, prints Created once."""
     assert not aldwin_home.exists()
 
     result = runner.invoke(app, [])
@@ -62,7 +62,7 @@ def test_fresh_home_never_owes_whats_new(aldwin_home: Path) -> None:
 
 @pytest.mark.uninitialized_home
 def test_cli_second_run_is_quiet(aldwin_home: Path) -> None:
-    """TC-02: Second aldwin run does not print Created and leaves files intact."""
+    """Second aldwin run does not print Created and leaves files intact."""
     first = runner.invoke(app, [])
     assert first.exit_code == 0
     assert "Created " in first.output
@@ -73,7 +73,7 @@ def test_cli_second_run_is_quiet(aldwin_home: Path) -> None:
 
 
 def test_cli_invalid_config_exits_cleanly(aldwin_home: Path) -> None:
-    """TC-06: Invalid config value names file, field, and expected type; exits 1."""
+    """Invalid config value names file, field, and expected type; exits 1."""
     config_path = aldwin_home / "config.yaml"
     atomic_write(config_path, 'limits:\n  max_steps: "lots"\n')
 
@@ -87,7 +87,7 @@ def test_cli_invalid_config_exits_cleanly(aldwin_home: Path) -> None:
 
 @pytest.mark.uninitialized_home
 def test_cli_version_fast_and_side_effect_free(aldwin_home: Path) -> None:
-    """TC-12: aldwin --version prints version, exits 0 in < 0.5 s, creates no home."""
+    """Aldwin --version prints version, exits 0 in < 0.5 s, creates no home."""
     expected = (
         f"aldwin {__version__} (protocol v2, agentling {metadata.version('agentling')},"
         f" mcp {metadata.version('mcp')})"
@@ -116,7 +116,6 @@ def test_cli_version_fast_and_side_effect_free(aldwin_home: Path) -> None:
 
 
 def test_cli_help_lists_commands_and_options() -> None:
-    """TC-28: aldwin --help lists commands and options."""
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
     plain_output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
@@ -131,7 +130,7 @@ def test_cli_help_lists_commands_and_options() -> None:
 def test_cli_windows_exits_with_friendly_message(
     aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-29: Windows platform exits 1 with friendly message and creates no home."""
+    """Windows platform exits 1 with friendly message and creates no home."""
     monkeypatch.setattr(sys, "platform", "win32")
 
     result = runner.invoke(app, [])

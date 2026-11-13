@@ -1,4 +1,4 @@
-"""Tests for `aldwin.client.AldwinClient` (`FR-16`)."""
+"""Tests for `aldwin.client.AldwinClient`."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ async def test_client_history_and_new_conversation_lifecycle(
     aldwin_home: Path,
     fake_model: FakeModel,
 ) -> None:
-    """TC-12, TC-26, TC-28: `history`, `new_conversation`, and idle `stop`."""
+    """`history`, `new_conversation`, and idle `stop`."""
     ensure_home(aldwin_home)
     fake_model.add_turns(
         FakeTurn.text(["First reply."]),
@@ -82,7 +82,7 @@ async def test_client_resumes_interrupted_session_on_host_restart(
     aldwin_home: Path,
     fake_model: FakeModel,
 ) -> None:
-    """TC-11: Host restart loads interrupted session and reports `interrupted=True`."""
+    """Host restart loads interrupted session and reports `interrupted=True`."""
     ensure_home(aldwin_home)
     store = SessionStore()
     stored = store.create_new(model="gpt-4o")
@@ -132,7 +132,7 @@ async def test_client_cleans_up_queue_when_caller_breaks_early(
     aldwin_home: Path,
     fake_model: FakeModel,
 ) -> None:
-    """TC-29: Breaking out of `client.turn()` early cleans up the per-request queue."""
+    """Breaking out of `client.turn()` early cleans up the per-request queue."""
     ensure_home(aldwin_home)
     fake_model.add_turns(FakeTurn.text(["chunk1", "chunk2", "chunk3"]))
 

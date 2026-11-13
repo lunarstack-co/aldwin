@@ -70,7 +70,7 @@ async def test_dock_question_shortcuts_then_escape() -> None:
         session.key_bindings = session.attach_key_bindings()
         pipe.send_text("?")
         await asyncio.sleep(0.05)
-        # Footer should switch; Esc closes shortcuts then we submit empty-ish.
+        # `?` opens the shortcuts footer; Esc closes it before the submit.
         pipe.send_text("\x1b")
         pipe.send_text("hi\r")
         result = await asyncio.wait_for(session.prompt_async("> "), timeout=2.0)

@@ -20,12 +20,12 @@ def _dead_pid() -> int:
 
 
 def test_lock_path_is_state_web_lock(tmp_path: Path) -> None:
-    """TC-15: the lock lives at ``state/web.lock``, apart from turn locks."""
+    """The lock lives at ``state/web.lock``, apart from turn locks."""
     assert WebProcessLock(tmp_path).path == tmp_path / "state" / "web.lock"
 
 
 def test_acquire_records_pid_host_port_and_start(tmp_path: Path) -> None:
-    """TC-16: the folder is created and the record is readable JSON."""
+    """The folder is created and the record is readable JSON."""
     lock = WebProcessLock(tmp_path)
     assert lock.try_acquire(host="127.0.0.1", port=7841)
     try:
@@ -42,7 +42,7 @@ def test_acquire_records_pid_host_port_and_start(tmp_path: Path) -> None:
 
 
 def test_second_acquire_fails_while_held(tmp_path: Path) -> None:
-    """TC-17: a second holder is refused and the first record is untouched."""
+    """A second holder is refused and the first record is untouched."""
     first = WebProcessLock(tmp_path)
     assert first.try_acquire(host="127.0.0.1", port=7841)
     try:
@@ -56,7 +56,7 @@ def test_second_acquire_fails_while_held(tmp_path: Path) -> None:
 
 
 def test_lock_left_by_a_dead_process_is_taken_over(tmp_path: Path) -> None:
-    """TC-18: a record from a crashed run does not block the next one."""
+    """A record from a crashed run does not block the next one."""
     path = tmp_path / "state" / "web.lock"
     path.parent.mkdir(parents=True)
     stale = {"pid": _dead_pid(), "host": "127.0.0.1", "port": 7841}
@@ -74,7 +74,7 @@ def test_lock_left_by_a_dead_process_is_taken_over(tmp_path: Path) -> None:
 
 
 def test_release_is_idempotent_and_clears_the_record(tmp_path: Path) -> None:
-    """TC-19: release twice is harmless; the next run can take the lock."""
+    """Release twice is harmless; the next run can take the lock."""
     lock = WebProcessLock(tmp_path)
     assert lock.try_acquire(host="127.0.0.1", port=7841)
     lock.release()
@@ -92,7 +92,7 @@ def test_release_is_idempotent_and_clears_the_record(tmp_path: Path) -> None:
 def test_read_is_safe_on_missing_or_bad_files(
     tmp_path: Path, content: str | None
 ) -> None:
-    """TC-20: a missing, empty or corrupt file reads as no record."""
+    """A missing, empty or corrupt file reads as no record."""
     lock = WebProcessLock(tmp_path)
     if content is not None:
         lock.path.parent.mkdir(parents=True)
@@ -123,7 +123,7 @@ sys.stdin.readline()
 
 
 def test_lock_is_shared_across_processes(tmp_path: Path) -> None:
-    """TC-17: a lock held by another process refuses this one."""
+    """A lock held by another process refuses this one."""
     holder = subprocess.Popen(
         [sys.executable, "-c", _HOLDER, str(tmp_path)],
         stdin=subprocess.PIPE,

@@ -58,15 +58,14 @@ _FIRST_SHIP_CLOUD_PROVIDERS: Final[tuple[tuple[str, str, str], ...]] = (
 
 
 def needs_onboarding(boot: BootstrapResult) -> bool:
-    """Return True when onboarding is needed on fresh install without keys."""
+    """True on a fresh install with no usable key or local model."""
     status = get_onboarding_status(boot.home)
-    # Existing install with configured provider/key: skip onboarding
     if not boot.created:
         if status.has_openai_key or status.has_provider_key or status.is_local:
             return False
         return True
 
-    # Fresh install: if OpenAI key is in env, onboarding validates it without picker
+    # An OpenAI key from the environment is still checked, without a picker.
     if status.has_openai_key and status.openai_source == "env":
         return True
     return not (status.has_openai_key or status.has_provider_key or status.is_local)
@@ -80,7 +79,6 @@ def _format_context(tokens: int) -> str:
 
 
 def _format_tools_capability(supports_tools: bool | None) -> str:
-    """Format tool capability label."""
     if supports_tools is True:
         return "can use tools"
     if supports_tools is False:
@@ -111,7 +109,7 @@ async def _choose_option(
     plain: bool,
     prompt_fn: PromptCallable,
 ) -> int | None:
-    """Prompt user to choose from a list of options."""
+    """Arrow-key picker on an interactive terminal, otherwise a numbered prompt."""
     if prompt_fn is _default_prompt and console.is_interactive and not plain:
         from aldwin.cli.picker import pick_index
 
@@ -480,7 +478,7 @@ async def run_onboarding(
     active_checker = key_checker or check_openai_key
     active_detector = local_detector or detect_local_providers
 
-    # Path C: Valid OPENAI_API_KEY in environment auto-keeps OpenAI default
+    # Path C: a valid OPENAI_API_KEY in the environment keeps OpenAI as the default.
     env_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if env_key:
         status_check = await _verify_key_with_spinner(
@@ -538,7 +536,7 @@ async def run_onboarding(
     running_locals = [s for s in local_statuses if s.models]
 
     if running_locals:
-        # Path A: Local models found!
+        # Path A: local models found.
         model_entries: list[tuple[str, ModelInfo]] = []
         labels: list[str] = []
         for provider_status in running_locals:
@@ -671,7 +669,6 @@ async def run_setup(
         return False
 
     if choice == 0:
-        # Local model branch
         try:
             if boot.plain:
                 local_statuses = await active_detector(timeout=1.0)
@@ -734,7 +731,6 @@ async def run_setup(
             return True
 
     if choice == 1:
-        # Cloud provider branch
         return await _handle_path_b_cloud_provider(
             boot,
             console,
@@ -744,7 +740,7 @@ async def run_setup(
             allow_empty_keep=True,
         )
 
-    # Keep current branch
+    # Keep the current model.
     tavily_label = (
         f"Tavily key for web search [{status.masked_tavily_key}] (Enter to keep): "
         if status.has_tavily_key

@@ -21,6 +21,9 @@ export type StatusRequest = RequestBase & { type: "status" };
 export type SessionsNewRequest = RequestBase & { type: "sessions.new" };
 export type SessionsListRequest = RequestBase & { type: "sessions.list" };
 export type SessionsOpenRequest = RequestBase & { type: "sessions.open"; session_id: string };
+export type SessionsRenameRequest = RequestBase & { type: "sessions.rename"; session_id: string; title: string };
+export type SessionsPinRequest = RequestBase & { type: "sessions.pin"; session_id: string; pinned: boolean };
+export type SessionsDeleteRequest = RequestBase & { type: "sessions.delete"; session_id: string };
 export type TodoGetRequest = RequestBase & { type: "todo.get" };
 export type SkillsListRequest = RequestBase & { type: "skills.list" };
 export type SkillsShowRequest = RequestBase & { type: "skills.show"; name: string };
@@ -67,6 +70,9 @@ export type Request =
   | SessionsNewRequest
   | SessionsListRequest
   | SessionsOpenRequest
+  | SessionsRenameRequest
+  | SessionsPinRequest
+  | SessionsDeleteRequest
   | TodoGetRequest
   | SkillsListRequest
   | SkillsShowRequest
@@ -168,6 +174,8 @@ export type ConnectorInfo = {
   transport: "http" | "stdio" | "sse";
   command: string | null;
   note: string | null;
+  /** Set when the host holds the app's own icon; absent from older hosts. */
+  icon?: string | null;
 };
 export type CatalogItem = {
   name: string;
@@ -191,6 +199,8 @@ export type SessionMeta = {
   model: string;
   title: string;
   interrupted: boolean;
+  /** Absent from older hosts. */
+  pinned?: boolean;
 };
 
 export type TerminalDisplay = {

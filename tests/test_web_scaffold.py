@@ -28,7 +28,7 @@ def _git_ignored(path: str) -> bool:
 
 
 def test_web_static_page_committed() -> None:
-    """TC-01: the package always carries a page, built or not."""
+    """The package always carries a page, built or not."""
     assert (REPO_ROOT / "src" / "aldwin" / "web" / "__init__.py").is_file()
     html = STATIC_INDEX.read_text(encoding="utf-8")
     assert 'data-testid="aldwin-stub"' in html
@@ -36,7 +36,7 @@ def test_web_static_page_committed() -> None:
 
 
 def test_gitignore_web_artifacts_and_static_tracked() -> None:
-    """TC-02: Node and Playwright output is ignored; the packaged UI is not."""
+    """Node and Playwright output is ignored; the packaged UI is not."""
     for path in (
         "web/node_modules/next/package.json",
         "web/.next/build-manifest.json",
@@ -50,7 +50,7 @@ def test_gitignore_web_artifacts_and_static_tracked() -> None:
 
 
 def test_next_config_static_export_and_dev_proxy() -> None:
-    """TC-03: static export, unoptimised images, and a dev-only API proxy."""
+    """Static export, unoptimised images, and a dev-only API proxy."""
     config = (WEB / "next.config.ts").read_text(encoding="utf-8")
     assert 'output: "export"' in config
     assert re.search(r"images:\s*\{\s*unoptimized:\s*true\s*\}", config)
@@ -60,7 +60,7 @@ def test_next_config_static_export_and_dev_proxy() -> None:
 
 
 def test_web_package_scripts_and_lockfile() -> None:
-    """TC-04: npm lockfile and the scripts CI and contributors run."""
+    """Npm lockfile and the scripts CI and contributors run."""
     assert (WEB / "package-lock.json").is_file()
     scripts = _package_json()["scripts"]
     for name in (
@@ -77,7 +77,7 @@ def test_web_package_scripts_and_lockfile() -> None:
 
 
 def test_web_ds_tokens_and_theme_hooks() -> None:
-    """TC-07: assistant-ui tokens, class theme, kit button and local fonts."""
+    """Assistant-ui tokens, class theme, kit button and local fonts."""
     styles = WEB / "src" / "styles"
     css = "".join(p.read_text(encoding="utf-8") for p in sorted(styles.glob("*.css")))
     for token in (
@@ -111,7 +111,7 @@ def test_web_ds_tokens_and_theme_hooks() -> None:
 
 
 def test_home_page_mounts_the_chat_shell_behind_the_gates() -> None:
-    """TC-01, TC-20: `/` and `/c/` share the chat shell, behind the gates."""
+    """`/` and `/c/` share the chat shell, behind the gates."""
     chat = WEB / "src" / "app" / "(chat)"
     assert (chat / "page.tsx").is_file()
     assert (chat / "c" / "page.tsx").is_file()
@@ -125,7 +125,7 @@ def test_home_page_mounts_the_chat_shell_behind_the_gates() -> None:
 
 
 def test_gates_are_plain_pages_without_a_sign_in_layer() -> None:
-    """TC-23, TC-24: no middleware, sign-in page or auth library."""
+    """No middleware, sign-in page or auth library."""
     assert not (WEB / "src" / "middleware.ts").exists()
     assert not (WEB / "middleware.ts").exists()
     assert not list((WEB / "src" / "app").rglob("signin"))
@@ -200,7 +200,7 @@ def test_page_text_lives_in_data_files_not_in_tsx() -> None:
 
 
 def test_web_uses_playwright_not_cypress() -> None:
-    """TC-25: the E2E runner is Playwright, with its fake host."""
+    """The E2E runner is Playwright, with its fake host."""
     dev_deps = _package_json()["devDependencies"]
     assert "@playwright/test" in dev_deps
     assert not any("cypress" in name for name in dev_deps)

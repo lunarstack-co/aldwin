@@ -3,6 +3,15 @@ import { expect, openChat, send, session, setDensity, test } from "./fixtures/te
 const WIDTHS = [320, 390, 768, 1024, 1280, 1920, 2560];
 const ROUTES = ["/", "/c/?id=a", "/onboarding/name/", "/404.html"];
 
+/** Opens `route`; the chat may give a conversation the same address at the same moment, which is fine. */
+async function open(page: import("@playwright/test").Page, route: string) {
+  try {
+    await page.goto(route);
+  } catch (error) {
+    if (!String(error).includes("is interrupted by another navigation")) throw error;
+  }
+}
+
 async function noSidewaysScroll(page: import("@playwright/test").Page) {
   return page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
 }
@@ -19,7 +28,7 @@ test("no horizontal scroll at any width @cross", async ({ page, host }) => {
     for (const route of ROUTES) {
       if (route.startsWith("/onboarding")) host.status = { ...host.status, profile_done: false };
       else host.status = { ...host.status, profile_done: true };
-      await page.goto(route);
+      await open(page, route);
       // An open socket keeps the network busy, so wait for the page itself.
       await expect(page.locator("[data-testid=aldwin-chat-shell], [data-testid=not-found], form").first()).toBeVisible();
       // A chat route may move to its conversation's address; wait until it stops moving.
@@ -89,8 +98,16 @@ test("the sidebar slides closed and open, but not on reload", async ({ page }) =
 
 test("cmd b collapses the sidebar and is remembered", async ({ page }) => {
   await openChat(page);
-  await page.getByTestId("composer-input").blur();
-  await page.locator("body").press("ControlOrMeta+b");
+  // The composer can take focus back as the page settles, and a key typed there is text, not a shortcut.
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        (document.activeElement as HTMLElement | null)?.blur();
+        return document.activeElement === document.body;
+      }),
+    )
+    .toBe(true);
+  await page.keyboard.press("ControlOrMeta+b");
   await expect(page.getByTestId("rail")).toBeHidden();
   await page.reload();
   await expect(page.getByTestId("rail")).toBeHidden();

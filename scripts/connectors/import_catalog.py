@@ -19,6 +19,7 @@ import re
 import sys
 import unicodedata
 import xml.etree.ElementTree as ET
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Literal
@@ -53,6 +54,9 @@ ALLOWLIST: Final = HERE / "allowlist.yaml"
 CACHE_DIR: Final = HERE / ".cache"
 CATALOG_PATH: Final = REPO / "src/aldwin/core/assets/connectors/catalog.yaml"
 MARKS_PATH: Final = REPO / "web/src/components/brand/logos/marks.ts"
+HAND_APP_MARKS_PATH: Final = REPO / "web/src/components/brand/logos/hand-app-marks.ts"
+# Marks kept by hand: model and search marks, and app marks drawn from a brand's assets.
+HAND_MARK_PATHS: Final = (MARKS_PATH, HAND_APP_MARKS_PATH)
 APP_MARKS_PATH: Final = REPO / "web/src/components/brand/logos/app-marks.ts"
 
 REGISTRY_URL: Final = "https://registry.modelcontextprotocol.io/v0.1/servers"
@@ -480,10 +484,13 @@ async def fetch_mark(
     return parse_svg(response.text, title=vendor.title, color=color)
 
 
-def hand_kept_marks(path: Path = MARKS_PATH) -> set[str]:
+def hand_kept_marks(paths: Sequence[Path] = HAND_MARK_PATHS) -> set[str]:
     """Names with a hand-kept mark, which always win over generated ones."""
-    text = path.read_text(encoding="utf-8")
-    return set(re.findall(r"^  ([a-z0-9]+): \{$", text, re.MULTILINE))
+    names: set[str] = set()
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        names |= set(re.findall(r"^  ([a-z0-9]+): \{$", text, re.MULTILINE))
+    return names
 
 
 def render_app_marks(marks: dict[str, MarkData]) -> str:
@@ -588,7 +595,8 @@ class Report:
         lines += [f"Left out: {name} ({reason})" for name, reason in self.left_out]
         lines += [f"Logo replaced by a letter: {name}" for name in self.letters]
         lines += [
-            f"No hand-drawn mark in marks.ts: {name}" for name in self.missing_hand
+            f"No hand-drawn mark in hand-app-marks.ts: {name}"
+            for name in self.missing_hand
         ]
         return "\n".join(lines)
 
@@ -621,7 +629,7 @@ async def build(
     allowlist: Path = ALLOWLIST,
     catalog_path: Path = CATALOG_PATH,
     marks_path: Path = APP_MARKS_PATH,
-    hand_marks: Path = MARKS_PATH,
+    hand_marks: Sequence[Path] = HAND_MARK_PATHS,
     cache_dir: Path = CACHE_DIR,
 ) -> tuple[int, Report]:
     """Run the whole import and return `(exit_code, report)`."""

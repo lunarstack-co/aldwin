@@ -515,9 +515,8 @@ class DownloadFileTool(Tool):
         url: str,
         dest: str | None = None,
     ) -> ToolOutput:
-        # Re-plan (same helpers as prepare). Policy recheck already bound the
-        # digest to url/final_url/dest; this picks dest again without storing
-        # per-call fields on the tool instance.
+        # Planned again rather than stored on the instance; the policy recheck
+        # already bound the digest to url, final_url and dest.
         plan = await self._plan(url, dest)
         display = plan.display
         target = plan.target

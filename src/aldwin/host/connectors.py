@@ -1,5 +1,6 @@
-"""Connector lifecycle in the host: start in the background, reconnect with backoff,
-follow tool-list changes, and offer tools to the model on demand.
+"""Connector lifecycle in the host: background start, reconnects and tools on demand.
+
+Connections reconnect with backoff and follow tool-list changes.
 
 `ConnectorAdmin` changes config and credentials. `ConnectorManager` keeps one
 live connection per enabled connector, indexes every usable tool, and offers
@@ -58,6 +59,13 @@ from aldwin.core.connectors.errors import (
     SignInCancelled,
     SignInError,
     SignInTimedOut,
+)
+from aldwin.core.connectors.icons import (
+    Icon,
+    icon_path,
+    icon_version,
+    remove_icon,
+    save_icon,
 )
 from aldwin.core.connectors.importer import (
     FoundConfig,
@@ -154,8 +162,9 @@ def _text_arg(args: dict[str, Any], key: str) -> str | None:
 
 
 def _approve_if_unchanged(launch_digest: str | None) -> PolicyAskFn:
-    """Answer the add flow's own question with the yes the user already gave
-    in `propose_connector`, but only for the exact command they were shown.
+    """Reuse the yes given in `propose_connector` for the add flow's own question.
+
+    It applies only to the exact command the user was shown.
     """
 
     async def approve(request: ApprovalRequest) -> ApprovalAnswer:
@@ -184,6 +193,11 @@ class AuthPrompt:
 
 
 OnAuth = Callable[[AuthPrompt], Awaitable[None]]
+IconFinder = Callable[
+    [ConnectorConfig, Sequence[tuple[str, str | None]]], Awaitable[Icon | None]
+]
+# The most a first connection waits for the app's icon.
+ICON_BUDGET_S = 5.0
 
 
 @dataclass
@@ -235,9 +249,7 @@ class AddResult:
 
 
 class ConnectorAdmin:
-    """Config, credentials and checks. Needs no live session, so the shell
-    commands use it directly.
-    """
+    """Config, credentials and checks, with no live session; shell commands use it."""
 
     def __init__(
         self,
@@ -340,9 +352,9 @@ class ConnectorAdmin:
         workspace: Path | None,
         user_home: Path | None = None,
     ) -> ImportResult:
-        """Save the servers another app's config file lists. Starts nothing:
-        imported local commands, and everything from a project file, are
-        saved disabled.
+        """Save the servers another app's config file lists, starting nothing.
+
+        Imported local commands, and everything from a project file, are saved disabled.
         """
         loaded = load_file(
             path, user_home=user_home or Path.home(), workspace=workspace
@@ -397,9 +409,7 @@ class ConnectorAdmin:
     def _rewrite(
         self, name: str, changes: Callable[[ConnectorConfig], dict[str, Any]]
     ) -> ConnectorConfig:
-        """Read, change and save one entry under a single lock, so a change
-        another process makes in between is never lost.
-        """
+        """Read, change and save one entry under one lock, so no change is lost."""
         with connectors_locked(self.home):
             entries = dict(self._entries_or_raise())
             current = self._existing(entries, name)
@@ -452,6 +462,8 @@ class _Live:
     lost: asyncio.Event = field(default_factory=asyncio.Event)
     lost_error: ConnectorError | None = None
     supervisor: asyncio.Task[None] | None = None
+    # Looks for the app's own icon after it connects; stopped with the connector.
+    icon_task: asyncio.Task[None] | None = None
 
 
 def default_connection_factory(config: ConnectorConfig, **kwargs: Any) -> McpConnection:
@@ -474,8 +486,12 @@ class ConnectorManager:
         loaded_cap: int = DEFAULT_LOADED_CAP,
         workspace_root: Callable[[], Path] | None = None,
         turn_auth: OnAuth | None = None,
+        find_icon: IconFinder | None = None,
     ) -> None:
         self.admin = admin
+        self._find_icon = find_icon
+        # Connectors already asked for an icon in this run; a miss is not retried.
+        self._icons_tried: set[str] = set()
         # How a proposal made during a turn reaches the user to sign in.
         self._turn_auth = turn_auth
         self._catalog: tuple[CatalogEntry, ...] | None = None
@@ -516,8 +532,6 @@ class ConnectorManager:
             approval_log=approval_log,
             join=True,
         )
-
-    # --- lifecycle ----------------------------------------------------------
 
     async def start(self) -> None:
         """Start every enabled connector in the background and return at once."""
@@ -583,8 +597,6 @@ class ConnectorManager:
         if stdio is not None:
             stdio.kill_live_groups()
 
-    # --- requests -----------------------------------------------------------
-
     async def add(
         self,
         config: ConnectorConfig,
@@ -598,8 +610,10 @@ class ConnectorManager:
         """Probe (`dry_run`) or connect and save. Nothing is saved on failure.
 
         An `oauth` connector signs in through the browser; a `bearer` one with no
-        token asks for it through `on_auth` (token mode). A local command runs
-        only after `approve` says yes.
+        token asks for it through `on_auth` (token mode). A server added with no
+        sign-in that answers 401 gets whichever it supports: browser sign-in if
+        it publishes OAuth metadata, otherwise a token. A local command runs only
+        after `approve` says yes.
         """
         self.admin.check_new(config)
         if config.kind == "local":
@@ -623,7 +637,17 @@ class ConnectorManager:
                 specs = await connection.open()
                 break
             except ConnectorAuthRequired:
-                if on_auth is None or token is not None or config.auth != "bearer":
+                if on_auth is None or token is not None:
+                    raise
+                if config.auth == "none":
+                    if await self._offers_browser_sign_in(config):
+                        signed_in = config.model_copy(update={"auth": "oauth"})
+                        return await self._add_with_sign_in(
+                            signed_in, no_browser, on_auth
+                        )
+                    config = config.model_copy(update={"auth": "bearer"})
+                    live.config = config
+                elif config.auth != "bearer":
                     raise
                 token = await self._ask_token(config, on_auth)
         try:
@@ -637,8 +661,9 @@ class ConnectorManager:
     async def _add_local(
         self, config: ConnectorConfig, *, dry_run: bool, approve: PolicyAskFn | None
     ) -> AddResult:
-        """A local add: the dry run only checks, never starts or asks; a real add
-        asks, starts the program to list its tools, then saves the approval.
+        """Check a local command, or ask, start it to list its tools and save it.
+
+        A dry run only checks; it never starts the program or asks.
         """
         if not _local_servers_supported():
             raise ConnectorConfigError(WINDOWS_UNSUPPORTED)
@@ -774,11 +799,10 @@ class ConnectorManager:
         notices, self._turn_notices = self._turn_notices, []
         return notices
 
-    # --- tools on demand ----------------------------------------------------
-
     def load(self, tools: Sequence[IndexedTool]) -> LoadResult:
-        """Offer `tools` from the model's next call on; `find_connector_tools`
-        calls this. Over the cap, the least recently used loaded tools go first.
+        """Offer `tools` from the model's next call on, for `find_connector_tools`.
+
+        Over the cap, the least recently used loaded tools go first.
         """
         available = self._available()
         new: list[IndexedTool] = []
@@ -801,8 +825,10 @@ class ConnectorManager:
     def pick_apps(
         self, names: Sequence[str]
     ) -> tuple[list[tuple[str, str]], list[tuple[str, PickDrop]]]:
-        """Check the apps the user picked for this message: only connectors that
-        are connected and offer tools count. Returns `(name, title)` pairs."""
+        """Split picked apps into usable `(name, title)` pairs and the ones dropped.
+
+        Only connectors that are connected and offer tools are usable.
+        """
         connected = {
             name: live.config.display_title
             for name, live in self._live.items()
@@ -825,8 +851,7 @@ class ConnectorManager:
         return {n: t for live in self._live.values() for n, t in live.tools.items()}
 
     def _cap(self) -> int:
-        """How many connector tools may be loaded: the configured cap, or less
-        when the built-ins leave less room under the model's limit."""
+        """Return the configured tool cap, lowered when built-ins leave less room."""
         session = self._session
         others = 0
         if session is not None:
@@ -909,6 +934,12 @@ class ConnectorManager:
         finally:
             self._auth_waits.pop(config.name, None)
 
+    async def _offers_browser_sign_in(self, config: ConnectorConfig) -> bool:
+        """Whether a server that answered 401 publishes OAuth sign-in metadata."""
+        from aldwin.core.connectors.oauth import offers_sign_in
+
+        return await offers_sign_in(config)
+
     async def _ask_token(self, config: ConnectorConfig, on_auth: OnAuth) -> str:
         """Token mode: ask the user for a token and wait for `auth_token`."""
         future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
@@ -976,8 +1007,9 @@ class ConnectorManager:
     async def enable(
         self, name: str, *, approve: PolicyAskFn | None = None
     ) -> ConnectorSnapshot:
-        """Turn a connector on. A local one not yet approved (imported, or its
-        command edited by hand) asks first and stays off on `no`.
+        """Turn a connector on; a local one not yet approved asks first.
+
+        That covers imported commands and ones edited by hand. It stays off on `no`.
         """
         current = self._require(name)
         if current.kind == "local" and not is_approved(current):
@@ -1024,6 +1056,8 @@ class ConnectorManager:
         self._require(name)
         await self._stop_live(name)
         self.admin.remove(name)
+        remove_icon(self.admin.home, name)
+        self._icons_tried.discard(name)
         self._configs.pop(name, None)
         self._fingerprint = connectors_fingerprint(self.admin.home)
 
@@ -1037,8 +1071,6 @@ class ConnectorManager:
         self._require(name)
         self._reconfigured(self.admin.update(name, trust_read_only_hints=trust))
 
-    # --- views --------------------------------------------------------------
-
     def snapshots(self) -> list[ConnectorSnapshot]:
         out: list[ConnectorSnapshot] = []
         for name, config in sorted(self._configs.items()):
@@ -1046,7 +1078,7 @@ class ConnectorManager:
             if live is not None:
                 out.append(self._snapshot(live))
             else:
-                out.append(self._snapshot_of(config, "disabled", []))
+                out.append(self._with_icon(self._snapshot_of(config, "disabled", [])))
         return out
 
     def context_block(self) -> str:
@@ -1057,8 +1089,6 @@ class ConnectorManager:
         return format_connectors_block(
             self.snapshots(), available=available, saved_off=saved_off
         )
-
-    # --- proposals from the model --------------------------------------------
 
     def resolve_proposal(self, args: dict[str, Any]) -> ConnectorProposal:
         """The connector `propose_connector`'s arguments point at."""
@@ -1111,8 +1141,9 @@ class ConnectorManager:
     async def propose(
         self, proposal: ConnectorProposal, launch_digest: str | None
     ) -> ProposeOutcome:
-        """Run an approved proposal with the same flows as `/connectors`, then
-        load the new connector's tools so the turn can use them at once.
+        """Run an approved proposal through the `/connectors` flows and load its tools.
+
+        Loading them at once lets the current turn use them.
         """
         name = proposal.name
         if name in self._auth_waits:
@@ -1173,8 +1204,6 @@ class ConnectorManager:
                 if isinstance(inner, McpTool):
                     return inner.connector_title, inner.remote_name
         return None, None
-
-    # --- internals ----------------------------------------------------------
 
     def _require(self, name: str) -> ConnectorConfig:
         if name not in self._configs:
@@ -1269,8 +1298,9 @@ class ConnectorManager:
         live.supervisor = task
 
     def _supervisor_ended(self, live: _Live, task: asyncio.Task[None]) -> None:
-        """A supervisor only ends by cancellation or by being stopped; anything
-        else is a bug, so log it and show the connector as failed.
+        """Log an unexpected supervisor exit and show the connector as failed.
+
+        A supervisor only ends by cancellation or by being stopped.
         """
         if task.cancelled() or task.exception() is None:
             return
@@ -1347,12 +1377,48 @@ class ConnectorManager:
         live.status, live.error, live.retry_in_s = "connected", None, None
         self._apply(live, specs)
         await self._emit(ConnectorEvent("status", self._snapshot(live)))
+        if self._wants_icon(live.config) and live.icon_task is None:
+            self._icons_tried.add(live.config.name)
+            live.icon_task = asyncio.create_task(
+                self._keep_icon(live, connection), name=f"icon:{live.config.name}"
+            )
         if reconnected:
             await self._emit(
                 ConnectorEvent(
                     "notice", message=f"{live.config.display_title} reconnected."
                 )
             )
+
+    def _wants_icon(self, config: ConnectorConfig) -> bool:
+        """An app outside the catalogue, not yet tried this run, with no saved icon.
+
+        Catalogue apps ship with their marks.
+        """
+        name = config.name
+        if self._find_icon is None or name in self._icons_tried:
+            return False
+        if icon_path(self.admin.home, name) is not None:
+            return False
+        return not any(
+            e.name == name and e.url == config.url for e in self._catalog_entries()
+        )
+
+    async def _keep_icon(self, live: _Live, connection: Any) -> None:
+        """Find and save the app's icon, then announce it; never fails the connector."""
+        config = live.config
+        if self._find_icon is None:
+            return
+        declared = list(getattr(connection, "declared_icons", ()))
+        try:
+            async with asyncio.timeout(ICON_BUDGET_S):
+                icon = await self._find_icon(config, declared)
+        except Exception as exc:
+            logger.debug("no icon for %s: %s", config.name, exc)
+            return
+        if icon is None or not self._tracked(live):
+            return
+        save_icon(self.admin.home, config.name, icon)
+        await self._emit(ConnectorEvent("status", self._snapshot(live)))
 
     async def _probe(
         self, config: ConnectorConfig, token: str | None
@@ -1410,8 +1476,9 @@ class ConnectorManager:
         return connection
 
     def _stdio_transport(self, config: ConnectorConfig) -> Callable[[Any], Any]:
-        """The transport for a local server, built when the connection opens so a
-        bad folder or a missing program fails that attempt, not this call.
+        """Return a local server's transport, built lazily when the connection opens.
+
+        A bad folder or a missing program then fails that attempt, not this call.
         """
 
         def build(_http: Any) -> Any:
@@ -1503,6 +1570,9 @@ class ConnectorManager:
         live = self._live.pop(name, None)
         if live is None:
             return
+        if live.icon_task is not None:
+            live.icon_task.cancel()
+            await asyncio.gather(live.icon_task, return_exceptions=True)
         if live.supervisor is not None:
             live.supervisor.cancel()
             await asyncio.gather(live.supervisor, return_exceptions=True)
@@ -1531,9 +1601,14 @@ class ConnectorManager:
             tool._peer_tools = peers  # type: ignore[attr-defined]
 
     def _snapshot(self, live: _Live) -> ConnectorSnapshot:
-        return self._snapshot_of(
-            live.config, live.status, live.specs, live.error, live.retry_in_s
+        return self._with_icon(
+            self._snapshot_of(
+                live.config, live.status, live.specs, live.error, live.retry_in_s
+            )
         )
+
+    def _with_icon(self, snapshot: ConnectorSnapshot) -> ConnectorSnapshot:
+        return replace(snapshot, icon=icon_version(self.admin.home, snapshot.name))
 
     @staticmethod
     def _snapshot_of(

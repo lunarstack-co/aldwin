@@ -1,0 +1,17 @@
+{
+  "options": "Chat options",
+  "rename": "Rename",
+  "pin": "Pin chat",
+  "unpin": "Unpin chat",
+  "delete": "Delete",
+  "renameTitle": "Rename chat",
+  "renameHint": "Keep it short so you can spot it later.",
+  "renameLabel": "Chat name",
+  "save": "Save",
+  "saving": "Saving…",
+  "cancel": "Cancel",
+  "deleteTitle": "Delete chat?",
+  "deleteBody": "This deletes “{title}” from this computer. You can't undo this.",
+  "deleteConfirm": "Delete",
+  "deleting": "Deleting…"
+}

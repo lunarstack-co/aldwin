@@ -1,4 +1,4 @@
-"""`connectors.yaml` loading, saving and checks (`FR-1`, `FR-3`)."""
+"""`connectors.yaml` loading, saving and checks."""
 
 from __future__ import annotations
 

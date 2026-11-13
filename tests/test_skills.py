@@ -134,9 +134,7 @@ def test_tc14_using_aldwin_identity_render(aldwin_home: Path) -> None:
 def test_tc15_001_starter_hash_rename(aldwin_home: Path) -> None:
     folder = aldwin_home / "skills" / STARTER_001_FOLDER
     folder.mkdir(parents=True)
-    # Reconstruct bytes that match STARTER_001_HASH by writing known content
-    # from the constant: copy from a fixture built to match the hash.
-    # The hash is of the 0.0.1 starter; we store it under tests/fixtures.
+    # The fixture is the 0.0.1 starter, so its bytes match STARTER_001_HASH.
     fixture = Path(__file__).parent / "fixtures" / "using-aldwin-001" / "SKILL.md"
     if not fixture.is_file():
         pytest.skip("0.0.1 starter fixture missing")
@@ -306,9 +304,8 @@ def test_invalid_frontmatter_variants(aldwin_home: Path) -> None:
         folder = aldwin_home / "skills" / folder_name
         folder.mkdir()
         (folder / "SKILL.md").write_text(text, encoding="utf-8")
-    # name-mismatch only triggers expect_name on defaults; user load skips that.
-    # Force a default-style mismatch via _skill_from_text through a bad default
-    # is hard; user "name-mismatch" still loads as name=other.
+    # The name check applies only to packaged defaults, so a user skill named
+    # "other" in the "name-mismatch" folder still loads.
     cat = build_catalogue(aldwin_home, version="0.0.2", model="gpt-test")
     by_folder = {e.path.name if e.path else e.name: e for e in cat}
     assert by_folder["no-fm"].skill is None

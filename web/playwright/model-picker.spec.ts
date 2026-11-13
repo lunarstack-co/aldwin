@@ -76,7 +76,7 @@ test("the button shows the model's name, not its id, without a hover @cross", as
   await openChat(page);
   await expect(picker(page)).toContainText("GPT-4o");
   await expect(picker(page)).not.toContainText("gpt-4o");
-  // Asked for after the conversation, so opening a chat stays as fast as before.
+  // Asked for after the conversation, so it never slows opening a chat.
   expect(host.sent.map((f) => f.type).indexOf("models.list")).toBeGreaterThan(host.sent.map((f) => f.type).indexOf("history"));
 });
 

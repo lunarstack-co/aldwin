@@ -1,4 +1,4 @@
-"""Release readiness, packaging, documentation, and issue template tests (ENG-385)."""
+"""Release readiness, packaging, documentation, and issue template tests."""
 
 from __future__ import annotations
 
@@ -107,7 +107,7 @@ def built_distributions(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path,
 
 @pytest.mark.uninitialized_home
 def test_version_is_0_0_5(aldwin_home: Path) -> None:
-    """TC-01: pyproject.toml, aldwin.__version__, and `aldwin --version` are 0.0.5."""
+    """Pyproject.toml, aldwin.__version__, and `aldwin --version` are 0.0.5."""
     pyproject_data = tomllib.loads(
         (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )
@@ -139,7 +139,7 @@ def test_version_is_0_0_5(aldwin_home: Path) -> None:
 
 
 def test_dependency_ranges_and_lock() -> None:
-    """TC-03: every runtime dependency has a lower bound; the lock is in sync."""
+    """Every runtime dependency has a lower bound; the lock is in sync."""
     pyproject_data = tomllib.loads(
         (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )
@@ -162,7 +162,7 @@ def test_dependency_ranges_and_lock() -> None:
 
 
 def test_docs_extra_declared() -> None:
-    """TC-26: `aldwin[docs]` declares python-docx, openpyxl, and reportlab."""
+    """`aldwin[docs]` declares python-docx, openpyxl, and reportlab."""
     pyproject_data = tomllib.loads(
         (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )
@@ -174,7 +174,7 @@ def test_docs_extra_declared() -> None:
 def test_build_produces_sdist_and_wheel_under_4mib(
     built_distributions: tuple[Path, Path],
 ) -> None:
-    """TC-01, TC-16: sdist and wheel stay under the 4 MiB budget."""
+    """Sdist and wheel stay under the 4 MiB budget."""
     wheel_path, sdist_path = built_distributions
     assert wheel_path.name == "aldwin-0.0.5-py3-none-any.whl"
     assert sdist_path.name == "aldwin-0.0.5.tar.gz"
@@ -186,7 +186,7 @@ def test_build_produces_sdist_and_wheel_under_4mib(
 def test_wheel_and_sdist_include_assets_and_exclude_dev_files(
     built_distributions: tuple[Path, Path],
 ) -> None:
-    """TC-02: Wheel and sdist contain `aldwin/core/assets/*` and no dev/test files."""
+    """Wheel and sdist contain `aldwin/core/assets/*` and no dev/test files."""
     wheel_path, sdist_path = built_distributions
 
     with zipfile.ZipFile(wheel_path) as zf:
@@ -230,7 +230,7 @@ def test_wheel_and_sdist_include_assets_and_exclude_dev_files(
 def test_wheel_ships_web_export_but_not_the_web_project(
     built_distributions: tuple[Path, Path],
 ) -> None:
-    """TC-15, TC-18, TC-20: the UI ships as static files only.
+    """The UI ships as static files only.
 
     The fixture builds without Node, so this also proves the committed page
     is enough for a Python-only build.
@@ -261,7 +261,7 @@ def test_wheel_assets_loadable_from_unpacked_package(
     built_distributions: tuple[Path, Path],
     tmp_path: Path,
 ) -> None:
-    """TC-15: Unpacked wheel contains valid starter assets and base instructions."""
+    """Unpacked wheel contains valid starter assets and base instructions."""
     wheel_path, _ = built_distributions
     unpack_dir = tmp_path / "unpacked_wheel"
     with zipfile.ZipFile(wheel_path) as zf:
@@ -293,7 +293,6 @@ def test_wheel_assets_loadable_from_unpacked_package(
 
 
 def test_readme_uses_absolute_https_image_urls_and_balanced_fences() -> None:
-    """TC-05: README uses absolute https:// image URLs and balanced code fences."""
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 
     md_images = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", readme)
@@ -325,7 +324,7 @@ USER_DOCS = (
 
 
 def test_readme_contains_all_sections_and_doc_links() -> None:
-    """TC-21: README has its sections, in order, and links to every user doc."""
+    """README has its sections, in order, and links to every user doc."""
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 
     required_headings = (
@@ -533,7 +532,7 @@ def test_changelog_0_0_2_1_entry() -> None:
 
 
 def test_changelog_0_0_2_entry() -> None:
-    """TC-22: CHANGELOG.md has a complete 0.0.2 entry, and keeps the 0.0.1 one."""
+    """CHANGELOG.md has a complete 0.0.2 entry, and keeps the 0.0.1 one."""
     changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "# Changelog" in changelog
     assert "Keep a Changelog" in changelog
@@ -572,7 +571,7 @@ def test_changelog_0_0_2_entry() -> None:
 
 
 def test_docs_protocol_manual_test_and_releasing_present() -> None:
-    """TC-13: docs/protocol.md, docs/manual-test.md, and docs/releasing.md exist."""
+    """Docs/protocol.md, docs/manual-test.md, and docs/releasing.md exist."""
     protocol_doc = (REPO_ROOT / "docs" / "protocol.md").read_text(encoding="utf-8")
     privacy_doc = (REPO_ROOT / "docs" / "privacy.md").read_text(encoding="utf-8")
     manual_doc = (REPO_ROOT / "docs" / "manual-test.md").read_text(encoding="utf-8")
@@ -600,7 +599,7 @@ def test_docs_protocol_manual_test_and_releasing_present() -> None:
 
 
 def test_docs_have_honest_limitations_and_zero_attribution() -> None:
-    """TC-11: Docs state 0.0.1 limitations honestly and have zero attribution."""
+    """Docs state 0.0.1 limitations honestly and have zero attribution."""
     for rel_name in ("README.md", "CHANGELOG.md"):
         content = (REPO_ROOT / rel_name).read_text(encoding="utf-8")
         for required_term in ("terminal", "OpenAI", "always-on", "macOS", "Linux"):
@@ -624,7 +623,7 @@ def test_docs_have_honest_limitations_and_zero_attribution() -> None:
 
 
 def test_demo_tape_and_gif_size_budget() -> None:
-    """TC-14: docs/assets/demo.tape targets docs/assets/demo.gif and GIF is < 5 MB."""
+    """Docs/assets/demo.tape targets docs/assets/demo.gif and GIF is < 5 MB."""
     tape_path = REPO_ROOT / "docs" / "assets" / "demo.tape"
     assert tape_path.is_file()
     tape_text = tape_path.read_text(encoding="utf-8")
@@ -639,7 +638,7 @@ def test_demo_tape_and_gif_size_budget() -> None:
 
 
 def test_issue_templates_valid_and_prompt_for_redacted_logs() -> None:
-    """TC-09: Bug report and feature request YAML templates are valid."""
+    """Bug report and feature request YAML templates are valid."""
     template_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
     bug_data: dict[str, Any] = yaml.safe_load(
         (template_dir / "bug_report.yml").read_text(encoding="utf-8")
@@ -674,7 +673,7 @@ def test_issue_templates_valid_and_prompt_for_redacted_logs() -> None:
 
 
 def test_release_workflow_permissions_and_version_guard() -> None:
-    """TC-16: .github/workflows/release.yml enforces OIDC and tag version guard."""
+    """.github/workflows/release.yml enforces OIDC and tag version guard."""
     workflow_path = REPO_ROOT / ".github" / "workflows" / "release.yml"
     data: dict[str, Any] = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
 
@@ -692,7 +691,7 @@ def test_release_workflow_permissions_and_version_guard() -> None:
 
 
 def test_release_workflow_builds_spa_before_uv_build() -> None:
-    """TC-13: release builds the web UI with Node before `uv build`."""
+    """Release builds the web UI with Node before `uv build`."""
     workflow_path = REPO_ROOT / ".github" / "workflows" / "release.yml"
     data: dict[str, Any] = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
     steps: list[dict[str, Any]] = data["jobs"]["build"]["steps"]

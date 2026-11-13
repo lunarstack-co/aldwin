@@ -1,4 +1,4 @@
-/* The base layer from the assistant-ui source, plus the reading defaults Aldwin had. */
+/* The base layer from the assistant-ui source, plus Aldwin's reading defaults. */
 @layer base {
   * {
     @apply border-border outline-ring/50;

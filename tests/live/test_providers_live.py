@@ -80,11 +80,9 @@ async def test_provider_live_turn(
             model_id
         )
 
-    # 1. Run live check_model
     report = await check_model(factory, live=True)
     report.raise_for_failures()
 
-    # 2. Run live turn with calculate tool
     secrets_cfg = (
         SecretsConfig(**{entry.secret: SecretStr(api_key)})
         if entry.secret and api_key

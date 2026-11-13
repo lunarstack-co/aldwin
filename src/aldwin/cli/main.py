@@ -36,7 +36,6 @@ def _load_client():
 
 
 def _is_interactive_tty() -> bool:
-    """Return `True` when `sys.stdin` is attached to an interactive terminal."""
     return sys.stdin.isatty()
 
 

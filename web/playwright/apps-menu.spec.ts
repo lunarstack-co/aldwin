@@ -77,8 +77,8 @@ test("a chip can be removed before sending", async ({ page, host }) => {
 test("the apps button opens the menu, and Manage goes to the Tools page", async ({ page }) => {
   await openChat(page);
   await page.getByTestId("composer-apps-button").click();
-  await expect(menu(page).getByRole("option").first()).toBeVisible();
-  await page.getByTestId("apps-manage").click();
+  await expect(page.getByTestId("apps-button-menu").getByRole("option").first()).toBeVisible();
+  await page.getByTestId("apps-button-menu-manage").click();
   await expect(page).toHaveURL(/\/settings\/\?section=tools$/);
 });
 
@@ -174,7 +174,7 @@ test("a hostile app title from history shows as plain text", async ({ page, host
   ];
   await openChat(page);
   const chip = page.getByTestId("apps-picked").locator('[data-picked-app="evil"]');
-  await expect(chip).toHaveText("<img src=x onerror=alert(1)>");
+  await expect(chip.locator(".truncate")).toHaveText("<img src=x onerror=alert(1)>");
   await expect(page.getByTestId("apps-picked").locator("img")).toHaveCount(0);
   expect(dialogs).toBe(0);
 });

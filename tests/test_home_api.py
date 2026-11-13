@@ -26,7 +26,7 @@ def _store(home: Path) -> SessionStore:
 
 
 def test_list_hides_conversations_with_no_turns(aldwin_home: Path) -> None:
-    """TC-29: only conversations with a turn are listed."""
+    """Only conversations with a turn are listed."""
     store = _store(aldwin_home)
     kept = store.create_new()
     kept.turns = [{"text": "Hello", "skills": []}]
@@ -40,7 +40,7 @@ def test_list_hides_conversations_with_no_turns(aldwin_home: Path) -> None:
 
 
 def test_load_returns_none_for_missing_corrupt_or_odd_ids(aldwin_home: Path) -> None:
-    """TC-30: a missing, damaged or path-like id gives None, never an error."""
+    """A missing, damaged or path-like id gives None, never an error."""
     sessions = aldwin_home / "sessions"
     sessions.mkdir(exist_ok=True)
     (sessions / "2026-01-01_bad.json").write_text("{", encoding="utf-8")
@@ -58,7 +58,7 @@ def test_load_returns_the_file_as_saved(aldwin_home: Path) -> None:
 def test_settings_view_never_contains_a_raw_key(
     aldwin_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-31: file and environment keys appear masked only."""
+    """File and environment keys appear masked only."""
     (aldwin_home / "secrets.yaml").write_text(
         yaml.safe_dump({"openai_api_key": OPENAI_KEY}), encoding="utf-8"
     )
@@ -75,7 +75,7 @@ def test_settings_view_never_contains_a_raw_key(
 
 
 def test_patch_applies_allowed_fields_and_refuses_the_rest(aldwin_home: Path) -> None:
-    """TC-32: allowed fields are written; a refused patch writes nothing."""
+    """Allowed fields are written; a refused patch writes nothing."""
     view = apply_settings_patch(
         {"limits": {"max_steps": 20}, "check_for_updates": False}, aldwin_home
     )

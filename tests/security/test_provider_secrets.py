@@ -54,7 +54,7 @@ async def test_provider_key_request_canary_not_leaked(
     assert canary not in repr(req)
     assert canary not in str(req)
 
-    # Set up host with mock transport that rejects key
+    # The provider rejects every key, so the canary lands in an error path.
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(401, json={"error": "invalid_api_key"})
 
@@ -78,19 +78,15 @@ async def test_provider_key_request_canary_not_leaked(
     await client.connect()
 
     try:
-        # Submit canary key
         res = await client.save_provider_key("anthropic", canary)
-        # Key must not appear in error message
         assert canary not in getattr(res, "message", "")
 
-        # Run a turn
         async for _ in client.turn("Hello aldwin"):
             pass
     finally:
         await client.close()
         await host.stop_host()
 
-    # Multi-surface scan
     log_path = aldwin_home / "logs" / "aldwin.log"
     if log_path.exists():
         assert canary not in log_path.read_text(encoding="utf-8")

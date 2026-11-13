@@ -99,6 +99,15 @@ async def discover(
         raise SignInError(issuer_mismatch(title)) from None
 
 
+async def offers_sign_in(config: ConnectorConfig) -> bool:
+    """Whether a server that answers 401 publishes sign-in metadata Aldwin can find."""
+    try:
+        async with httpx2.AsyncClient() as http:
+            return await discover(config, client=http) is not None
+    except SignInError:
+        return False
+
+
 async def _discover(
     config: ConnectorConfig, client: httpx2.AsyncClient
 ) -> Discovery | None:

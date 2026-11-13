@@ -120,7 +120,7 @@ async def test_web_search_formats_results_and_summary(
     aldwin_home: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """TC-01: `web_search` with mocked Tavily returns numbered list and `3 results`."""
+    """`web_search` with mocked Tavily returns numbered list and `3 results`."""
     ensure_home(aldwin_home)
     monkeypatch.setenv("TAVILY_API_KEY", "tvly-test-key-12345678")
 
@@ -190,7 +190,7 @@ async def test_web_search_without_key_returns_setup_message(
     aldwin_home: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """TC-02: `web_search` with no Tavily key returns setup message without raising."""
+    """`web_search` with no Tavily key returns setup message without raising."""
     ensure_home(aldwin_home)
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
 
@@ -204,7 +204,7 @@ async def test_web_search_without_key_returns_setup_message(
 
 
 async def test_web_search_query_and_limit_boundaries(aldwin_home: Path) -> None:
-    """TC-15: `web_search` validates query (1..400 chars) and `limit` (1..10) bounds."""
+    """`web_search` validates query (1..400 chars) and `limit` (1..10) bounds."""
     ensure_home(aldwin_home)
     spy = _SpySearchProvider(
         [
@@ -255,7 +255,7 @@ async def test_tavily_provider_error_and_timeout_handling(
     aldwin_home: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """TC-16: Errors and timeouts return `search failed: ...` without leaking keys."""
+    """Errors and timeouts return `search failed: ...` without leaking keys."""
     ensure_home(aldwin_home)
     secret_key = "tvly-supersecret99998888"
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
@@ -343,7 +343,7 @@ async def test_web_search_zero_and_single_result_and_custom_provider(
     aldwin_home: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """TC-17: `web_search` handles 0 results, 1 result, and custom `SearchProvider`."""
+    """`web_search` handles 0 results, 1 result, and custom `SearchProvider`."""
     ensure_home(aldwin_home)
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
 

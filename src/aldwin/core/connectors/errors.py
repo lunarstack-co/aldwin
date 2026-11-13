@@ -37,7 +37,7 @@ class ConnectorAuthRequired(ConnectorError):
 
 
 class ConnectorAuthRejected(ConnectorError):
-    """The server answered 401 to the token we sent."""
+    """The server answered 401 to the token Aldwin sent."""
 
     def __init__(self) -> None:
         super().__init__("The server refused the token (401).")

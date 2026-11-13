@@ -60,7 +60,7 @@ async def _turn(rig: Rig, text: str = "hi") -> list[Event]:
 
 
 async def test_config_fingerprint_change_reloads_before_turn(rig: Rig) -> None:
-    """TC-03: a limits change on disk rebuilds the agent before the next turn."""
+    """A limits change on disk rebuilds the agent before the next turn."""
     await _turn(rig)
     builds_before = len(rig.builds)
 
@@ -73,7 +73,7 @@ async def test_config_fingerprint_change_reloads_before_turn(rig: Rig) -> None:
 
 
 async def test_unchanged_fingerprint_skips_rebuild(rig: Rig) -> None:
-    """TC-17: with nothing changed on disk, turns reuse the same agent."""
+    """With nothing changed on disk, turns reuse the same agent."""
     builds_before = len(rig.builds)
     agent = rig.host._agent
 
@@ -85,7 +85,7 @@ async def test_unchanged_fingerprint_skips_rebuild(rig: Rig) -> None:
 
 
 async def test_reload_keeps_session_model(rig: Rig) -> None:
-    """TC-18: another door changing the default model leaves this chat's model."""
+    """Another door changing the default model leaves this chat's model."""
     active = rig.host.model
     update_config_model("gpt-4o-mini", rig.home)
 
@@ -96,7 +96,7 @@ async def test_reload_keeps_session_model(rig: Rig) -> None:
 
 
 async def test_reload_emits_no_status_or_notice(rig: Rig) -> None:
-    """TC-19: reloading is silent; the turn shows only its own output."""
+    """Reloading is silent; the turn shows only its own output."""
     update_config_limits({"notes_days": 3}, rig.home)
 
     events = await _turn(rig)
@@ -105,7 +105,7 @@ async def test_reload_emits_no_status_or_notice(rig: Rig) -> None:
 
 
 async def test_set_model_refreshes_fingerprint_no_spurious_rebuild(rig: Rig) -> None:
-    """TC-20: a model switch that writes config.yaml does not rebuild again."""
+    """A model switch that writes config.yaml does not rebuild again."""
     done = await rig.client.set_model("openai/gpt-4o-mini")
     assert isinstance(done, DoneEvent)
     builds_after_switch = len(rig.builds)
@@ -116,7 +116,7 @@ async def test_set_model_refreshes_fingerprint_no_spurious_rebuild(rig: Rig) -> 
 
 
 async def test_secrets_only_change_triggers_reload(rig: Rig) -> None:
-    """TC-21: a key saved by another door is loaded before the next turn."""
+    """A key saved by another door is loaded before the next turn."""
     builds_before = len(rig.builds)
     save_secrets(SecretsConfig(openai_api_key=SecretStr("sk-from-web")), rig.home)
 
@@ -128,7 +128,7 @@ async def test_secrets_only_change_triggers_reload(rig: Rig) -> None:
 
 
 async def test_corrupt_config_on_reload_fails_turn(rig: Rig) -> None:
-    """TC-22: a broken config.yaml fails the turn with a fixable message."""
+    """A broken config.yaml fails the turn with a fixable message."""
     config_path = rig.home / "config.yaml"
     good = config_path.read_text(encoding="utf-8")
     config_path.write_text("limits:\n  max_steps: lots\n", encoding="utf-8")
@@ -148,7 +148,7 @@ async def test_corrupt_config_on_reload_fails_turn(rig: Rig) -> None:
 
 
 async def test_mid_turn_disk_change_applies_on_next_turn(rig: Rig) -> None:
-    """TC-23: a change during a turn waits for the next turn."""
+    """A change during a turn waits for the next turn."""
     hang = FakeTurn.hang(prefix_chunks=["Working"])
     rig.model.add_turns(hang)
     running = asyncio.create_task(_drain(rig.client.turn("long job")))

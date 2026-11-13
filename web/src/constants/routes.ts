@@ -11,6 +11,11 @@ export const ROUTES = {
 
 export const REPORT_BUG_URL = "https://github.com/lunarstack-co/aldwin/issues/new?template=bug_report.yml";
 
+/** `version` changes with the icon, so a new one is never hidden by the browser's cache. */
+export function connectorIconSrc(name: string, version: string): string {
+  return `/v1/connectors/${encodeURIComponent(name)}/icon?v=${encodeURIComponent(version)}`;
+}
+
 export const PROFILE_PAGES: readonly string[] = [
   ROUTES.name,
   ROUTES.occupation,

@@ -1,4 +1,4 @@
-"""`aldwin connectors …` shell commands (`FR-27`, `TC-14`)."""
+"""`aldwin connectors …` shell commands."""
 
 from __future__ import annotations
 
@@ -47,7 +47,6 @@ def _json_list() -> list[dict[str, Any]]:
 
 
 def test_list_json_empty_then_two(fake_probe: list[Any], aldwin_home: Path) -> None:
-    """`TC-14`."""
     assert _json_list() == []
     for name in ("context7", "github"):
         args = ["connectors", "add", name, "--url", f"https://{name}.example/mcp"]

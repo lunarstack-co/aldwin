@@ -1,7 +1,8 @@
-"""Connector tokens never leave the credential store (`TC-13`, NFR security)."""
+"""Connector tokens never leave the credential store."""
 
 from __future__ import annotations
 
+import asyncio
 import os
 import stat
 from pathlib import Path
@@ -76,7 +77,17 @@ async def test_token_never_leaves_credentials_store(
             )
             async for _ev in client.turn("use the tool"):
                 pass
-            assert controls.requests[-1]["authorization"] == f"Bearer {TOKEN}"
+            # The icon is looked for after the app connects, so give it a moment.
+            for _ in range(100):
+                if any(path != "/mcp" for path in controls.paths):
+                    break
+                await asyncio.sleep(0.02)
+            asked = list(zip(controls.paths, controls.requests, strict=True))
+            mcp = [headers for path, headers in asked if path == "/mcp"]
+            assert mcp[-1]["authorization"] == f"Bearer {TOKEN}"
+            # Looking for the app's icon never carries the sign-in.
+            icon = [headers for path, headers in asked if path != "/mcp"]
+            assert icon and all("authorization" not in headers for headers in icon)
         finally:
             await client.close()
             await host.stop_host()

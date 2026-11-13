@@ -1,4 +1,4 @@
-"""Connector tool naming (`FR-7`, `TC-06`)."""
+"""Connector tool naming."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def test_exactly_64_characters_is_kept() -> None:
 
 
 def test_long_name_is_clamped_with_hash() -> None:
-    """`TC-06`: a 70-character tool becomes 64 characters ending in `_<8 hex>`."""
+    """A 70-character tool becomes 64 characters ending in `_<8 hex>`."""
     tool = "t" * 70
     full = f"mcp__fixture__{tool}"
     name = model_tool_name("fixture", tool)

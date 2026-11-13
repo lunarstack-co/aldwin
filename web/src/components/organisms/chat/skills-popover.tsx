@@ -13,8 +13,6 @@ import { useChatStore } from "@/state/chat-store";
 import { cn } from "@/utils/cn";
 import { searchSkills, skillFormatter, toTriggerItem, visibleSkills } from "@/utils/skills";
 
-import { ClearUnusedTrigger, markPicked, type ButtonTriggerRef } from "./button-trigger";
-
 // Buttons by the menu must not take focus from the composer, or the menu would lose its cursor.
 const keepFocus = (event: MouseEvent) => event.preventDefault();
 
@@ -33,7 +31,7 @@ export function CloseOnOutsidePointer() {
 }
 
 /** The `@` menu: skills only, inserted as `@name`, with the catalogue's loading, empty and error states. */
-export function SkillsPopover({ buttonTriggerRef }: { buttonTriggerRef?: ButtonTriggerRef }) {
+export function SkillsPopover() {
   const skills = useChatStore((s) => s.skills);
   const setStatus = useChatStore((s) => s.setSkillsStatus);
 
@@ -59,7 +57,7 @@ export function SkillsPopover({ buttonTriggerRef }: { buttonTriggerRef?: ButtonT
       <ComposerTriggerPopover
         char="@"
         adapter={adapter}
-        directive={{ formatter: skillFormatter, onInserted: () => markPicked(buttonTriggerRef, "@") }}
+        directive={{ formatter: skillFormatter }}
         fallbackIcon={AtSign}
         isLoading={skills.status === "idle" || skills.status === "loading"}
         loadingLabel={copy.loading}
@@ -68,7 +66,6 @@ export function SkillsPopover({ buttonTriggerRef }: { buttonTriggerRef?: ButtonT
         className="static m-0 max-h-[min(20rem,45dvh)] w-full overflow-y-auto rounded-none border-0 max-md:[&_[role=option]]:min-h-10"
       >
         <CloseOnOutsidePointer />
-        {buttonTriggerRef ? <ClearUnusedTrigger char="@" triggerRef={buttonTriggerRef} /> : null}
       </ComposerTriggerPopover>
       <div className="flex flex-col gap-1 border-t p-1">
         {failed ? (

@@ -62,7 +62,6 @@ async def test_blocked_categories_refused_by_read_tools(
 async def test_env_example_readable_env_local_blocked(
     security_tools: SimpleNamespace,
 ) -> None:
-    """`.env.example` is readable; `.env.local` is not."""
     (security_tools.root / ".env.example").write_text("OK=1\n", encoding="utf-8")
     (security_tools.root / ".env.local").write_text("NO=1\n", encoding="utf-8")
     ok = await security_tools.tools["read_file"].call({"path": ".env.example"})

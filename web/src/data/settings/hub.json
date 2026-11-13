@@ -4,8 +4,8 @@
   "back": "Back to chat",
   "sections": {
     "providers": {
-      "label": "Providers & models",
-      "lede": "Aldwin needs an AI model to think and write. A provider is the company or program that runs that model, such as OpenAI, Anthropic, or Ollama on your own computer."
+      "label": "Models",
+      "lede": "Aldwin needs an AI model to think and write. Connect one here and choose which one Aldwin uses."
     },
     "search": {
       "label": "Search",
@@ -17,7 +17,7 @@
     },
     "tools": {
       "label": "Tools",
-      "lede": "Connect apps like GitHub or Notion so Aldwin can read and work in them for you. Steps that change something in an app need your OK, which for now only the terminal app can give."
+      "lede": "Connect the apps you use so Aldwin can work in them for you. Aldwin asks before it changes anything."
     },
     "advanced": {
       "label": "Advanced",

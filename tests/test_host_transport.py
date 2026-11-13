@@ -85,7 +85,7 @@ async def _until_done(transport: FakeHostTransport, req_id: str) -> list[Event]:
 
 
 def test_host_transport_protocol_is_exported() -> None:
-    """TC-01, TC-19, TC-20: exported, handler type shared, no web stack imports.
+    """Exported, handler type shared, no web stack imports.
 
     The contract also says events sent while detached are dropped.
     """
@@ -116,7 +116,7 @@ def test_host_transport_protocol_is_exported() -> None:
 
 
 def test_in_process_transport_satisfies_host_transport_surface() -> None:
-    """TC-02: the CLI transport and the test double both fit the Protocol."""
+    """The CLI transport and the test double both fit the Protocol."""
     for transport in (InProcessTransport(), FakeHostTransport()):
         checked = _uses_host_transport(transport)
         for member in HOST_TRANSPORT_MEMBERS:
@@ -124,7 +124,7 @@ def test_in_process_transport_satisfies_host_transport_surface() -> None:
 
 
 async def test_fake_detach_keeps_transport_open_and_requests_waiting() -> None:
-    """TC-06, TC-07, TC-08: only `close()` ends `receive_request`."""
+    """Only `close()` ends `receive_request`."""
     transport = FakeHostTransport()
 
     transport.detach()
@@ -144,7 +144,7 @@ async def test_fake_detach_keeps_transport_open_and_requests_waiting() -> None:
 async def test_mid_approval_detach_and_reattach_answers_the_pending_approval(
     aldwin_home: Path, fake_model: FakeModel
 ) -> None:
-    """TC-09, TC-10, TC-12, TC-17: a dropped door can come back and approve."""
+    """A dropped door can come back and approve."""
     fake_model.add_turns(
         FakeTurn.tool_call("run_command", {"command": "df -h"}, call_id="c_1"),
         FakeTurn.text(["41 GB free."]),
@@ -185,7 +185,7 @@ async def test_mid_approval_detach_and_reattach_answers_the_pending_approval(
 async def test_new_approval_while_detached_fails_closed_and_host_keeps_serving(
     aldwin_home: Path, fake_model: FakeModel
 ) -> None:
-    """TC-14: with no door attached, a new approval is denied, not left waiting."""
+    """With no door attached, a new approval is denied, not left waiting."""
     fake_model.add_turns(
         FakeTurn.tool_call("run_command", {"command": "rm -rf /tmp/x"}, call_id="c_2"),
         FakeTurn.text(["Skipped."]),
@@ -221,7 +221,7 @@ async def test_new_approval_while_detached_fails_closed_and_host_keeps_serving(
 async def test_shutdown_after_detach_ends_the_serve_loop(
     aldwin_home: Path, fake_model: FakeModel
 ) -> None:
-    """TC-11: closing the transport is still the one way to stop serving."""
+    """Closing the transport is still the one way to stop serving."""
     host, transport, _tools = await _start_host(aldwin_home, fake_model)
     await _hello(transport, "hello_1")
     transport.detach()
@@ -236,7 +236,7 @@ async def test_shutdown_after_detach_ends_the_serve_loop(
 async def test_approval_door_connected_needs_attached_and_welcomed(
     aldwin_home: Path, fake_model: FakeModel
 ) -> None:
-    """TC-13: the door counts as connected only when attached and welcomed."""
+    """The door counts as connected only when attached and welcomed."""
     host, transport, _tools = await _start_host(aldwin_home, fake_model)
     try:
         for attached in (True, False):
@@ -254,7 +254,7 @@ async def test_approval_door_connected_needs_attached_and_welcomed(
 async def test_every_approval_path_asks_the_door_connected_helper(
     aldwin_home: Path, fake_model: FakeModel, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TC-15: approvals key off `attached`, never `closed`, on every path."""
+    """Approvals key off `attached`, never `closed`, on every path."""
     host, transport, _tools = await _start_host(aldwin_home, fake_model)
     try:
         await _hello(transport, "hello_1")
@@ -283,7 +283,7 @@ async def test_every_approval_path_asks_the_door_connected_helper(
 async def test_connector_events_only_go_to_an_attached_door(
     aldwin_home: Path, fake_model: FakeModel
 ) -> None:
-    """TC-16: connector notices skip a detached door and reach an attached one."""
+    """Connector notices skip a detached door and reach an attached one."""
     host, transport, _tools = await _start_host(aldwin_home, fake_model)
     try:
         await _hello(transport, "hello_1")
@@ -301,7 +301,7 @@ async def test_connector_events_only_go_to_an_attached_door(
 
 
 def test_protocol_doc_states_the_host_transport_contract() -> None:
-    """TC-18: the docs say `None` means shutdown and a peer drop is `attached`."""
+    """The docs say `None` means shutdown and a peer drop is `attached`."""
     doc = (Path(__file__).resolve().parent.parent / "docs" / "protocol.md").read_text(
         encoding="utf-8"
     )

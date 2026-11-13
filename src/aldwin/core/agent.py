@@ -503,7 +503,6 @@ def build_agent(
 
 
 def new_session(agent: Agent) -> AgentSession:
-    """Create a fresh `AgentSession` from `agent`."""
     return agent.start()
 
 
@@ -525,7 +524,7 @@ def rebuild_agent(
     tools: Sequence[Tool] | None = None,
     on_retry: RetryCallback | None = None,
 ) -> tuple[Agent, AldwinConfig]:
-    """Rebuild the `Agent` for a new `model_name`."""
+    """Build a new `Agent` for `model_name` and return it with the updated config."""
     cleaned = model_name.strip()
     if not cleaned:
         raise ValueError("model_name must not be empty.")

@@ -64,6 +64,7 @@ class FixtureControls:
     server: FixtureServer = field(init=False)
     bearer: str | None = None
     requests: list[dict[str, str]] = field(default_factory=list)
+    paths: list[str] = field(default_factory=list)  # parallel to `requests`
     connect_delay: float = 0.0
     expire_next: bool = False
     _contents: dict[str, list[Any]] = field(default_factory=dict)
@@ -173,6 +174,7 @@ def _wrap(app: Any, controls: FixtureControls) -> Any:
         headers = {k.decode(): v.decode() for k, v in scope["headers"]}
         controls.requests.append(headers)
         path = scope["path"]
+        controls.paths.append(path)
         if path == "/401" or (
             controls.bearer is not None
             and headers.get("authorization") != f"Bearer {controls.bearer}"

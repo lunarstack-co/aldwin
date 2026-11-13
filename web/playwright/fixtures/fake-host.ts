@@ -33,6 +33,7 @@ export type SessionRow = {
   model: string;
   title: string;
   interrupted: boolean;
+  pinned?: boolean;
 };
 export type TodoItem = { text: string; status: "pending" | "in_progress" | "done" | "dropped" };
 export type SetupStatus = {
@@ -111,6 +112,14 @@ export class FakeHost {
   /** Answer the next `n` tickets with this status. */
   ticketFailures: { remaining: number; status: number } = { remaining: 0, status: 0 };
   openError: { code: string; message: string } | null = null;
+  /** Leave `connectors.add` waiting, as a server that needs a sign-in does; `finishSignIn` ends it. */
+  holdAdd = false;
+  /** The next `connectors.add` fails with this error. */
+  addError: { code: string; message: string } | null = null;
+  /** SVG icons the host holds for connected apps, by connector name. */
+  connectorIcons = new Map<string, string>();
+  /** The next rename, pin or delete fails with this error instead. */
+  changeError: { code: string; message: string } | null = null;
   /** Leave `sessions.open` unanswered, as if the socket died before the reply. */
   holdOpen = false;
   /** Hold `hello` replies until `release()`. */
@@ -127,11 +136,11 @@ export class FakeHost {
   skillBodies: Record<string, string> = { ...SKILL_BODIES };
   /** Every REST response body the fake sent, to prove no full key ever comes back. */
   responses: { path: string; body: unknown }[] = [];
-  /** The id of the last `connectors.login` or `connectors.add`, for sign-in events tied to it. */
   /** Settings request types the fake answers with an error, to test the page's fallbacks. */
   failing = new Set<string>();
+  /** The id of the last `connectors.login` or `connectors.add`, for sign-in events tied to it. */
   lastSignInId: string | null = null;
-  /** Optional error reply to the next `approve` frame (`unknown_approval` or digest mismatch). */
+  /** An error reply to the next `approve` frame (`unknown_approval` or digest mismatch). */
   approveError: { code: string; message: string } | null = null;
   /** Per-conversation saved JSON fixtures for `GET /v1/conversations/:id`. */
   conversations = new Map<string, { status?: number; delayMs?: number; body?: unknown }>();
@@ -153,8 +162,6 @@ export class FakeHost {
     await this.page.routeWebSocket(/\/v1\/ws/, (ws) => this.connect(ws));
     await this.page.route("**/v1/**", (route) => this.answerRest(route));
   }
-
-  // --- socket ---
 
   private connect(ws: WebSocketRoute): void {
     this.sockets.push(ws);
@@ -290,6 +297,37 @@ export class FakeHost {
         done();
         break;
       }
+      case "sessions.rename":
+      case "sessions.pin":
+      case "sessions.delete": {
+        if (this.changeError) {
+          this.emit({ re: frame.id, kind: "error", ...this.changeError }, ws);
+          this.changeError = null;
+          break;
+        }
+        const id = String(frame.session_id);
+        const found = this.sessions.find((row) => row.id === id);
+        if (!found) {
+          this.emit({ re: frame.id, kind: "error", code: "not_found", message: NOT_FOUND }, ws);
+          break;
+        }
+        if (frame.type === "sessions.delete") {
+          if (this.current?.id === id && this.refuseWhileBusy(ws, frame)) break;
+          this.sessions = this.sessions.filter((row) => row.id !== id);
+          if (this.current?.id === id) {
+            this.current = null;
+            this.history = [];
+          }
+        } else {
+          const changed =
+            frame.type === "sessions.rename" ? { title: String(frame.title) } : { pinned: Boolean(frame.pinned) };
+          this.sessions = this.sessions.map((row) => (row.id === id ? { ...row, ...changed } : row));
+          if (this.current?.id === id) this.current = { ...this.current, ...changed };
+        }
+        this.emit({ re: frame.id, kind: "sessions", items: this.sessions, current: this.current }, ws);
+        done();
+        break;
+      }
       case "status":
         this.emit({ re: frame.id, kind: "status", ...this.statusReply }, ws);
         done();
@@ -312,6 +350,11 @@ export class FakeHost {
         done();
         break;
       case "stop":
+        // A sign-in that is waiting for the user ends as stopped, as on the real host.
+        if (this.lastSignInId) {
+          this.emit({ re: this.lastSignInId, kind: "done", reason: "stopped" }, ws);
+          this.lastSignInId = null;
+        }
         done();
         if (this.activeTurn !== null) {
           this.emit({ re: this.activeTurn, kind: "done", reason: "stopped" }, ws);
@@ -423,6 +466,11 @@ export class FakeHost {
         return done();
       case "connectors.add": {
         this.lastSignInId = frame.id;
+        if (this.addError) {
+          this.emit({ re: frame.id, kind: "error", ...this.addError }, ws);
+          this.addError = null;
+          return;
+        }
         const item = this.connectors.catalog.find((c) => c.url === frame.url);
         const added = String(frame.name ?? item?.name ?? "custom");
         this.connectors.items.push({
@@ -441,6 +489,10 @@ export class FakeHost {
           note: null,
         });
         this.connectors.catalog = this.connectors.catalog.map((c) => (c.name === added ? { ...c, added: true } : c));
+        if (this.holdAdd) {
+          this.connectors.items = this.connectors.items.map((c) => (c.name === added ? { ...c, status: "needs_auth" } : c));
+          return;
+        }
         return done();
       }
       case "connectors.enable":
@@ -667,8 +719,6 @@ export class FakeHost {
     this.approval(event);
   }
 
-  // --- REST ---
-
   private async answerRest(route: Route): Promise<void> {
     const request = route.request();
     const { pathname } = new URL(request.url());
@@ -713,6 +763,12 @@ export class FakeHost {
       case "GET /v1/conversations":
         return reply({ items: this.sessions });
       default: {
+        const iconMatch = method === "GET" ? pathname.match(/^\/v1\/connectors\/([^/]+)\/icon$/) : null;
+        if (iconMatch) {
+          const icon = this.connectorIcons.get(decodeURIComponent(iconMatch[1]));
+          if (!icon) return reply({ detail: NOT_FOUND }, 404);
+          return route.fulfill({ status: 200, contentType: "image/svg+xml", body: icon });
+        }
         const convMatch = method === "GET" ? pathname.match(/^\/v1\/conversations\/([^/]+)$/) : null;
         if (convMatch) {
           const id = decodeURIComponent(convMatch[1]);

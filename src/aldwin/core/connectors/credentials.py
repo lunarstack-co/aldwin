@@ -29,7 +29,7 @@ CREDENTIAL_VERSION = 1
 
 
 class CredentialStore(Protocol):
-    """Where connector secrets are kept. The OS keychain can implement this later."""
+    """Where connector secrets are kept."""
 
     @property
     def directory(self) -> Path: ...

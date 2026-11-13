@@ -107,6 +107,15 @@ def load_conversation_json(
     return raw if isinstance(raw, dict) else None
 
 
+def load_connector_icon(
+    name: str, home: Path | None = None
+) -> tuple[bytes, str] | None:
+    """A connected app's saved icon as ``(bytes, media type)``, or ``None``."""
+    from aldwin.core.connectors.icons import load_icon
+
+    return load_icon(_resolve_home(home), name)
+
+
 def get_settings_view(home: Path | None = None) -> dict[str, Any]:
     """Return the settings a door may show; keys appear masked, never in full."""
     root = _resolve_home(home)

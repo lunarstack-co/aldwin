@@ -1,10 +1,12 @@
 "use client";
 
+import { ChevronDown } from "lucide-react";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, type ReactNode } from "react";
 
 import { ConnectionState } from "@/components/assistant-ui/connection-state";
+import { Button } from "@/components/ui/button";
 import { chatHref, isSettingsPage } from "@/constants/routes";
 import railCopy from "@/data/chat/rail.json";
 import copy from "@/data/chat/shell.json";
@@ -25,6 +27,7 @@ import { TITLE_CHARS } from "@/utils/page-title";
 import { shorten } from "@/utils/text";
 
 import { LeaveGuard, leaveTo } from "../leave-guard";
+import { ConversationDialogs, ConversationMenu } from "./conversation-menu";
 import { HistorySeeAll } from "./history-see-all";
 import { Rail } from "./rail";
 import { InterruptedNotice, SessionNoticeBanner } from "./session-notice-banner";
@@ -62,6 +65,7 @@ export function ChatShell({ children }: { children?: ReactNode }) {
   const router = useRouter();
 
   const open = phase === "open";
+  const onEmptyChat = turns.length === 0 && view === "chat" && !onSettings;
   const current = sessions.find((s) => s.id === currentId);
   const title =
     turns.length === 0 ? null : shorten(current?.title || turns[0].userText || railCopy.untitled, TITLE_CHARS);
@@ -99,8 +103,27 @@ export function ChatShell({ children }: { children?: ReactNode }) {
               {onSettings ? (
                 <h1 className="me-auto min-w-0 truncate text-sm font-medium">{hubCopy.title}</h1>
               ) : title !== null && view === "chat" ? (
-                <h1 className="me-auto min-w-0 truncate text-sm font-medium" data-testid="conversation-title">
-                  {title}
+                <h1 className="me-auto min-w-0 text-sm font-medium">
+                  {currentId !== null && current ? (
+                    <ConversationMenu
+                      target={{ id: currentId, title: current.title || title }}
+                      trigger={
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          data-testid="conversation-title"
+                          className="max-w-full min-w-0 justify-start gap-1 px-2 font-medium max-md:h-10"
+                        >
+                          <span className="truncate">{title}</span>
+                          <ChevronDown aria-hidden className="opacity-60" />
+                        </Button>
+                      }
+                    />
+                  ) : (
+                    <span className="block truncate" data-testid="conversation-title">
+                      {title}
+                    </span>
+                  )}
                 </h1>
               ) : null}
               <ViewMenu />
@@ -111,7 +134,8 @@ export function ChatShell({ children }: { children?: ReactNode }) {
               sessions={sessions}
               currentId={currentId}
               disabled={!open}
-              newChatDisabled={!open || (turns.length === 0 && view === "chat" && !onSettings)}
+              newChatDisabled={!open || onEmptyChat}
+              newChatCurrent={open && onEmptyChat}
               onSeeAll={() => {
                 close();
                 showSeeAll();
@@ -140,6 +164,7 @@ export function ChatShell({ children }: { children?: ReactNode }) {
                 <Thread model={status.model} disabled={!open} />
               )}
               {phase === "taken" ? <TakeOverDialog onTakeOver={session.takeOver} /> : null}
+              <ConversationDialogs />
               <LeaveGuard />
             </>
           )}

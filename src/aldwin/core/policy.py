@@ -1584,10 +1584,9 @@ class PolicyWrappedTool(Tool):
         self.parameters = inner.parameters
         self.validate_arguments = inner.validate_arguments
         self._exec_timeout = inner.timeout
-        # Agentling applies `tool.timeout or agent.tool_timeout` around the
-        # *entire* `call()`, which includes waiting on Diff/Ask. A finite
-        # value here makes slow human approvals look like ToolTimeoutError
-        # (the 60s bug). Disable the outer timer; bound only `forward()`.
+        # Agentling times the whole `call()`, including the wait for approval,
+        # so a finite value makes a slow answer look like a tool timeout.
+        # Only `forward()` is bounded.
         self.timeout = float("inf")
         self._raw_max_output_chars = (
             inner.max_output_chars
@@ -1596,10 +1595,8 @@ class PolicyWrappedTool(Tool):
                 inner.name, DEFAULT_TOOL_OUTPUT_CAP
             )
         )
-        # Same trap as timeout: `None` falls back to Agent.max_tool_output_chars,
-        # which runs `_truncate_middle` and turns `ToolOutput` into a plain str,
-        # dropping `.summary` so the CLI row shows `<untrusted …>` instead.
-        # Cap inside `trim_tool_output` only; leave Agentling's outer trim off.
+        # `None` falls back to Agentling's own trim, which turns `ToolOutput`
+        # into a plain str and drops `.summary`. `trim_tool_output` caps instead.
         self.max_output_chars = 1_000_000_000
 
     @property

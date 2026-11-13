@@ -189,8 +189,6 @@ class _View:
         else:
             await self.manage(listing.items[choice])
 
-    # --- import -------------------------------------------------------------
-
     async def import_from_apps(self) -> None:
         """Show what other apps have set up, ask once, and import it."""
         scan = await self.client.connectors_import(dry_run=True)
@@ -242,8 +240,6 @@ class _View:
     def _warnings(self, warnings: Sequence[str]) -> None:
         for warning in warnings:
             self._line(f"warning: {sanitize_display_text(warning)}", "warn")
-
-    # --- add ----------------------------------------------------------------
 
     async def add(self, catalog: Sequence[CatalogItem] = ()) -> None:
         rows, choices = catalog_menu(catalog, self.console.width)
@@ -388,8 +384,6 @@ class _View:
                 ),
             )
 
-    # --- sign-in ------------------------------------------------------------
-
     async def sign_in(
         self,
         *,
@@ -446,8 +440,6 @@ class _View:
             prompt_line=self.prompt_line,
             prompt_secret=self.prompt_secret,
         )
-
-    # --- manage -------------------------------------------------------------
 
     async def manage(self, info: ConnectorInfo) -> None:
         title = sanitize_display_text(info.title)
@@ -534,8 +526,6 @@ class _View:
             return
         await self.client.connectors_tool_policy(info.name, tool.name, settings[picked])
         self._result("ok", f"{sanitize_display_text(tool.name)}: {settings[picked]}.")
-
-    # --- helpers ------------------------------------------------------------
 
     async def _choose(
         self,

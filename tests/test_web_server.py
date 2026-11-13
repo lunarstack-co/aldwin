@@ -67,7 +67,7 @@ def _sign_in(client: TestClient, auth: Authenticator) -> None:
 def test_bootstrap_then_health_and_page(
     client: TestClient, auth: Authenticator
 ) -> None:
-    """TC-01: the launch link signs in, then health and the page load."""
+    """The launch link signs in, then health and the page load."""
     _sign_in(client, auth)
     health = client.get("/v1/health")
     assert health.status_code == 200
@@ -78,7 +78,7 @@ def test_bootstrap_then_health_and_page(
 
 
 def test_rest_without_cookie_is_401(client: TestClient) -> None:
-    """TC-02: every ``/v1`` path needs the session cookie."""
+    """Every ``/v1`` path needs the session cookie."""
     for path in ("/v1/health", "/v1/home", "/v1/unknown", "/v1"):
         response = client.get(path)
         assert response.status_code == 401, path
@@ -99,7 +99,7 @@ def test_rest_without_cookie_is_401(client: TestClient) -> None:
 def test_foreign_origin_or_host_is_403(
     client: TestClient, auth: Authenticator, headers: dict[str, str]
 ) -> None:
-    """TC-03: a valid cookie from a foreign page or rebound name is refused."""
+    """A valid cookie from a foreign page or rebound name is refused."""
     client.cookies.set(COOKIE_NAME, auth.token)
     response = client.get("/v1/health", headers=headers)
     assert response.status_code == 403
@@ -108,7 +108,7 @@ def test_foreign_origin_or_host_is_403(
 def test_bootstrap_sets_strict_cookie_and_strips_token(
     client: TestClient, auth: Authenticator
 ) -> None:
-    """TC-05: Set-Cookie flags are exact and the redirect drops ``?t=``."""
+    """Set-Cookie flags are exact and the redirect drops ``?t=``."""
     response = client.get(f"/?t={auth.token}", follow_redirects=False)
     assert response.status_code == 303
     assert response.headers["location"] == "/"
@@ -122,7 +122,7 @@ def test_bootstrap_sets_strict_cookie_and_strips_token(
 
 
 def test_bad_token_sets_no_cookie(client: TestClient) -> None:
-    """TC-08: a wrong token is refused and leaves no cookie."""
+    """A wrong token is refused and leaves no cookie."""
     response = client.get("/?t=wrong", follow_redirects=False)
     assert response.status_code == 401
     assert "set-cookie" not in response.headers
@@ -142,7 +142,7 @@ def test_bootstrap_from_foreign_host_is_403(
 
 
 def test_home_returns_home_and_version(client: TestClient, auth: Authenticator) -> None:
-    """TC-09: the signed-in page can read the home folder and version."""
+    """The signed-in page can read the home folder and version."""
     _sign_in(client, auth)
     response = client.get("/v1/home")
     assert response.status_code == 200
@@ -150,7 +150,7 @@ def test_home_returns_home_and_version(client: TestClient, auth: Authenticator) 
 
 
 def test_page_and_assets_load_without_cookie(client: TestClient) -> None:
-    """TC-10 and TC-29: the UI files never need the cookie."""
+    """The UI files never need the cookie."""
     page = client.get("/")
     assert page.status_code == 200
     assert "aldwin-test-page" in page.text
@@ -162,7 +162,7 @@ def test_page_and_assets_load_without_cookie(client: TestClient) -> None:
 def test_missing_origin_ok_when_host_matches(
     client: TestClient, auth: Authenticator
 ) -> None:
-    """TC-11: a same-origin GET without Origin passes the guard."""
+    """A same-origin GET without Origin passes the guard."""
     client.cookies.set(COOKIE_NAME, auth.token)
     assert client.get("/v1/health").status_code == 200
     response = client.get("/v1/health", headers={"Origin": BASE})
@@ -178,7 +178,7 @@ def test_missing_origin_ok_when_host_matches(
 
 
 def test_wrong_cookie_value_is_401(client: TestClient) -> None:
-    """TC-12: a cookie from another run does not work."""
+    """A cookie from another run does not work."""
     client.cookies.set(COOKIE_NAME, "from-an-old-run")
     assert client.get("/v1/health").status_code == 401
 
@@ -186,7 +186,7 @@ def test_wrong_cookie_value_is_401(client: TestClient) -> None:
 def test_docs_are_off_and_the_web_door_never_starts_a_host(
     client: TestClient, auth: Authenticator
 ) -> None:
-    """TC-30: no OpenAPI docs; tickets wait for a host the door does not start."""
+    """No OpenAPI docs; tickets wait for a host the door does not start."""
     _sign_in(client, auth)
     assert client.get("/openapi.json").status_code == 404
     assert client.get("/docs").status_code == 404
@@ -228,7 +228,7 @@ def test_websocket_under_v1_is_refused_even_with_cookie(
 
 
 def test_missing_static_tree_fails_fast(auth: Authenticator, tmp_path: Path) -> None:
-    """TC-31: a package without the UI says how to build it."""
+    """A package without the UI says how to build it."""
     with pytest.raises(StaticFilesMissingError, match="npm run build"):
         create_app(
             authenticator=auth,
@@ -240,7 +240,7 @@ def test_missing_static_tree_fails_fast(auth: Authenticator, tmp_path: Path) -> 
 
 
 def test_packaged_static_page_is_served(auth: Authenticator, tmp_path: Path) -> None:
-    """TC-01: the page shipped in the package is what ``/`` serves."""
+    """The page shipped in the package is what ``/`` serves."""
     app = create_app(authenticator=auth, home=tmp_path, home_display="~", version="1")
     with TestClient(app, base_url=BASE) as test_client:
         response = test_client.get("/")
@@ -260,7 +260,7 @@ def _free_port(host: str = "127.0.0.1") -> int:
 def test_default_bind_uses_the_preferred_port_when_free(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """TC-21: with no ``--port``, the default port is used when it is free."""
+    """With no ``--port``, the default port is used when it is free."""
     preferred = _free_port()
     monkeypatch.setattr(server_mod, "DEFAULT_PORT", preferred)
     sock = server_mod.bind_socket("127.0.0.1", None)
@@ -274,7 +274,7 @@ def test_default_bind_uses_the_preferred_port_when_free(
 def test_busy_default_port_falls_back_to_a_free_one(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """TC-22: a busy default port does not stop the server starting."""
+    """A busy default port does not stop the server starting."""
     busy = server_mod.bind_socket("127.0.0.1", 0)
     preferred = busy.getsockname()[1]
     monkeypatch.setattr(server_mod, "DEFAULT_PORT", preferred)
@@ -301,7 +301,7 @@ def test_busy_explicit_port_raises() -> None:
 @pytest.mark.loopback
 @pytest.mark.parametrize("host", ["localhost", "::1"])
 def test_localhost_and_ipv6_loopback_bind(host: str) -> None:
-    """TC-23: ``localhost`` binds IPv4 loopback; ``::1`` binds IPv6."""
+    """``localhost`` binds IPv4 loopback; ``::1`` binds IPv6."""
     if host == "::1" and not socket.has_ipv6:
         pytest.skip("IPv6 is not available")
     try:
@@ -350,7 +350,7 @@ def _wait_until_ready(proc: subprocess.Popen[str]) -> list[str]:
 def test_second_web_refused_and_signal_releases_lock(
     aldwin_home: Path, stop_signal: signal.Signals
 ) -> None:
-    """TC-07: a second live server is refused; stopping releases the lock."""
+    """A second live server is refused; stopping releases the lock."""
     port = _free_port()
     first = _start_web("--port", str(port))
     try:
@@ -436,7 +436,7 @@ def test_run_web_without_ui_files_exits_1_and_releases_lock(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
 ) -> None:
-    """TC-31: a missing UI stops startup with the build hint."""
+    """A missing UI stops startup with the build hint."""
     from functools import partial
 
     from aldwin.web import cli as web_cli
@@ -463,7 +463,7 @@ def test_run_web_bad_workspace_exits_2(capsys: pytest.CaptureFixture[str]) -> No
 
 
 def test_privacy_doc_lists_web_lock_and_session_power() -> None:
-    """TC-28: the privacy page names the lock and what the session cookie grants."""
+    """The privacy page names the lock and what the session cookie grants."""
     text = (REPO_ROOT / "docs" / "privacy.md").read_text(encoding="utf-8")
     assert "web.lock" in text
     assert "aldwin_session" in text

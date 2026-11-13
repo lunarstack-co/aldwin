@@ -3,6 +3,8 @@
 import { Bot, Globe, Plug, type LucideIcon } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 
+import { connectorIconSrc } from "@/constants/routes";
+import { useSettingsStore } from "@/state/settings-store";
 import { cn } from "@/utils/cn";
 
 import { MARKS, type Mark } from "./logos/marks";
@@ -25,11 +27,13 @@ let appMarks: AppMarks | null = null;
 let appMarksLoading: Promise<AppMarks> | null = null;
 
 export function loadAppMarks(): Promise<AppMarks> {
-  appMarksLoading ??= import("./logos/app-marks").then((m) => (appMarks = m.APP_MARKS));
+  appMarksLoading ??= Promise.all([import("./logos/app-marks"), import("./logos/hand-app-marks")]).then(
+    ([generated, hand]) => (appMarks = { ...generated.APP_MARKS, ...hand.HAND_APP_MARKS }),
+  );
   return appMarksLoading;
 }
 
-/** An app's mark: a hand-kept one first, then a catalogue one; `undefined` while the catalogue marks load. */
+/** An app's mark: a bundled one, then a hand-kept app one, then a catalogue one; `undefined` while they load. */
 function useAppMark(name: string, enabled: boolean): Mark | null | undefined {
   const key = name.toLowerCase();
   const [loaded, setLoaded] = useState<AppMarks | null>(appMarks);
@@ -66,6 +70,24 @@ function LetterMark({ name, className }: { name: string; className?: string }) {
   );
 }
 
+/** The app's own icon, kept by the host; the letter stands in if it cannot be drawn. */
+function AppIcon({ name, version, className }: { name: string; version: string; className?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <LetterMark name={name} className={className} />;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- a small local file; the export has no image optimiser
+    <img
+      src={connectorIconSrc(name, version)}
+      alt=""
+      aria-hidden
+      data-brand={name}
+      data-app-icon=""
+      onError={() => setFailed(true)}
+      className={cn("size-4 shrink-0 rounded-[20%] object-contain", className)}
+    />
+  );
+}
+
 /** Decorative; the name always sits beside it. */
 export function BrandMark({
   name,
@@ -79,12 +101,21 @@ export function BrandMark({
   // SVG url() references are safest with a plain id.
   const gradientId = `mark-${useId().replace(/\W/g, "")}`;
   const appMark = useAppMark(name, kind === "connector");
+  const iconVersion = useSettingsStore((s) =>
+    kind === "connector" ? (s.connectors.data.items.find((c) => c.name === name)?.icon ?? null) : null,
+  );
   const mark = kind === "connector" ? appMark : markFor(name);
   if (mark === undefined) {
     return <span aria-hidden data-brand={name} className={cn("inline-block size-4 shrink-0", className)} />;
   }
   if (mark === null) {
-    if (kind === "connector") return <LetterMark name={name} className={className} />;
+    if (kind === "connector") {
+      return iconVersion ? (
+        <AppIcon key={iconVersion} name={name} version={iconVersion} className={className} />
+      ) : (
+        <LetterMark name={name} className={className} />
+      );
+    }
     const Fallback = FALLBACKS[kind];
     return <Fallback aria-hidden data-brand={name} data-generic="" className={cn("size-4 shrink-0", className)} />;
   }

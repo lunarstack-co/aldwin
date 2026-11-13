@@ -582,7 +582,7 @@ async def test_context_nearly_full_notice_once(aldwin_home: Path) -> None:
 
 
 def test_whats_new_due_matrix(aldwin_home: Path) -> None:
-    """TC-13: absent, older, unparseable, current, and patch-level last_seen_version."""
+    """Absent, older, unparseable, current, and patch-level last_seen_version."""
     assert whats_new_due(aldwin_home, "0.0.2") is True
 
     mark_whats_new_seen(aldwin_home, "0.0.1")
@@ -611,7 +611,7 @@ def test_whats_new_due_matrix(aldwin_home: Path) -> None:
 
 
 def test_mark_whats_new_seen_persists_and_preserves_comments(aldwin_home: Path) -> None:
-    """TC-14: mark_whats_new_seen writes last_seen_version and keeps comments."""
+    """Mark_whats_new_seen writes last_seen_version and keeps comments."""
     config_path = aldwin_home / "config.yaml"
     before = config_path.read_text(encoding="utf-8")
     assert "# Aldwin configuration" in before
@@ -626,7 +626,7 @@ def test_mark_whats_new_seen_persists_and_preserves_comments(aldwin_home: Path) 
 
 
 def test_render_whats_new_if_due_shows_once(aldwin_home: Path) -> None:
-    """TC-15: the panel shows on the first due launch, not on the next."""
+    """The panel shows on the first due launch, not on the next."""
     buf = io.StringIO()
     console = create_console(plain=False, width=80, record=True, file=buf)
     renderer = ChatRenderer(console, plain=False)
@@ -648,7 +648,7 @@ def test_render_whats_new_if_due_shows_once(aldwin_home: Path) -> None:
 
 
 def test_render_whats_new_if_due_skips_new_homes(aldwin_home: Path) -> None:
-    """TC-16: a freshly created home (``boot_created``) never shows the panel."""
+    """A freshly created home (``boot_created``) never shows the panel."""
     buf = io.StringIO()
     console = create_console(plain=False, width=80, record=True, file=buf)
     renderer = ChatRenderer(console, plain=False)
@@ -683,7 +683,7 @@ def test_render_whats_new_if_due_fails_quiet(
 
 
 def test_render_whats_new_copy_and_plain_mode() -> None:
-    """TC-17: the panel prints the verbatim copy; plain mode drops border colour."""
+    """The panel prints the verbatim copy; plain mode drops border colour."""
     buf = io.StringIO()
     console = create_console(plain=True, width=80, record=True, file=buf)
     renderer = ChatRenderer(console, plain=True)

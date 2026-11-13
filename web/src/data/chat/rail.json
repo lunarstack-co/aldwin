@@ -1,7 +1,8 @@
 {
   "brand": "Aldwin",
   "newChat": "New chat",
-  "history": "History",
+  "recents": "Recents",
+  "pinned": "Pinned",
   "noHistory": "No conversations yet",
   "untitled": "Untitled chat",
   "seeAll": "See all",
@@ -12,5 +13,6 @@
   "openMenu": "Open conversations",
   "collapse": "Hide sidebar",
   "expand": "Show sidebar",
-  "interrupted": "Interrupted"
+  "interrupted": "Interrupted",
+  "options": "Options for {title}"
 }
