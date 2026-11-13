@@ -47,6 +47,20 @@ test("first send docks the composer and lays out bubbles @cross", async ({ page,
   expect(Math.abs(column.x + column.width - (bubbleBox.x + bubbleBox.width))).toBeLessThan(4);
 });
 
+test("a one-line disclaimer sits above the composer, before and after the first message", async ({ page }) => {
+  await openChat(page);
+  const disclaimer = page.getByTestId("composer-disclaimer");
+  await expect(disclaimer).toHaveText("Aldwin can make mistakes. Check important answers.");
+  const above = async () => {
+    const [d, c] = await Promise.all([disclaimer.boundingBox(), page.getByTestId("composer").boundingBox()]);
+    expect(d!.y + d!.height).toBeLessThanOrEqual(c!.y);
+  };
+  await above();
+  await send(page, "hello");
+  await expect(disclaimer).toBeVisible();
+  await above();
+});
+
 test("enter sends and shift enter adds a line", async ({ page, host }) => {
   await openChat(page);
   const input = page.getByTestId(ids.input);

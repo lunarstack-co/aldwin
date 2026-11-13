@@ -5,5 +5,6 @@
   "skills": "Add a skill with @",
   "send": "Send",
   "stop": "Stop",
-  "hint": "Enter to send, Shift+Enter for a new line"
+  "hint": "Enter to send, Shift+Enter for a new line",
+  "disclaimer": "Aldwin can make mistakes. Check important answers."
 }
