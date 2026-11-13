@@ -240,6 +240,31 @@ def test_hand_edit_reindexes(tmp_path: Path) -> None:
     assert "Elm" not in result
 
 
+def test_deleted_files_leave_the_index_and_others_stay(tmp_path: Path) -> None:
+    idx = _index(tmp_path)
+    kept = _write_note(idx.notes_dir, "2026-10-01", ["- kept walnut note"])
+    dropped = _write_note(idx.notes_dir, "2026-10-02", ["- dropped walnut note"])
+    _write_session(
+        idx.sessions_dir,
+        "gone",
+        updated_at="2026-10-02T12:00:00+00:00",
+        steps=[{"type": "task", "data": {"task": "walnut question"}}],
+    )
+    idx.sync()
+    assert "dropped" in idx.search("walnut")
+    assert "walnut question" in idx.search("walnut", scope="conversations")
+
+    dropped.unlink()
+    (idx.sessions_dir / "gone.json").unlink()
+    idx.sync()
+
+    result = idx.search("walnut")
+    assert "kept" in result
+    assert "dropped" not in result
+    assert "walnut question" not in idx.search("walnut", scope="conversations")
+    assert kept.exists()
+
+
 def test_synthetic_id_stable(tmp_path: Path) -> None:
     idx = _index(tmp_path)
     path = _write_note(idx.notes_dir, "2026-10-04", ["- bare note without id"])

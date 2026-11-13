@@ -254,14 +254,29 @@ class MemoryIndex:
                 self._index_notes_file(conn, path)
                 self._set_file_meta(conn, path, st.st_mtime_ns, st.st_size)
 
-        notes_root = self.notes_dir.resolve()
-        for key in list(tracked):
+        for key in self._gone(tracked, present, self.notes_dir, self.sessions_dir):
+            self._delete_file_rows(conn, Path(key), "notes")
+
+    @staticmethod
+    def _gone(
+        tracked: dict[str, tuple[int, int]], present: set[str], root: Path, other: Path
+    ) -> list[str]:
+        """Tracked files under `root` that are no longer on disk.
+
+        Resolving a path costs file-system calls, so only keys that are missing
+        and not plainly in the other folder are resolved.
+        """
+        resolved_root = root.resolve()
+        gone: list[str] = []
+        for key in tracked:
+            if key in present or Path(key).parent == other:
+                continue
             try:
-                under_notes = Path(key).resolve().is_relative_to(notes_root)
+                if Path(key).resolve().is_relative_to(resolved_root):
+                    gone.append(key)
             except (OSError, ValueError):
-                under_notes = False
-            if under_notes and key not in present:
-                self._delete_file_rows(conn, Path(key), "notes")
+                continue
+        return gone
 
     def _index_notes_file(self, conn: sqlite3.Connection, path: Path) -> None:
         day = path.stem
@@ -305,14 +320,8 @@ class MemoryIndex:
                 self._index_session_file(conn, path)
                 self._set_file_meta(conn, path, st.st_mtime_ns, st.st_size)
 
-        sessions_root = self.sessions_dir.resolve()
-        for key in list(tracked):
-            try:
-                under_sessions = Path(key).resolve().is_relative_to(sessions_root)
-            except (OSError, ValueError):
-                under_sessions = False
-            if under_sessions and key not in present:
-                self._delete_file_rows(conn, Path(key), "sessions")
+        for key in self._gone(tracked, present, self.sessions_dir, self.notes_dir):
+            self._delete_file_rows(conn, Path(key), "sessions")
 
     def _session_day(self, meta: dict[str, object], path: Path) -> str:
         for field in ("updated_at", "created_at"):
