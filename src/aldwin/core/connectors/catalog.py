@@ -52,6 +52,10 @@ class CatalogEntry(BaseModel):
         return value
 
 
+# The C loader, when PyYAML has it, reads the catalogue several times faster.
+_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
+
 @lru_cache(maxsize=1)
 def load_catalog() -> tuple[CatalogEntry, ...]:
     """The catalogue shipped with Aldwin, in display order."""
@@ -61,7 +65,8 @@ def load_catalog() -> tuple[CatalogEntry, ...]:
         .read_text(encoding="utf-8")
     )
     entries = tuple(
-        CatalogEntry.model_validate(item) for item in yaml.safe_load(raw)["entries"]
+        CatalogEntry.model_validate(item)
+        for item in yaml.load(raw, Loader=_LOADER)["entries"]
     )
     names = [entry.name for entry in entries]
     if len(set(names)) != len(names):

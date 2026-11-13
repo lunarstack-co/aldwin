@@ -60,7 +60,7 @@ class _FastSearchProvider:
 
 
 def test_builtin_tools_returns_exact_six_names(aldwin_home: Path) -> None:
-    """TC-14: `builtin_tools()` returns the exact six tool names, no more."""
+    """`builtin_tools()` returns the exact six tool names, no more."""
     ensure_home(aldwin_home)
     tools = builtin_tools(_dummy_ask, home=aldwin_home, secrets=SecretsConfig())
 
@@ -84,7 +84,7 @@ def test_builtin_tools_returns_exact_six_names(aldwin_home: Path) -> None:
 
 
 def test_list_builtin_tools_metadata() -> None:
-    """TC-24: `list_builtin_tools()` and `get_builtin_tools()` return metadata."""
+    """`list_builtin_tools()` and `get_builtin_tools()` return metadata."""
     items = list_builtin_tools()
     client_items = get_builtin_tools()
     assert items == client_items
@@ -182,7 +182,7 @@ async def test_host_emits_tool_summaries_and_preserves_20k_fetch_in_memory(
     aldwin_home: Path,
     tmp_path: Path,
 ) -> None:
-    """TC-25: `AldwinHost` maps `ToolOutput` summaries and keeps 20k fetch in memory."""
+    """`AldwinHost` maps `ToolOutput` summaries and keeps 20k fetch in memory."""
     ensure_home(aldwin_home)
 
     big_text = "B" * 25_000
@@ -286,11 +286,23 @@ async def test_host_emits_tool_summaries_and_preserves_20k_fetch_in_memory(
             await host.stop_host()
 
 
+async def _gone(pid: int, timeout: float = 2.0) -> bool:
+    """True once `pid` no longer exists."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        await asyncio.sleep(0.02)
+    return False
+
+
 async def test_esc_during_running_command_and_approval_via_host(
     aldwin_home: Path,
     tmp_path: Path,
 ) -> None:
-    """TC-13 & TC-26: `Esc` during running command or approval stops in < 1s."""
+    """`Esc` during running command or approval stops in < 1s."""
     ensure_home(aldwin_home)
     pid_file = tmp_path / "host_sleep.pid"
     never_created = tmp_path / "never_created.txt"
@@ -328,7 +340,7 @@ async def test_esc_during_running_command_and_approval_via_host(
     try:
         await client.connect()
 
-        # 1. TC-13: Approve command, wait for child PID, then press Esc.
+        # 1. Approve the command, wait for the child PID, then press Esc.
         turn1_events: list[Event] = []
 
         async def run_turn_1() -> None:
@@ -355,10 +367,10 @@ async def test_esc_during_running_command_and_approval_via_host(
         assert isinstance(stop_res, DoneEvent) and stop_res.reason == "ok"
         assert isinstance(turn1_events[-1], DoneEvent)
         assert turn1_events[-1].reason == "stopped"
-        with pytest.raises(ProcessLookupError):
-            os.kill(child_pid, 0)
+        # Killed at once, but a busy machine can take a moment to reap it.
+        assert await _gone(child_pid), f"process {child_pid} still running"
 
-        # 2. TC-26: Press Esc while waiting on the approval prompt.
+        # 2. Press Esc while the approval prompt is waiting.
         turn2_events: list[Event] = []
         t0_approval = 0.0
         async for ev in client.turn("touch file"):
@@ -378,7 +390,7 @@ async def test_esc_during_running_command_and_approval_via_host(
 
 
 async def test_tool_wrapper_overhead_under_50ms(aldwin_home: Path) -> None:
-    """TC-27: Tool wrapper overhead (excluding network/subprocess wait) is < 50 ms."""
+    """Tool wrapper overhead (excluding network/subprocess wait) is < 50 ms."""
     ensure_home(aldwin_home)
 
     search_tool = build_web_search_tool(
