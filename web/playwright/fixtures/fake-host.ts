@@ -20,7 +20,12 @@ import {
 
 /** A frame the page sent over the socket. */
 export type Frame = { id: string; type: string } & Record<string, unknown>;
-export type HistoryRow = { role: "user" | "assistant" | "tool"; text: string; at?: string | null };
+export type HistoryRow = {
+  role: "user" | "assistant" | "tool";
+  text: string;
+  at?: string | null;
+  apps?: { name: string; title: string }[];
+};
 export type SessionRow = {
   id: string;
   created_at: string;

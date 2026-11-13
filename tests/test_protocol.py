@@ -25,6 +25,7 @@ from aldwin.protocol import (
     ErrorEvent,
     Event,
     HelloRequest,
+    HistoryApp,
     HistoryEvent,
     HistoryItem,
     HistoryRequest,
@@ -123,7 +124,12 @@ def test_every_request_round_trips_json(request_msg: Request) -> None:
         HistoryEvent(
             re="req_5",
             messages=[
-                HistoryItem(role="user", text="hi", at="2026-10-17T10:00:00Z"),
+                HistoryItem(
+                    role="user",
+                    text="hi",
+                    at="2026-10-17T10:00:00Z",
+                    apps=[HistoryApp(name="linear", title="Linear")],
+                ),
                 HistoryItem(role="assistant", text="hello", at="2026-10-17T10:00:01Z"),
             ],
             interrupted=True,
@@ -1085,3 +1091,8 @@ def test_done_event_context_usage_round_trips() -> None:
     assert parsed == ev
     assert isinstance(parsed, DoneEvent)
     assert parsed.context == usage
+
+
+def test_a_history_row_without_apps_parses_with_an_empty_list() -> None:
+    item = HistoryItem.model_validate({"role": "user", "text": "hi"})
+    assert item.apps == []
