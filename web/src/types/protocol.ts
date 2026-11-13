@@ -1,11 +1,9 @@
-/** The protocol messages the browser door exchanges with the host over the WebSocket. */
-
 export const PROTOCOL_VERSION = 2;
 
 type RequestBase = { v: number; id: string; channel: "web"; sender: "web" };
 
 export type HelloRequest = RequestBase & { type: "hello"; v_min: number; v_max: number };
-/** `apps` names the connected apps (connector names, such as `linear`) the user picked with `/` for this message. */
+/** `apps` holds connector names picked with `/`, such as `linear`. */
 export type TurnRequest = RequestBase & { type: "turn"; text: string; skills: string[]; apps?: string[] };
 export type StopRequest = RequestBase & { type: "stop" };
 export type ApprovalAnswer = "yes" | "yes_session" | "no";
@@ -90,17 +88,23 @@ export type Request =
   | ConnectorsAuthTokenRequest;
 
 type Outbound<R> = R extends Request ? Omit<R, "v" | "channel" | "sender"> : never;
-/** A request as the page builds it; the envelope is added when it is framed. */
+/** The envelope is added when the request is framed. */
 export type OutboundRequest = Outbound<Request>;
 
 export type HistoryRole = "user" | "assistant" | "tool";
-export type HistoryItem = { role: HistoryRole; text: string; at?: string | null };
+export type HistoryItem = {
+  role: HistoryRole;
+  text: string;
+  at?: string | null;
+  /** Only user rows carry apps. */
+  apps?: { name: string; title: string }[];
+};
 export type DoneReason = "answered" | "stopped" | "max_steps" | "ok";
 export type TokenUsage = { input_tokens: number; output_tokens: number };
 export type TodoStatus = "pending" | "in_progress" | "done" | "dropped";
 export type TodoItem = { text: string; status: TodoStatus };
 export type SkillSource = "default" | "user" | "user override";
-/** One skill in the host's catalogue; a flag starting `error:` means it failed to load. */
+/** A flag starting `error:` means the skill failed to load. */
 export type SkillCatalogItem = {
   name: string;
   description: string;
@@ -108,7 +112,7 @@ export type SkillCatalogItem = {
   flags: string[];
   last_used: string | null;
 };
-/** A picked skill the host left out: not in the catalogue, or past the per-turn limit. */
+/** Not in the catalogue, or past the per-turn limit. */
 export type DroppedSkill = { name: string; reason: "unknown" | "limit" };
 export type ProviderModelStatus = "ok" | "invalid_key" | "no_access" | "unreachable" | "not_running" | "not_configured";
 export type ModelEntry = {
@@ -118,7 +122,6 @@ export type ModelEntry = {
   context_window: number | null;
   supports_tools: boolean | null;
 };
-/** One model provider: whether it is set up, whether it answers, and its models. */
 export type ProviderModels = {
   name: string;
   title: string;
@@ -127,7 +130,7 @@ export type ProviderModels = {
   status: ProviderModelStatus;
   models: ModelEntry[];
 };
-/** One web search provider; it never carries a full key. */
+/** Never carries a full key. */
 export type SearchProviderItem = {
   name: string;
   title: string;
@@ -166,7 +169,6 @@ export type ConnectorInfo = {
   command: string | null;
   note: string | null;
 };
-/** One app from the built-in connector catalogue. */
 export type CatalogItem = {
   name: string;
   title: string;
@@ -177,6 +179,8 @@ export type CatalogItem = {
   keywords: string[];
   token_help_url: string | null;
   added: boolean;
+  /** Absent from older hosts. */
+  category?: string | null;
 };
 export type AuthMode = "browser" | "paste" | "token";
 
@@ -364,7 +368,7 @@ export type TodoUpdatedEvent = EventBase & {
 export type NoticeEvent = EventBase & { kind: "notice"; message: string };
 export type SkillsEvent = EventBase & { kind: "skills"; items: SkillCatalogItem[] };
 export type SkillsUsedEvent = EventBase & { kind: "skills.used"; names: string[]; dropped: DroppedSkill[] };
-/** What the host made of the picked apps: used, or dropped as unknown (not connected) or past the limit. */
+/** Dropped apps are unknown (not connected) or past the limit. */
 export type AppsUsedEvent = EventBase & { kind: "apps.used"; names: string[]; dropped: DroppedSkill[] };
 export type SkillBodyEvent = EventBase & { kind: "skill.body"; name: string; body: string };
 export type ModelsEvent = EventBase & { kind: "models"; current: string; providers: ProviderModels[] };
@@ -388,7 +392,7 @@ export type ConnectorStatusEvent = EventBase & {
   error: string | null;
   retry_in_s: number | null;
 };
-/** A connector sign-in waiting on the user; `expires_in` is the seconds left to answer. */
+/** `expires_in` is the seconds left to answer. */
 export type ConnectorAuthEvent = EventBase & {
   kind: "connector.auth";
   name: string;
@@ -399,7 +403,7 @@ export type ConnectorAuthEvent = EventBase & {
   expires_in: number;
 };
 export type ErrorEvent = EventBase & { kind: "error"; code: string; message: string };
-/** The host asks before an action; the browser answers with `approve`. */
+/** Answered with `approve`. */
 export type ApprovalEvent = EventBase & {
   kind: "approval";
   approval_id: string;

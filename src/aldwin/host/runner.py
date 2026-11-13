@@ -1616,6 +1616,7 @@ class AldwinHost:
                     keywords=list(e.keywords),
                     token_help_url=e.token_help_url,
                     added=e.name in added,
+                    category=e.category,
                 )
                 for e in load_catalog()
             ],
@@ -2334,21 +2335,20 @@ class AldwinHost:
         if text != req.text:
             await scope.emit(NoticeEvent(re=req.id, message=PASTED_SECRET_NOTICE))
         task_text = build_task(text, picked)
-        picked_apps: list[str] = []
+        apps_used: list[tuple[str, str]] = []
         if self._negotiated_version >= 2 and req.apps:
-            apps, dropped_apps = self._connectors.pick_apps(req.apps)
-            picked_apps = [name for name, _title in apps]
+            apps_used, dropped_apps = self._connectors.pick_apps(req.apps)
             await scope.emit(
                 AppsUsedEvent(
                     re=req.id,
-                    names=picked_apps,
+                    names=[name for name, _title in apps_used],
                     dropped=[
                         DroppedApp(name=name, reason=reason)
                         for name, reason in dropped_apps
                     ],
                 )
             )
-            task_text = build_picked_apps(task_text, apps)
+            task_text = build_picked_apps(task_text, apps_used)
         if self._stored_session.turns is None:
             self._stored_session.turns = []
         stored_turn: dict[str, Any] = {
@@ -2356,8 +2356,10 @@ class AldwinHost:
             "skills": [entry.name for entry in picked],
             "at": utc_now_iso(),
         }
-        if picked_apps:
-            stored_turn["apps"] = picked_apps
+        if apps_used:
+            stored_turn["apps"] = [
+                {"name": name, "title": title} for name, title in apps_used
+            ]
         self._stored_session.turns.append(stored_turn)
 
         cold_load_task: asyncio.Task[None] | None = None

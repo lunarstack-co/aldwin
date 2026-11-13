@@ -376,3 +376,16 @@ test("approvals, grants, every display, stopped run, context ring and JSON panel
   await expect(page.getByTestId("conversation-json-body")).toBeVisible();
   await axe(page, "conversation json sheet");
 });
+
+test("the app catalogue with headings, logos and letter marks passes axe", async ({ page, host }) => {
+  host.connectors.catalog = [
+    { name: "stripe", title: "Stripe", purpose: "Payments", url: "https://mcp.stripe.example.com/mcp", auth: "oauth", docs_url: "https://stripe.example.com", keywords: ["stripe", "payments"], token_help_url: null, added: false, category: "payments" },
+    { name: "acme", title: "Acme", purpose: "Tasks", url: "https://mcp.acme.example.com/mcp", auth: "oauth", docs_url: "https://acme.example.com", keywords: ["acme", "tasks"], token_help_url: null, added: false, category: "work" },
+  ];
+  await openChat(page, "/settings/?section=tools");
+  await page.getByTestId("add-app-open").click();
+  const catalog = page.getByTestId("add-app").getByTestId("connector-catalog");
+  await expect(catalog.locator('[data-catalog="stripe"] svg[data-brand="stripe"]')).toBeVisible();
+  await expect(catalog.locator('[data-catalog="acme"] [data-letter]')).toBeVisible();
+  await axe(page, "app catalogue");
+});

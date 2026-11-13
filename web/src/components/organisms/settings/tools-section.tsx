@@ -159,6 +159,25 @@ function matches(item: CatalogItem, query: string): boolean {
     .every((word) => words.includes(word));
 }
 
+type CatalogGroup = { key: string; label: string | null; items: CatalogItem[] };
+
+/** Apps under their category headings in catalogue order; one unlabelled group while searching or for older hosts. */
+export function groupCatalog(items: CatalogItem[], searching: boolean): CatalogGroup[] {
+  if (searching || !items.some((item) => item.category)) return [{ key: "all", label: null, items }];
+  const labels = copy.categories as Record<string, string>;
+  const groups: CatalogGroup[] = [];
+  for (const item of items) {
+    const key = item.category ?? "other";
+    let group = groups.find((g) => g.key === key);
+    if (!group) {
+      group = { key, label: labels[key] ?? labels.other ?? key, items: [] };
+      groups.push(group);
+    }
+    group.items.push(item);
+  }
+  return groups;
+}
+
 function AddByUrl({ onAdd }: { onAdd: (target: AddTarget) => void }) {
   const [url, setUrl] = useState("");
   useUnsavedChanges(url.trim() !== "");
@@ -193,7 +212,6 @@ function AddByUrl({ onAdd }: { onAdd: (target: AddTarget) => void }) {
   );
 }
 
-/** Find an app in the catalogue, or add one by its server address. */
 function AddAppDialog({
   catalog,
   connected,
@@ -224,29 +242,38 @@ function AddAppDialog({
           {shown.length === 0 ? (
             <p className="text-muted-foreground text-sm">{fill(copy.noMatch, { query: query.trim() })}</p>
           ) : (
-            <ul className="flex flex-col gap-2" data-testid="connector-catalog">
-              {shown.map((item) => {
-                const added = item.added || connected.has(item.name);
-                return (
-                  <li key={item.name} className="flex items-start gap-3 rounded-lg border p-3" data-catalog={item.name}>
-                    <BrandMark name={item.name} kind="connector" className="mt-0.5 size-5" />
-                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="font-medium">{item.title}</span>
-                      <span className="text-muted-foreground text-sm">{item.purpose}</span>
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={added}
-                      onClick={() => onAdd({ url: item.url, item })}
-                      className="shrink-0 max-md:h-10"
-                    >
-                      {added ? copy.added : copy.add}
-                    </Button>
-                  </li>
-                );
-              })}
-            </ul>
+            <div className="flex flex-col gap-4" data-testid="connector-catalog">
+              {groupCatalog(shown, query.trim() !== "").map((group) => (
+                <section key={group.key} data-category={group.key} className="flex flex-col gap-2">
+                  {group.label ? (
+                    <h3 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">{group.label}</h3>
+                  ) : null}
+                  <ul className="flex flex-col gap-2">
+                    {group.items.map((item) => {
+                      const added = item.added || connected.has(item.name);
+                      return (
+                        <li key={item.name} className="flex items-start gap-3 rounded-lg border p-3" data-catalog={item.name}>
+                          <BrandMark name={item.name} kind="connector" className="mt-0.5 size-5" />
+                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            <span className="font-medium">{item.title}</span>
+                            <span className="text-muted-foreground text-sm">{item.purpose}</span>
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={added}
+                            onClick={() => onAdd({ url: item.url, item })}
+                            className="shrink-0 max-md:h-10"
+                          >
+                            {added ? copy.added : copy.add}
+                          </Button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              ))}
+            </div>
           )}
           <div className="flex flex-col gap-2 border-t pt-4">
             <h3 className="text-sm font-medium">{copy.addUrl}</h3>
@@ -263,7 +290,6 @@ function AddAppDialog({
   );
 }
 
-/** Connected apps (MCP servers): their status and tools, sign-in, and adding more from a dialog. */
 export function ToolsSection() {
   const session = useSession();
   const connectors = useConnectors();

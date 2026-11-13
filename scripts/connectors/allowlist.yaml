@@ -1,0 +1,319 @@
+# The apps offered in the connector catalogue, in display order.
+# A registry app names the namespace its vendor publishes under in the official MCP
+# Registry; a manual app gives its address from the vendor's own docs. See README.md.
+vendors:
+  - name: notion
+    title: Notion
+    purpose: Search, read and update pages and databases
+    keywords: [notion, notes, wiki, docs]
+    category: work
+    docs_url: https://developers.notion.com/docs/mcp
+    logo: simple-icons:notion
+    source: registry
+    namespace: com.notion
+  - name: linear
+    title: Linear
+    purpose: Find, create and update issues and projects
+    keywords: [linear, issue, ticket, project management]
+    category: work
+    docs_url: https://linear.app/docs/mcp
+    logo: simple-icons:linear
+    source: registry
+    namespace: app.linear
+    remote: https://mcp.linear.app/mcp
+  - name: atlassian
+    title: Atlassian
+    purpose: Jira issues and Confluence pages
+    keywords: [jira, confluence, atlassian, bitbucket, project management]
+    category: work
+    docs_url: https://support.atlassian.com/atlassian-rovo-mcp-server/docs/getting-started-with-the-atlassian-remote-mcp-server/
+    logo: simple-icons:atlassian
+    source: registry
+    namespace: com.atlassian
+    remote: https://mcp.atlassian.com/v2/mcp
+  - name: todoist
+    title: Todoist
+    purpose: Manage tasks and projects
+    keywords: [todoist, todo, tasks]
+    category: work
+    docs_url: https://www.todoist.com/help/articles/todoist-mcp-server
+    logo: simple-icons:todoist
+    source: registry
+    namespace: net.todoist
+  - name: monday
+    title: monday.com
+    purpose: Work with boards, items and updates
+    keywords: [monday, boards, project management, tasks]
+    category: work
+    docs_url: https://developer.monday.com/apps/docs/mondaycom-mcp-integration
+    logo: hand
+    source: registry
+    namespace: com.monday
+  - name: basecamp
+    title: Basecamp
+    purpose: Projects, to-dos and messages in Basecamp
+    keywords: [basecamp, projects, to-dos, project management]
+    category: work
+    docs_url: https://basecamp.com/ai
+    logo: simple-icons:basecamp
+    source: registry
+    namespace: com.basecamp
+  - name: intercom
+    title: Intercom
+    purpose: Look up customer conversations and contacts
+    keywords: [intercom, support, customers, crm]
+    category: work
+    docs_url: https://developers.intercom.com/docs/guides/mcp
+    logo: simple-icons:intercom
+    source: manual
+    url: https://mcp.intercom.com/mcp
+  - name: dropbox
+    title: Dropbox
+    purpose: Search, read and manage files
+    keywords: [dropbox, files, storage]
+    category: work
+    docs_url: https://help.dropbox.com/integrations/connect-dropbox-mcp-server
+    logo: simple-icons:dropbox
+    source: manual
+    url: https://mcp.dropbox.com/mcp
+  - name: github
+    title: GitHub
+    purpose: Repositories, issues and pull requests
+    keywords: [github, repo, pull request, issue, code]
+    category: developer
+    docs_url: https://github.com/github/github-mcp-server
+    logo: simple-icons:github
+    source: manual
+    url: https://api.githubcopilot.com/mcp/
+    expect_auth: bearer
+    token_help_url: https://github.com/settings/personal-access-tokens/new
+  - name: gitlab
+    title: GitLab
+    purpose: Projects, issues and merge requests
+    keywords: [gitlab, repo, merge request, issue, code]
+    category: developer
+    docs_url: https://docs.gitlab.com/user/model_context_protocol/mcp_server/
+    logo: simple-icons:gitlab
+    source: registry
+    namespace: com.gitlab
+  - name: sentry
+    title: Sentry
+    purpose: Issues, stack traces and error context
+    keywords: [sentry, stack trace, crash report, errors]
+    category: developer
+    docs_url: https://docs.sentry.io/product/sentry-mcp/
+    logo: simple-icons:sentry
+    source: manual
+    url: https://mcp.sentry.dev/mcp
+  - name: vercel
+    title: Vercel
+    purpose: Projects, deployments and build logs
+    keywords: [vercel, deploy, hosting]
+    category: developer
+    docs_url: https://vercel.com/docs/agent-resources/vercel-mcp
+    logo: simple-icons:vercel
+    source: registry
+    namespace: com.vercel
+  - name: digitalocean
+    title: DigitalOcean
+    purpose: Manage apps, databases and droplets
+    keywords: [digitalocean, cloud, hosting, servers]
+    category: developer
+    docs_url: https://docs.digitalocean.com/reference/mcp/
+    logo: simple-icons:digitalocean
+    source: registry
+    namespace: com.digitalocean
+  - name: supabase
+    title: Supabase
+    purpose: Query databases and manage Supabase projects
+    keywords: [supabase, database, postgres, backend]
+    category: developer
+    docs_url: https://supabase.com/docs/guides/ai-tools/mcp
+    logo: simple-icons:supabase
+    source: registry
+    namespace: com.supabase
+  - name: postman
+    title: Postman
+    purpose: Collections, environments and API requests
+    keywords: [postman, api, testing, requests]
+    category: developer
+    docs_url: https://www.postman.com/product/mcp-server/
+    logo: simple-icons:postman
+    source: registry
+    namespace: com.postman
+    remote: https://mcp.postman.com/mcp
+  - name: newrelic
+    title: New Relic
+    purpose: Look into errors, logs and performance
+    keywords: [new relic, monitoring, logs, observability]
+    category: developer
+    docs_url: https://docs.newrelic.com/docs/agentic-ai/mcp/overview/
+    logo: simple-icons:newrelic
+    source: registry
+    namespace: com.newrelic
+  - name: huggingface
+    title: Hugging Face
+    purpose: Find models, datasets and Spaces
+    keywords: [hugging face, models, datasets, ai]
+    category: developer
+    docs_url: https://huggingface.co/docs/hub/agents-mcp
+    logo: simple-icons:huggingface
+    source: registry
+    namespace: co.huggingface
+    remote: https://huggingface.co/mcp?login
+  - name: context7
+    title: Context7
+    purpose: Up-to-date library docs and code examples
+    keywords: [context7, library docs, documentation, code]
+    category: developer
+    docs_url: https://context7.com/docs/resources/all-clients
+    logo: hand
+    source: manual
+    url: https://mcp.context7.com/mcp
+    expect_auth: none
+  - name: stripe
+    title: Stripe
+    purpose: Customers, payments, invoices and products
+    keywords: [stripe, payments, billing, invoices]
+    category: payments
+    docs_url: https://docs.stripe.com/mcp
+    logo: simple-icons:stripe
+    source: registry
+    namespace: com.stripe
+  - name: paypal
+    title: PayPal
+    purpose: Invoices, orders and payments
+    keywords: [paypal, payments, invoices]
+    category: payments
+    docs_url: https://developer.paypal.com/ai-tools/mcp-server
+    logo: simple-icons:paypal
+    source: registry
+    namespace: com.paypal.mcp
+  - name: figma
+    title: Figma
+    purpose: Design context from Figma files
+    keywords: [figma, design, mockup, wireframe]
+    category: design
+    docs_url: https://developers.figma.com/docs/figma-mcp-server/remote-server-installation/
+    logo: simple-icons:figma
+    source: registry
+    namespace: com.figma.mcp
+  - name: canva
+    title: Canva
+    purpose: Find, create and edit Canva designs
+    keywords: [canva, design, graphics, presentations]
+    category: design
+    docs_url: https://www.canva.com/help/mcp-agent-setup/
+    logo: hand
+    source: registry
+    namespace: com.canva.mcp
+  - name: miro
+    title: Miro
+    purpose: Read and add to Miro boards
+    keywords: [miro, whiteboard, design, diagrams]
+    category: design
+    docs_url: https://developers.miro.com/docs/miro-mcp
+    logo: simple-icons:miro
+    source: manual
+    url: https://mcp.miro.com/
+  - name: webflow
+    title: Webflow
+    purpose: Manage sites, pages and CMS content
+    keywords: [webflow, website, cms, design]
+    category: design
+    docs_url: https://developers.webflow.com/mcp/reference/overview
+    logo: simple-icons:webflow
+    source: registry
+    namespace: com.webflow
+  - name: wix
+    title: Wix
+    purpose: Manage your Wix site and its content
+    keywords: [wix, website, cms, design]
+    category: design
+    docs_url: https://dev.wix.com/docs/sdk/articles/use-the-wix-mcp/about-the-wix-mcp
+    logo: simple-icons:wix
+    source: registry
+    namespace: com.wix
+  - name: elevenlabs
+    title: ElevenLabs
+    purpose: Make speech and audio from text
+    keywords: [elevenlabs, voice, audio, speech]
+    category: design
+    docs_url: https://elevenlabs.io/mcp
+    logo: simple-icons:elevenlabs
+    source: registry
+    namespace: io.elevenlabs
+  - name: zapier
+    title: Zapier
+    purpose: Run actions across thousands of apps
+    keywords: [zapier, automation, workflows, integrations]
+    category: automation
+    docs_url: https://docs.zapier.com/mcp/home
+    logo: simple-icons:zapier
+    source: registry
+    namespace: com.zapier
+  - name: make
+    title: Make
+    purpose: Run your Make scenarios and automations
+    keywords: [make, automation, workflows, scenarios]
+    category: automation
+    docs_url: https://developers.make.com/mcp-server
+    logo: simple-icons:make
+    source: registry
+    namespace: com.make
+  - name: ifttt
+    title: IFTTT
+    purpose: Run applets that connect apps and devices
+    keywords: [ifttt, automation, applets, smart home]
+    category: automation
+    docs_url: https://ifttt.com/mcp
+    logo: simple-icons:ifttt
+    source: registry
+    namespace: com.ifttt
+  - name: airtable
+    title: Airtable
+    purpose: Read and update bases, tables and records
+    keywords: [airtable, database, spreadsheet, records]
+    category: data
+    docs_url: https://support.airtable.com/articles/9897799762-using-the-airtable-mcp-server
+    logo: simple-icons:airtable
+    source: registry
+    namespace: com.airtable
+  - name: typeform
+    title: Typeform
+    purpose: Create forms and read their responses
+    keywords: [typeform, forms, surveys, responses]
+    category: data
+    docs_url: https://www.typeform.com/developers/get-started/mcp/
+    logo: simple-icons:typeform
+    source: registry
+    namespace: com.typeform
+    remote: https://api.typeform.com/mcp
+  - name: amplitude
+    title: Amplitude
+    purpose: Ask about product analytics and charts
+    keywords: [amplitude, analytics, charts, product data]
+    category: data
+    docs_url: https://amplitude.com/docs/amplitude-ai/amplitude-mcp
+    logo: hand
+    source: registry
+    namespace: com.amplitude
+    remote: https://mcp.amplitude.com/mcp
+  - name: exa
+    title: Exa
+    purpose: Search the web for pages and code
+    keywords: [exa, web search, search, research]
+    category: search
+    docs_url: https://exa.ai/docs/get-started/exa-mcp
+    logo: hand
+    source: registry
+    namespace: ai.exa
+  - name: wolfram
+    title: Wolfram
+    purpose: Computation, maths and curated facts
+    keywords: [wolfram, maths, calculation, facts]
+    category: search
+    docs_url: https://www.wolfram.com/ai/mcp/
+    logo: simple-icons:wolfram
+    source: registry
+    namespace: com.wolfram

@@ -104,3 +104,24 @@ async def test_picker_two_step_navigation_esc_goes_back() -> None:
         pipe.send_text("\x1b")
         chosen = await asyncio.wait_for(task, timeout=1.0)
         assert chosen is None
+
+
+@pytest.mark.asyncio
+async def test_a_long_list_reaches_its_last_item_past_headings() -> None:
+    """Every row stays reachable in a list taller than a terminal, headings skipped."""
+    items: list[str] = []
+    disabled: set[int] = set()
+    for group in range(5):
+        disabled.add(len(items))
+        items.append(f"Heading {group}")
+        items.extend(f"App {group}-{n}" for n in range(8))
+
+    with create_pipe_input() as pipe:
+        task = asyncio.create_task(
+            pick_index(items, default=0, disabled=disabled, input_dev=pipe, plain=False)
+        )
+        await asyncio.sleep(0.05)
+        pipe.send_text("\x1b[B" * 39 + "\r")
+        chosen = await asyncio.wait_for(task, timeout=2.0)
+    assert chosen is not None
+    assert items[chosen] == "App 4-7"

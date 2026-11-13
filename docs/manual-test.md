@@ -197,7 +197,7 @@ For the local-first path (Ollama/LM Studio found on first run), see **Step 20**.
 Needs network access and, for GitHub, a token in `GITHUB_TOKEN` (a fine-grained token with read access to one repository is enough).
 
 1. In a chat, type `/connectors`. The list shows only `+ Add a connector…`. Pick it.
-2. The catalogue lists nine apps, `Notion` first and `Custom URL…` last. Browser sign-in apps are tagged `[sign in]`, GitHub `[token]`, and `Context7` has no tag. Pick `Context7`.
+2. The catalogue lists its apps under headings (`Work and projects` first, `Search and knowledge` last), with `Notion` first and `Custom URL…` last. Headings have no number and can't be picked. Browser sign-in apps are tagged `[sign in]`, GitHub `[token]`, and `Context7`, `Exa` and `Wolfram` `[no sign-in]`. Pick `Context7`.
 3. Expect: `Context7 connected. N tools are available now.` (To try the probe summary, pick `Custom URL…` instead and paste `https://mcp.context7.com/mcp`.)
 4. Ask: "Using Context7, find the docs for next.js routing."
    - Expect: a tool row `⚙ Context7 · resolve-library-id …  auto · server says read-only` and no approval prompt.

@@ -3,6 +3,7 @@
 import { Search } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { BrandMark } from "@/components/brand/brand-mark";
 import { Mark } from "@/components/brand/mark";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -152,6 +153,15 @@ function Gallery() {
       <Item name="guardrail-notice">
         <GuardrailNotice title="Blocked" policy="blocked_command" explanation="Command refused." alternatives={[]} />
       </Item>
+      <Item name="brand-marks">
+        <span className="flex items-center gap-3">
+          <BrandMark name="linear" kind="connector" className="size-5" />
+          <BrandMark name="stripe" kind="connector" className="size-5" />
+          <BrandMark name="monday" kind="connector" className="size-5" />
+          <BrandMark name="canva" kind="connector" className="size-5" />
+          <BrandMark name="acme" kind="connector" className="size-5" />
+        </span>
+      </Item>
       <Item name="tool-error">
         <ToolError name="read_file" target="missing.txt" message="not found" />
       </Item>
@@ -183,7 +193,6 @@ function Gallery() {
   );
 }
 
-/** Every kit component in light and dark, side by side, for the eye and for screenshots. */
 export default function KitPage() {
   return (
     <div className="grid flex-1 md:grid-cols-2">
