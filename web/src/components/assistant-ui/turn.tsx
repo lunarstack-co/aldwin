@@ -29,16 +29,12 @@ const MessageTimingLazy = dynamic(
   { ssr: false },
 );
 
-/** The turn behind the assistant message in scope. */
 export function useMessageTurn(): Turn | undefined {
   const messageId = useAuiState((s) => s.message.id);
   return useChatStore((s) => s.turns.find((t) => t.id === turnIdOf(messageId)));
 }
 
-/**
- * Until the first words arrive: the host's status line, the running tool, and
- * the time spent. In Clean the work chip takes over once there is a tool call.
- */
+/** Shown until the first words arrive; in Clean the work chip takes over once a tool runs. */
 export function ThinkingIndicator() {
   const turn = useMessageTurn();
   const [density] = useDensity();
@@ -67,7 +63,6 @@ export function ThinkingIndicator() {
   );
 }
 
-/** How a turn ended when it did not simply answer: stopped, cut at the step limit, or failed. */
 export function TurnOutcome() {
   const status = useAuiState((s) => s.message.status);
   const hasText = useAuiState((s) => s.message.parts.some((p) => p.type === "text" && p.text !== ""));
@@ -160,7 +155,7 @@ export function TurnOutcome() {
   );
 }
 
-/** Detail density only: tokens in and out, time to first token, and tokens/s. */
+/** Detail density only. */
 export function TurnFooter() {
   const turn = useMessageTurn();
   const [density] = useDensity();

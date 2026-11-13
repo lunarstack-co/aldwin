@@ -23,11 +23,7 @@ export type SetupContextValue = {
 
 export const SetupContext = createContext<SetupContextValue | null>(null);
 
-/**
- * Loads the setup status and sends the page where setup says it belongs,
- * before showing it. There is no sign-in page: the session cookie comes from
- * the link `aldwin web` prints.
- */
+/** There is no sign-in page: the session cookie comes from the link `aldwin web` prints. */
 export function SetupProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<SetupStatus | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -67,11 +63,7 @@ export function SetupProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * Fades the page in once on load; moving between pages keeps it mounted. It
- * waits for the first painted frame, because a page still starting up can
- * spend a whole CSS animation before it draws anything.
- */
+/** Waits for the first painted frame, or a slow start can use up the whole fade before drawing. */
 function FadeIn({ children }: { children: ReactNode }) {
   const [shown, setShown] = useState(false);
   useEffect(() => {
@@ -94,10 +86,7 @@ function FadeIn({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * The shape of the chat while setup is checked, with the mark breathing in
- * the middle. It stays blank for the first moment, which is all a local host needs.
- */
+/** Blank for the first moment, since a local host usually answers within it. */
 function GatesLoading() {
   const shown = useDelayed(LOADING_DELAY_MS);
   return (
@@ -125,7 +114,6 @@ function ChatPlaceholder() {
   );
 }
 
-/** The onboarding frame while setup is checked: the real step list, with bars where the page goes. */
 function OnboardingLoading({ path }: { path: string }) {
   const shown = useDelayed(LOADING_DELAY_MS);
   return (

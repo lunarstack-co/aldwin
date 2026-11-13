@@ -10,12 +10,7 @@ import { useConnectionStore } from "@/state/connection-store";
 import { isConversationId } from "@/utils/conversation-id";
 import type { ChatSession } from "@/utils/ws/session";
 
-/**
- * Keeps the address bar and the open conversation in step. The URL leads:
- * the rail and See all only navigate, and this hook asks the host to open
- * what the URL names. The host answers back through the store, and the URL
- * follows when a new chat gets its id.
- */
+/** The URL leads: the rail and See all only navigate, and the URL follows once a new chat gets its id. */
 export function useConversationRoute(session: ChatSession): void {
   const router = useRouter();
   const pathname = usePathname();

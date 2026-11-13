@@ -21,10 +21,7 @@ function ClosedEye({ index }: { index: 0 | 1 }) {
   return <rect x={eye.x} y={eye.y} width={eye.width} height={eye.height} fill={EYE_FILL} />;
 }
 
-/**
- * The Aldwin mark in the current text colour, eyes cut out to the page
- * background. `animated` cycles its moods: a blink, a happy face and a wink.
- */
+/** Eyes are cut out to the page background; `animated` cycles blink, happy and wink. */
 export function Mark({ className, title, animated = false }: { className?: string; title?: string; animated?: boolean }) {
   const { x, y, width, height } = MARK_BOUNDS;
   return (

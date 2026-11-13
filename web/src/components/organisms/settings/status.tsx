@@ -10,7 +10,7 @@ const DOT: Record<Tone, string> = {
   off: "bg-muted-foreground/50",
 };
 
-/** A status in words with a coloured dot; the words carry the meaning, the dot helps scanning. */
+/** The words carry the meaning; the dot only helps scanning. */
 export function StatusPill({ tone, children }: { tone: Tone; children: ReactNode }) {
   return (
     <span

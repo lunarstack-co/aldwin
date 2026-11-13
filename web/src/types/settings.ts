@@ -1,4 +1,4 @@
-/** Shapes of `/v1/settings`: what a door may read and change; keys only ever masked. */
+/** Keys only ever come back masked. */
 
 export type KeyKind = "provider" | "search";
 
@@ -33,7 +33,7 @@ export type SettingsView = {
   keys: KeyRow[];
 };
 
-/** The only fields `PATCH /v1/settings` accepts; theme is never one of them. */
+/** Theme lives in the browser, so it is never one of these. */
 export type SettingsPatch = {
   model?: string;
   limits?: Partial<Limits>;

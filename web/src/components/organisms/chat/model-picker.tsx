@@ -53,10 +53,7 @@ function groupOf(provider: ProviderModels): ModelGroup {
   };
 }
 
-/**
- * The model Aldwin answers with, grouped by provider. The list is asked for on first open;
- * a change is global, so the terminal and every window use the same model.
- */
+/** A change is global: the terminal and every window use the same model. */
 export function ModelPicker({
   fallback = "",
   disabled = false,
@@ -75,7 +72,6 @@ export function ModelPicker({
   const [opened, setOpened] = useState(false);
   const current = models.data.current || fallback;
 
-  // Providers with nothing to offer (no key, no models) are left out of the list.
   const groups = useMemo(
     () => models.data.providers.filter((p) => p.models.length > 0).map(groupOf),
     [models.data.providers],

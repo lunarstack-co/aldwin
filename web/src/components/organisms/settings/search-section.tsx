@@ -22,7 +22,7 @@ import { fill } from "@/utils/text";
 import { SecretInput } from "../secret-input";
 import { byTone, StatusPill } from "./status";
 
-/** A hosted engine's key; the host checks it with the engine before it saves it. */
+/** The host checks the key with the engine before saving it. */
 function KeyEntry({ item, onDone }: { item: SearchProviderItem; onDone: () => void }) {
   const session = useSession();
   const [key, setKey] = useState("");
@@ -239,7 +239,6 @@ function EngineRow({ item }: { item: SearchProviderItem }) {
   );
 }
 
-/** Web search engines: which are connected, which one Aldwin uses, and their keys. */
 export function SearchSection() {
   const session = useSession();
   const search = useSearchProviders();

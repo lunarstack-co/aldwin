@@ -53,11 +53,7 @@ export function resolveEffort(
   return efforts?.some((e) => e.id === effort) ? effort : undefined;
 }
 
-/**
- * Returns the effort id if the given model supports it, otherwise undefined.
- * Effort selection is kept sticky across model switches; this resolves what
- * actually applies to the current model.
- */
+/** Effort stays picked across model switches; this returns it only if the current model supports it. */
 export function resolveModelEffort(
   models: readonly ModelOption[],
   modelId: string | undefined,
@@ -197,12 +193,7 @@ export function useModelSelectorContext() {
   return ctx;
 }
 
-/**
- * The selected model's effort levels and the active selection. Use it to build
- * a custom effort UI inside ModelSelector.Content (e.g. a slider or a shadcn
- * DropdownMenu) when the built-in ModelSelector.Effort layout doesn't fit.
- * `efforts` is undefined for models without configurable reasoning.
- */
+/** For a custom effort control when ModelSelector.Effort does not fit. */
 export function useModelSelectorEfforts(): {
   efforts: readonly ModelSelectorEffortOption[] | undefined;
   effort: string | undefined;
@@ -212,17 +203,7 @@ export function useModelSelectorEfforts(): {
   return { efforts, effort, setEffort };
 }
 
-// The popover re-evaluates collision flipping whenever the popup resizes, so
-// filtering the list down flips the popup back to the preferred side
-// mid-interaction. Base UI only exposes lazy flipping on the Combobox
-// positioner, so adopt the side the popup first flips to as the preferred side
-// for the rest of the open. Adopting every change can alternate between sides
-// without end: after a preference change the popup can render on the opposite
-// side even when both sides fit.
-//
-// A force-mounted popup keeps its node and position while closed. Pass `open`
-// and the `preferred` side for one, so the side resets on close and a reopen
-// adopts a side the popup already flipped to.
+// Filtering resizes the popup and Base UI re-flips it, so keep the first flipped side until it closes. Force-mounted popups pass `open` and `preferred` so the side resets on close.
 export function useLazyFlipSide<TSide extends string>(
   open = true,
   preferred?: TSide,

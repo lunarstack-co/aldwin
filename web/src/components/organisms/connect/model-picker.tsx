@@ -15,7 +15,6 @@ import { Field } from "@/components/ui/field";
 import copy from "@/data/onboarding/model-picker.json";
 import type { ModelChoice } from "@/types/setup";
 
-/** Pick the model to use; typing filters the list. */
 export function ModelPicker({
   busy,
   choices,

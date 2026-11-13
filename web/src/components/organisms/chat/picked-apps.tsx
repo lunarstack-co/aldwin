@@ -8,7 +8,6 @@ import type { PickedApp } from "@/state/chat-store";
 import { cn } from "@/utils/cn";
 import { fill } from "@/utils/text";
 
-/** One picked app as a chip: its mark, its name, and a remove button while the message is being written. */
 export function AppChip({ app, onRemove }: { app: PickedApp; onRemove?: () => void }) {
   return (
     <span

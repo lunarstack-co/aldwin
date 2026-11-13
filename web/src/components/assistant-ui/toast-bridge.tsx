@@ -7,7 +7,7 @@ import { useChatStore } from "@/state/chat-store";
 
 export const NOTICE_TOAST_MS = 6000;
 
-/** Shows host notices as passing toasts; the socket layer only queues them. */
+/** The socket layer only queues notices; this shows them. */
 export function ToastBridge() {
   const toasts = useChatStore((s) => s.toasts);
   const dropToast = useChatStore((s) => s.dropToast);

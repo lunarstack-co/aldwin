@@ -27,10 +27,6 @@ const keepFocus = (event: MouseEvent) => event.preventDefault();
 const APP_QUERY = /(?:^|\s)\/([A-Za-z0-9 _-]*)$/;
 const toolsLabel = (count: number) => (count === 1 ? copy.oneTool : fill(copy.tools, { count }));
 
-/**
- * The `/` menu: the apps the user has connected. A pick becomes a chip above
- * the text, and the host is told to use that app for the message.
- */
 export function AppsPopover({ buttonTriggerRef }: { buttonTriggerRef?: ButtonTriggerRef }) {
   const session = useSession();
   const connectors = useSettingsStore((s) => s.connectors);
@@ -46,7 +42,6 @@ export function AppsPopover({ buttonTriggerRef }: { buttonTriggerRef?: ButtonTri
     [connectors.status, apps],
   );
 
-  // Each app's own mark; a generic icon for apps without one.
   const iconMap = useMemo(() => {
     const map: Record<string, FC<{ className?: string }>> = {};
     for (const app of apps) {

@@ -1,7 +1,4 @@
-/**
- * Calls to the first-run routes. Keys are sent once and never come back:
- * answers carry them masked, if at all.
- */
+/** Keys are sent once and only ever come back masked. */
 import type {
   LocalRuntime,
   ModelOption,
@@ -50,7 +47,6 @@ export function chooseModel(model: string): Promise<SetupStatus> {
   return call("POST", "/v1/setup/save", { model });
 }
 
-/** Cloud model providers that take an API key. */
 export async function listKeyProviders(): Promise<ProviderOption[]> {
   const body = await call<{ keys: (ProviderOption & { kind: string })[] }>(
     "GET",

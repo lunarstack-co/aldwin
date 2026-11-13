@@ -4,7 +4,7 @@ import { Mark } from "@/components/brand/mark";
 import { Button } from "@/components/ui/button";
 import copy from "@/data/chat/stopped.json";
 
-/** The end of the line: Aldwin is gone and a reload is the only way back. */
+/** Aldwin has stopped; only a reload brings it back. */
 export function StoppedScreen() {
   return (
     <div

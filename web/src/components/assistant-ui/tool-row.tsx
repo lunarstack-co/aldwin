@@ -48,7 +48,6 @@ function Detail({ label, children, mono = true }: { label: string; children: str
   );
 }
 
-/** One tool call: inline approval, rich display or tool failure when present, plain disclosure otherwise. */
 export const ToolRow: ToolCallMessagePartComponent = ({ toolName, argsText, result, isError, artifact }) => {
   const [density] = useDensity();
   const detail = isToolResult(result) ? result : null;

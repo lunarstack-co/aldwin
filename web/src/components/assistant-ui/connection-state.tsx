@@ -30,10 +30,7 @@ function textOf(phase: ConnectionPhase, attempt: number): string {
   }
 }
 
-/**
- * Where the connection is, read out as it changes. "Connected" shows briefly
- * after a drop and then gets out of the way; taken and stopped have their own screens.
- */
+/** "Connected" shows briefly after a drop; taken and stopped have their own screens. */
 export function ConnectionState({ onRetry }: { onRetry: () => void }) {
   const phase = useConnectionStore((s) => s.phase);
   const attempt = useConnectionStore((s) => s.attempt);

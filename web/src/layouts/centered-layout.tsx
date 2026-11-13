@@ -8,7 +8,6 @@ const WIDTHS = {
   wide: "max-w-[680px]",
 } as const;
 
-/** A single centred column that fills the page height. */
 export function CenteredLayout({
   width,
   className,

@@ -8,11 +8,7 @@ import { useSetup } from "@/hooks/use-setup";
 import { getSetupStatus } from "@/utils/api";
 import { wait } from "@/utils/time";
 
-/**
- * Returns a function that waits for the host the server starts once a model
- * can run, then refreshes the shared status so the gates move on. It
- * resolves to false when keys still do not work.
- */
+/** Resolves to false when keys still do not work. */
 export function useHostReady(): () => Promise<boolean> {
   const { refresh } = useSetup();
   return useCallback(async () => {

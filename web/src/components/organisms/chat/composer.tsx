@@ -26,10 +26,7 @@ function ContextSlot() {
   return hasContext ? <ContextRing /> : null;
 }
 
-/**
- * Where the user types. `@` opens the skills menu and `/` the connected apps; Send becomes Stop while an
- * answer is on its way, and Esc stops it too.
- */
+/** Send becomes Stop while an answer runs; Esc stops it too. */
 export function Composer({
   variant,
   model,

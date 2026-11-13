@@ -5,7 +5,6 @@ import { cn } from "@/utils/cn";
 
 import { Mark } from "./mark";
 
-/** The mark and the name, a way back to a new chat from anywhere. */
 export function Lockup({ className, onNavigate }: { className?: string; onNavigate?: () => void }) {
   return (
     <Link

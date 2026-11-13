@@ -11,7 +11,6 @@ export function isDensity(value: unknown): value is Density {
 
 type Store = Pick<Storage, "getItem" | "setItem"> | null | undefined;
 
-/** The saved density, or clean when nothing valid is saved or storage is off. */
 export function readDensity(storage: Store): Density {
   try {
     const raw = storage?.getItem(DENSITY_KEY);

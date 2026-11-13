@@ -17,7 +17,6 @@ import { HistoryList } from "./history-list";
 
 export const SEARCH_DEBOUNCE_MS = 150;
 
-/** Every saved conversation, searchable, grouped by the day it was last used. */
 export function HistorySeeAll({
   sessions,
   disabled,

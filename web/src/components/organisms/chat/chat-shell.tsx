@@ -36,7 +36,6 @@ import { ViewMenu } from "./view-menu";
 // Settings is loaded on the way there, so the chat page does not carry it.
 const SettingsHub = dynamic(() => import("../settings/settings-hub").then((m) => m.SettingsHub), { ssr: false });
 
-/** Keeps the address bar and the tab title in step with the conversation. */
 function RouteSync({ session }: { session: ReturnType<typeof useChatSession> }) {
   useConversationRoute(session);
   usePageTitle();
@@ -49,7 +48,7 @@ function SkillsSync({ session }: { session: ReturnType<typeof useChatSession> })
   return null;
 }
 
-/** The chat screen: rail, stage, and the socket behind them. It lives across `/`, `/c/` and `/settings/`. */
+/** Lives across `/`, `/c/` and `/settings/`, so the socket survives moving between them. */
 export function ChatShell({ children }: { children?: ReactNode }) {
   const { status } = useSetup();
   const session = useChatSession();

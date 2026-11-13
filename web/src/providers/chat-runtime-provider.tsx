@@ -27,12 +27,7 @@ function textOf(message: AppendMessage): string {
     .join("\n");
 }
 
-/**
- * Bridges the chat store to the chat runtime. The runtime only sees messages
- * and the saved conversations; sending, stopping, retrying and switching go
- * back through the session or the address bar, so Retry adds a new turn and
- * opening a conversation is a navigation like any other.
- */
+/** Sending, stopping, retrying and switching go through the session or the address bar, so Retry adds a new turn. */
 export function ChatRuntimeProvider({
   session,
   children,
@@ -97,8 +92,7 @@ export function ChatRuntimeProvider({
     onCancel,
     onReload,
     adapters: {
-      // No threadId: changing it makes the runtime rebuild its thread, and the
-      // transcript already follows the open conversation through the store.
+      // No threadId: changing it rebuilds the runtime's thread, and the store already follows the open conversation.
       threadList: {
         threads,
         onSwitchToThread,

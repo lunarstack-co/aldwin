@@ -20,7 +20,7 @@ function refusedField(message: string): LimitField | null {
   return LIMIT_FIELDS.find((field) => message.startsWith(`limits.${field}:`)) ?? null;
 }
 
-/** Limits and update checks, saved to the same settings the terminal reads. */
+/** Saved to the same settings the terminal reads. */
 export function AdvancedSection() {
   const [saved, setSaved] = useState<SettingsView | null>(null);
   const [limits, setLimits] = useState<Limits | null>(null);

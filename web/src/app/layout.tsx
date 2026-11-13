@@ -10,8 +10,7 @@ import { ThemeProvider } from "@/providers/theme-provider";
 
 import "@/styles/globals.css";
 
-// Official OFL releases bundled beside their licences, so the local UI never
-// fetches fonts from the network.
+// Fonts are bundled so the local UI never fetches them.
 const publicSans = localFont({
   src: "../assets/fonts/public-sans/PublicSansVF-latin.woff2",
   variable: "--font-public-sans",
@@ -26,7 +25,7 @@ const jetBrainsMono = localFont({
   display: "swap",
 });
 
-// A page on this computer only: named for the tab and the home screen, never indexed.
+// Local-only, so never indexed.
 export const metadata: Metadata = {
   title: { default: copy.title, template: `%s · ${copy.title}` },
   description: copy.description,

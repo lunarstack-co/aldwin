@@ -9,7 +9,6 @@ type Status = NonNullable<ThreadMessageLike["status"]>;
 const USER = "_user";
 const ASSISTANT = "_assistant";
 
-/** What a tool call shows once it has finished. */
 export type ToolResult = {
   summary: string;
   durationMs: number;
@@ -17,7 +16,6 @@ export type ToolResult = {
   display?: Display;
 };
 
-/** Where a tool call came from and why, plus any approval attached to this row. */
 export type ToolSource = {
   connectorTitle: string | null;
   remoteTool: string | null;
@@ -67,10 +65,7 @@ export function unattachedTurnApproval(turn: Turn): TurnApproval | null {
   return matched ? null : turn.approval;
 }
 
-/**
- * The transcript as the chat runtime wants it: one user message and one
- * assistant message per turn, tool calls first, then the answer.
- */
+/** One user and one assistant message per turn: tool calls first, then the answer. */
 export function turnsToMessages(turns: readonly Turn[]): ThreadMessageLike[] {
   const messages: ThreadMessageLike[] = [];
   for (const turn of turns) {

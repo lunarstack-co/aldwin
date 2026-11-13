@@ -1,7 +1,6 @@
 import { CLOSE_CODES, RECONNECT, WS_PATH } from "@/constants/chat";
 import { PROTOCOL_VERSION, type Event, type OutboundRequest } from "@/types/protocol";
 
-/** The socket address for this page, carrying the one-time ticket. */
 export function socketUrl(pageUrl: string, ticket: string, takeOver: boolean): string {
   const url = new URL(WS_PATH, pageUrl);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
@@ -13,11 +12,7 @@ export function socketUrl(pageUrl: string, ticket: string, takeOver: boolean): s
 
 export type CloseOutcome = "taken" | "stopped" | "retry";
 
-/**
- * What to do after the socket closes. Another tab holding it means an offer
- * to take over; the server saying goodbye, or too many failed tries, means
- * Aldwin has stopped; anything else is worth another try.
- */
+/** Another tab means take over; a server goodbye or too many failures means stopped; anything else retries. */
 export function outcomeOfClose(code: number, attempt: number, limit: number): CloseOutcome {
   if (code === CLOSE_CODES.alreadyAttached || code === CLOSE_CODES.replaced) return "taken";
   if (code === CLOSE_CODES.goingAway) return "stopped";
@@ -41,7 +36,6 @@ export function frame(request: OutboundRequest): string {
   return JSON.stringify({ v: PROTOCOL_VERSION, channel: "web", sender: "web", ...request });
 }
 
-/** One event from a text frame, or `null` for anything that is not one. */
 export function parseEvent(text: string): Event | null {
   let raw: unknown;
   try {

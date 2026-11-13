@@ -3,7 +3,6 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { CONNECT_PATH_IDS, type ConnectPath } from "@/constants/connect";
 import copy from "@/data/onboarding/connect.json";
 
-/** The three ways to give Aldwin a model, as cards with one chosen. */
 export function ConnectPathPicker({
   value,
   onChange,

@@ -2,19 +2,14 @@ import type { DirectiveFormatter, DirectiveSegment, TriggerItem } from "@assista
 
 import type { SkillCatalogItem } from "@/types/protocol";
 
-/**
- * An `@skill` token as the CLI reads it: at the start or after whitespace, lower
- * case words joined by single hyphens, and ending where a word ends. A token
- * followed by `/` or a dotted name (`@types/node`, `@acme.com`) is not a skill.
- */
+/** Matches `@skill` as the CLI does. `@types/node` and `@acme.com` are not skills. */
 export const SKILL_TOKEN_RE = /(?<=^|\s)@([a-z0-9]+(?:-[a-z0-9]+)*)(?=$|[\s,;:!?)\]]|\.(?:\s|$))/g;
 
-/** At most this many rows show in the `@` menu, as in the CLI picker. */
+/** Same limit as the CLI picker. */
 export const MAX_SKILL_ROWS = 8;
 
 export const SKILL_ITEM_TYPE = "skill";
 
-/** The skill names written as `@name` in a message, once each, in order. */
 export function skillsFromText(text: string): string[] {
   const names = [...text.matchAll(SKILL_TOKEN_RE)].map((match) => match[1]);
   return [...new Set(names)];
@@ -51,7 +46,7 @@ export function toTriggerItem(item: SkillCatalogItem): TriggerItem {
   return { id: item.name, type: SKILL_ITEM_TYPE, label: item.name, description: item.description };
 }
 
-/** Writes a picked skill as `@name`, the form the host and the CLI read, and finds those tokens again. */
+/** `@name` is the form the host and the CLI read. */
 export const skillFormatter: DirectiveFormatter = {
   serialize: (item) => `@${item.id}`,
   parse(text) {

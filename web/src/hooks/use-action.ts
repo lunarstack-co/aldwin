@@ -4,10 +4,7 @@ import { useCallback, useState } from "react";
 
 import { messageOf } from "@/utils/errors";
 
-/**
- * Runs one user action at a time, tracking `busy` and the error to show.
- * `run` resolves to whether the action succeeded; `clear` drops the error.
- */
+/** One action at a time; `run` resolves to whether it succeeded. */
 export function useAction() {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);

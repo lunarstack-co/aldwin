@@ -28,7 +28,7 @@ const SECTIONS: Record<SettingsSection, ComponentType> = {
   appearance: AppearanceSection,
 };
 
-/** The six Settings sections; the address names the open one, so Back and Forward move between them. */
+/** The address names the open section, so Back and Forward move between them. */
 export function SettingsHub() {
   const section = sectionOf(useSearchParams().get("section"));
   const currentId = useChatStore((s) => s.currentSessionId);

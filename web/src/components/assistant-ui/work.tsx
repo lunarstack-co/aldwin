@@ -18,7 +18,7 @@ import { turnIdOf } from "@/utils/thread-messages";
 
 import { ToolRow } from "./tool-row";
 
-/** The live dot: blue only while something is running. */
+/** Blue only while something is running. */
 export function LiveDot({ className }: { className?: string }) {
   return <span aria-hidden className={cn("bg-live animate-live-pulse inline-block size-1.5 rounded-full", className)} />;
 }
@@ -45,10 +45,7 @@ function FailedCount({ failed }: { failed: number }) {
   return <span className="text-destructive">{fill(copy.failed, { count: failed })}</span>;
 }
 
-/**
- * Clean mode: every tool call of a turn behind one quiet line above the
- * answer, collapsed once the work is done.
- */
+/** Clean mode: the turn's tool calls behind one line, collapsed once done. */
 export function WorkChip() {
   const collapsed = useAuiState((s) => s.chainOfThought.collapsed);
   const count = useAuiState((s) => s.message.parts.filter((p) => p.type === "tool-call").length);

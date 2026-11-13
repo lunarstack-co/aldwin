@@ -14,7 +14,7 @@ export async function loadModels(session: ChatSession, refresh = false): Promise
   return outcome;
 }
 
-/** Changes the model everywhere: the composer, Settings and the terminal read the same setting. */
+/** Global: the composer, Settings and the terminal read the same setting. */
 export async function chooseModel(session: ChatSession, ref: string): Promise<Outcome> {
   const outcome = await session.request({ type: "set_model", name: ref });
   if (outcome.ok) store().setCurrentModel(ref);
@@ -65,7 +65,7 @@ export function connectSearch(session: ChatSession, provider: string, key?: stri
   );
 }
 
-/** Shows the choice at once, then reads the host's list to confirm it (or put it back). */
+/** Shows the choice at once, then confirms or reverts it from the host's list. */
 export function makeSearchActive(session: ChatSession, provider: string): Promise<Outcome> {
   const { search } = store();
   store().setSearch({
@@ -96,7 +96,7 @@ export async function loadConnectors(session: ChatSession): Promise<Outcome> {
   return outcome;
 }
 
-// A sign-in the host asks for while adding or signing in a connector; the page opens its address only on a click.
+// The page opens a sign-in address only on a click.
 function onSignIn(event: Event) {
   if (event.kind !== "connector.auth") return;
   const signIn: SignIn = {
@@ -148,11 +148,7 @@ export function tokenSignIn(session: ChatSession, name: string, token: string): 
   return session.request({ type: "connectors.auth_token", name, token });
 }
 
-/**
- * Ends a sign-in the host is waiting on. The host's `stop` ends it, but `stop`
- * also ends an answer in progress, so it is sent only when none is running;
- * otherwise the panel closes and the host's own timeout ends the wait.
- */
+/** `stop` would also end a running answer, so it is sent only when none runs; otherwise the host's timeout ends the wait. */
 export function cancelSignIn(session: ChatSession): void {
   store().setSignIn(null);
   if (useChatStore.getState().activeId === null) void session.request({ type: "stop" });

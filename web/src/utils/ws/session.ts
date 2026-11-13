@@ -22,9 +22,7 @@ export const MAX_APPROVAL_REASON_CHARS = 280;
 type Reply = (event: Event) => void;
 
 type WithoutId<R> = R extends unknown ? Omit<R, "id"> : never;
-/** A request as a caller builds it; the session gives it its id. */
 export type RequestBody = WithoutId<OutboundRequest>;
-/** How the host answered a request: `done`, or `error` with its code and sentence. */
 export type Outcome = { ok: true } | { ok: false; code: string; message: string };
 
 function todosOf(event: TodoUpdatedEvent) {
@@ -44,12 +42,8 @@ export type ChatSession = {
   /** Opens a saved conversation; `onSettled` hears whether the host switched. */
   openConversation: (id: string, onSettled?: (opened: boolean) => void) => void;
   refreshSessions: () => void;
-  /** Asks the host for its skill catalogue, for the `@` menu. */
   listSkills: () => void;
-  /**
-   * Sends one request; events tied to it go to `onEvent`, and the promise
-   * settles with the host's `done` or `error`, or as dropped if the socket goes.
-   */
+  /** Events for the request go to `onEvent`; the promise settles on `done`, `error`, or a dropped socket. */
   request: (body: RequestBody, onEvent?: Reply) => Promise<Outcome>;
   /** Ask again for a settings list after a change; the list on screen stays until the new one lands. */
   refreshConnectors: () => void;
@@ -59,11 +53,7 @@ export type ChatSession = {
   reconnect: () => void;
 };
 
-/**
- * The chat over the socket: hello, then history; after a drop, status and
- * history to catch up. Turn events go to the active turn in the store, and
- * approvals stay cached across reconnects within the host's grace window.
- */
+/** Approvals stay cached across reconnects within the host's grace window. */
 export function createChatSession(
   deps?: ConnectionDeps,
   now: () => number = () => Date.now(),
@@ -153,11 +143,7 @@ export function createChatSession(
     });
   }
 
-  /**
-   * Keeps the settings lists current from any event that carries one: unsolicited
-   * ones (another window or the terminal changed something) and replies to this
-   * page's own requests. Returns whether the event was a settings event.
-   */
+  /** Lists change from other windows and the terminal too, not only from this page's requests. */
   function applySettingsEvent(event: Event): boolean {
     switch (event.kind) {
       case "models":

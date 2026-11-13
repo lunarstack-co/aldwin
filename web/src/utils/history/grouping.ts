@@ -5,7 +5,6 @@ export function displayTitle(session: SessionMeta, untitled: string): string {
   return session.title.trim() || untitled;
 }
 
-/** The conversations whose shown title contains `query`, ignoring case; all of them for a blank query. */
 export function filterSessions(sessions: SessionMeta[], query: string, untitled: string): SessionMeta[] {
   const needle = query.trim().toLocaleLowerCase();
   if (!needle) return sessions;

@@ -87,7 +87,6 @@ function SkillRow({ skill }: { skill: SkillCatalogItem }) {
   );
 }
 
-/** The skills Aldwin knows: where each comes from, when it was last used, and what it says. */
 export function SkillsSection() {
   const session = useSession();
   const skills = useChatStore((s) => s.skills);

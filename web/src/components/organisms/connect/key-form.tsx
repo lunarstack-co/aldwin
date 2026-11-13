@@ -13,7 +13,7 @@ import { SecretInput } from "../secret-input";
 
 const FALLBACK_PROVIDERS: ProviderOption[] = [copy.fallbackProvider];
 
-/** A cloud provider and its API key; the key field clears after each try. */
+/** The key field clears after each try. */
 export function KeyForm({
   busy,
   onSubmit,
