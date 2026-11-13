@@ -6,7 +6,6 @@ import { COPY_FEEDBACK_MS } from "@/constants/chat";
 
 export type CopyOutcome = "idle" | "copied" | "failed";
 
-/** Puts text on the clipboard and reports the result for a moment. */
 export function useCopy() {
   const [outcome, setOutcome] = useState<CopyOutcome>("idle");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);

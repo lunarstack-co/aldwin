@@ -28,7 +28,6 @@ const DaySeparatorLineLazy = dynamic(
 // `@name` in a sent message shows as a chip, read the same way the composer wrote it.
 export const SkillText = createDirectiveText(skillFormatter, { fallbackIcon: AtSign });
 
-/** The skills the host used for this turn, and a line for each one it left out. */
 function SkillsUsed() {
   const used = useMessageTurn()?.skillsUsed;
   if (!used) return null;
@@ -55,7 +54,6 @@ function SkillsUsed() {
   );
 }
 
-/** The apps picked for this turn as chips, and a line for each the host could not use. */
 function AppsPicked() {
   const turn = useMessageTurn();
   if (!turn || turn.pickedApps.length === 0) return null;
@@ -94,7 +92,6 @@ function useTurnDaySeparator(turnId: string | undefined, userAt: string | null |
   });
 }
 
-/** What the user asked, kept to the right so the answer column reads clean. */
 export function UserMessage() {
   const turn = useMessageTurn();
   const separatorLabel = useTurnDaySeparator(turn?.id, turn?.userAt);

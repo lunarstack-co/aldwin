@@ -25,11 +25,7 @@ export function pct(value: number, total: number) {
   return clamp((value / total) * 100, 0, 100);
 }
 
-/**
- * A `0…100` share as it should be announced. `pct` divides, so a share that
- * reads as a whole number on screen can still reach `aria-valuenow` carrying
- * float error, which a screen reader reads out in full.
- */
+/** Rounded, because a screen reader reads float error in `aria-valuenow` in full. */
 export function announced(share: number) {
   return Math.round(share * 10) / 10;
 }

@@ -18,7 +18,7 @@ type RowOptions = {
 
 const RowContext = createContext<RowOptions>({ disabled: false, testId: "history-row" });
 
-/** One saved conversation; choosing it goes through the runtime to the address bar. */
+/** Choosing a row goes through the runtime to the address bar. */
 function HistoryRow() {
   const { disabled, testId, onChoose, tone = "rail" } = useContext(RowContext);
   const id = useAuiState((s) => s.threadListItem.id);
@@ -56,11 +56,7 @@ function HistoryRow() {
 
 const components = { ThreadListItem: HistoryRow };
 
-/**
- * The saved conversations `ids`, in that order, as compact rows. Rows come
- * from the runtime's own list, which can trail the store by a render, so an
- * id it does not know yet is left out until it does.
- */
+/** The runtime's list can trail the store by a render, so unknown ids are skipped until they appear. */
 export function HistoryList({
   ids,
   disabled,

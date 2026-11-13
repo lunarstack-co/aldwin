@@ -21,10 +21,6 @@ function withSlash(path: string): string {
   return path.endsWith("/") ? path : `${path}/`;
 }
 
-/**
- * The frame around every first-run page: the mark, where this page sits in
- * setup, and the page. A model is required; the profile steps can be skipped.
- */
 export function OnboardingLayout({ children, path: shownPath }: { children: ReactNode; path?: string }) {
   const current = usePathname();
   // The gate passes the page it is about to open, so the step list never jumps.

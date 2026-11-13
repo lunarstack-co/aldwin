@@ -1,5 +1,3 @@
-/** Shapes of the first-run routes of `aldwin web`. */
-
 export type ProfileAnswers = {
   first_name: string;
   occupation: string;
@@ -33,5 +31,5 @@ export type LocalRuntime = {
 
 export type ProviderOption = { name: string; title: string };
 
-/** A model the user can pick, as `provider/model`. */
+/** Written as `provider/model`. */
 export type ModelChoice = { ref: string; label: string };

@@ -6,7 +6,6 @@ import type { ChatSession } from "@/utils/ws/session";
 
 const ChatSessionContext = createContext<ChatSession | null>(null);
 
-/** Shares the shell's one chat session with screens below it, such as Settings. */
 export function ChatSessionProvider({ session, children }: { session: ChatSession; children: ReactNode }) {
   return <ChatSessionContext.Provider value={session}>{children}</ChatSessionContext.Provider>;
 }

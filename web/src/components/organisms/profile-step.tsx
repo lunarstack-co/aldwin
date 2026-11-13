@@ -17,11 +17,7 @@ import { StepHeader } from "./step-header";
 
 const PROFILE_STEPS = 3;
 
-/**
- * One page of the optional profile step. `onContinue` saves this page's
- * answer; Skip is always there, marks the whole step as skipped, and never
- * holds Aldwin up.
- */
+/** Skip marks the whole step skipped and never blocks Aldwin. */
 export function ProfileStep({
   step,
   title,

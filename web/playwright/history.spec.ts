@@ -66,6 +66,18 @@ test("settings is a link and @ is live", async ({ page }) => {
   await expect(page.getByTestId("model-picker-composer")).toHaveAccessibleName("Model: GPT-4o");
 });
 
+test("report a bug opens the repository's bug form in a new tab, above Settings", async ({ page }) => {
+  await openChat(page);
+  const link = page.getByTestId("report-bug").filter({ visible: true });
+  await expect(link).toHaveAttribute("href", "https://github.com/lunarstack-co/aldwin/issues/new?template=bug_report.yml");
+  await expect(link).toHaveAttribute("target", "_blank");
+  await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  await expect(link).toHaveAccessibleName("Report a bug (opens GitHub in a new tab)");
+  const footer = page.getByTestId("rail").filter({ visible: true }).locator("a");
+  await expect(footer.last()).toHaveAttribute("data-testid", "settings");
+  await expect(footer.nth(-2)).toHaveAttribute("data-testid", "report-bug");
+});
+
 test("no rename archive or delete", async ({ page, host }) => {
   host.sessions = sessions25();
   await openChat(page);

@@ -93,14 +93,7 @@ function CopyButton({
   );
 }
 
-/**
- * Chrome for highlighted code: a hairline field panel with an optional title
- * header and a copy button. Children carry the `pre` element; tokens read
- * shiki's inline colors or `--shiki-light`, and in dark mode fall back to
- * `--shiki-dark`. Lines render as blocks on a `w-max` surface so
- * highlighted rows paint past the scroll fold, and `data-line-numbers` on the
- * `pre` (or the `lineNumbers` prop) turns on a CSS counter gutter.
- */
+/** Lines render as blocks on a `w-max` surface so highlighted rows paint past the scroll fold. */
 export function CodeBlock({
   title,
   viewportClassName,

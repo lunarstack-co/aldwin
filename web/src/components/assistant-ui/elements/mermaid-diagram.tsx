@@ -120,13 +120,7 @@ type MermaidSvgProps = Omit<
   svg: string;
 };
 
-/**
- * Renders beautiful-mermaid's SVG without inline `<style>` or `style=""`,
- * which a Content Security Policy without 'unsafe-inline' blocks: its CSS
- * goes into a constructed stylesheet scoped to the diagram and its inline
- * styles are set through the CSSOM. Server and hydration renders, and browsers without
- * constructable stylesheets, keep the original markup.
- */
+/** Moves inline styles into a scoped stylesheet so a CSP without 'unsafe-inline' allows the diagram; server renders keep the original markup. */
 function MermaidSvg({ svg, ...props }: MermaidSvgProps) {
   const ref = useRef<HTMLDivElement>(null);
   const constructable = useSyncExternalStore(

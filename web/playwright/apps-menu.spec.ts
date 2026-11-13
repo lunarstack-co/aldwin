@@ -135,3 +135,46 @@ test("a message refused as busy keeps its apps with its text", async ({ page, ho
   await expect(input(page)).toHaveValue("do it");
   await expect(chips(page).locator('[data-picked-app="github"]')).toBeVisible();
 });
+
+test("a reloaded message still shows the apps it was sent with, and Retry sends them again", async ({ page, host }) => {
+  host.history = [
+    { role: "user", text: "Close the login bug", apps: [{ name: "linear", title: "Linear" }] },
+    { role: "assistant", text: "Closed." },
+  ];
+  await openChat(page);
+  const picked = page.getByTestId("apps-picked");
+  await expect(picked.locator('[data-picked-app="linear"]')).toHaveText("Linear");
+  await expect(picked.locator('svg[data-brand="linear"]')).toBeVisible();
+  host.answerNext("again");
+  await page.getByTestId("retry-turn").click();
+  await expect.poll(() => host.sentOfType("turn").at(-1)).toEqual(
+    expect.objectContaining({ text: "Close the login bug", apps: ["linear"] }),
+  );
+});
+
+test("a reloaded message sent without apps shows no chips", async ({ page, host }) => {
+  host.history = [
+    { role: "user", text: "Hello" },
+    { role: "assistant", text: "Hi." },
+  ];
+  await openChat(page);
+  await expect(page.getByTestId("user-message")).toBeVisible();
+  await expect(page.getByTestId("apps-picked")).toHaveCount(0);
+});
+
+test("a hostile app title from history shows as plain text", async ({ page, host }) => {
+  let dialogs = 0;
+  page.on("dialog", (dialog) => {
+    dialogs += 1;
+    void dialog.dismiss();
+  });
+  host.history = [
+    { role: "user", text: "x", apps: [{ name: "evil", title: "<img src=x onerror=alert(1)>" }] },
+    { role: "assistant", text: "ok" },
+  ];
+  await openChat(page);
+  const chip = page.getByTestId("apps-picked").locator('[data-picked-app="evil"]');
+  await expect(chip).toHaveText("<img src=x onerror=alert(1)>");
+  await expect(page.getByTestId("apps-picked").locator("img")).toHaveCount(0);
+  expect(dialogs).toBe(0);
+});

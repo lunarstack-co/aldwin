@@ -56,6 +56,9 @@ async def test_an_app_that_is_not_connected_is_reported_and_the_task_is_plain(
         assert _task(host) == "hi"
         assert host._stored_session.turns is not None
         assert "apps" not in host._stored_session.turns[-1]
+        history = await client.history()
+        user = next(m for m in history.messages if m.role == "user")
+        assert user.apps == []
     finally:
         await client.close()
         await host.stop_host()
@@ -90,8 +93,15 @@ async def test_a_picked_app_is_named_to_the_model_and_kept_with_the_turn(
         assert "- Linear (connector: linear)" in task
         assert task.endswith("Close the login bug")
         assert host._stored_session.turns is not None
-        assert host._stored_session.turns[-1]["apps"] == ["linear"]
+        assert host._stored_session.turns[-1]["apps"] == [
+            {"name": "linear", "title": "Linear"}
+        ]
         assert host._stored_session.turns[-1]["text"] == "Close the login bug"
+        history = await client.history()
+        user = next(m for m in history.messages if m.role == "user")
+        answer = next(m for m in history.messages if m.role == "assistant")
+        assert [(a.name, a.title) for a in user.apps] == [("linear", "Linear")]
+        assert answer.apps == []
     finally:
         await client.close()
         await host.stop_host()

@@ -50,7 +50,7 @@ Every message is a Pydantic v2 model with `model_config = ConfigDict(extra="igno
 | `tool_call` | `ToolCallEvent` | `call_id: str`, `name: str`, `args_preview: str` (≤ 120 chars) | No | Tool execution started. |
 | `tool_result` | `ToolResultEvent` | `call_id: str`, `ok: bool`, `summary: str` (≤ 120 chars), `duration_ms: int` | No | Tool execution completed. |
 | `approval` | `ApprovalEvent` | `approval_id: str`, `summary: str`, `detail: str = ""` | No | Host is paused waiting for a `yes` or `no` `approve` request. |
-| `history` | `HistoryEvent` | `messages: list[HistoryItem]`, `interrupted: bool` | No | Past messages (`role: "user" \| "assistant" \| "tool"`, `text`, `at`). |
+| `history` | `HistoryEvent` | `messages: list[HistoryItem]`, `interrupted: bool` | No | Past messages (`role: "user" \| "assistant" \| "tool"`, `text`, `at`, `apps`). |
 | `status` | `StatusEvent` | `message: str`, `turn_streamed_chunks: int`, `active_tool: str \| None`, `partial_text: str \| None` | No | Status notice (e.g. `OpenAI is busy, retrying (2 of 3)…`) and the current turn's progress. See [Reconnecting](#reconnecting). |
 | `models` | `ModelsEvent` | `current: str`, `providers: list[ProviderModels]` | No | List of providers and models returned in response to `models.list`. |
 | `done` | `DoneEvent` | `reason: "answered" \| "stopped" \| "max_steps" \| "ok"`, `usage: TokenUsage \| None`, `max_steps: int \| None` (set when `reason="max_steps"`) | **Yes** | Request completed normally. |
@@ -206,7 +206,7 @@ Connectors add MCP servers whose tools join the conversation: remote servers by 
 
 `ConnectorInfo` has `name`, `title`, `url` (`null` for a local connector), `enabled`, `status`, `auth`, `trust_read_only_hints`, `tools`, `error`, `retry_in_s`, `transport` (`http`, `stdio` or `sse`), `command` (how a local connector starts, for display) and `note`. An `sse` entry is never connected (`error: "SSE is not supported"`); a local entry whose command changed since it was approved shows `error: "needs approval: open /connectors to enable it"` and does not start. `connectors.enable` on such an entry sends `approval` (`tool="connectors.enable"`) first. `ConnectorToolInfo` has `name`, `model_name` (`mcp__<connector>__<tool>`), `title`, `description`, `read_only`, `setting` (the user's choice, or `null`) and `effective` (`auto`, `ask` or `off`).
 
-`CatalogItem` has `name`, `title`, `purpose`, `url`, `auth`, `docs_url`, `keywords`, `token_help_url` and `added` (already in `connectors.yaml`).
+`CatalogItem` has `name`, `title`, `purpose`, `url`, `auth`, `docs_url`, `keywords`, `token_help_url`, `added` (already in `connectors.yaml`) and `category` (`work`, `developer`, `payments`, `design`, `automation`, `data` or `search`; `null` from older hosts). Doors list apps under their category and drop the headings while searching.
 
 ### Sign-in
 
@@ -238,6 +238,7 @@ Events not tied to a request, such as `connector.status` and a `notice` when a c
 - `ApprovalEvent.display: Display | None = None`: optional structured preview (`terminal`, `diff` or `grant`) for the pending approval.
 - `DoneEvent.context: ContextUsage | None = None`: prompt token usage and per-segment breakdown (`limit`, `used`, `segments: list[ContextSegment]` with `key`, `label`, `tokens`). Sent when the active model's context window is known, using the last step's `input_tokens`.
 - `HistoryItem.at: str | None = None`: ISO 8601 UTC timestamp on `user` (`at`) and `assistant` (`done_at`) rows when recorded on the saved turn.
+- `HistoryItem.apps: list[HistoryApp] = []`: on `user` rows, the apps picked with that message (`name`, the connector name, and `title`, the name shown when it was sent). Empty on other rows and on messages sent without apps.
 
 ### `Display` kinds and size caps
 

@@ -1,10 +1,6 @@
 import { defaultSchema, type Options as SanitizeSchema } from "rehype-sanitize";
 
-/**
- * The sanitiser's default schema, plus `language-math` / `math-inline` /
- * `math-display` classes on `code` so `remark-math` spans survive sanitisation
- * before `rehype-katex` renders them. Raw HTML in markdown is dropped first.
- */
+/** Default schema plus the math classes `remark-math` needs to survive sanitising before `rehype-katex` runs. */
 export const sanitizeSchema: SanitizeSchema = {
   ...defaultSchema,
   attributes: {

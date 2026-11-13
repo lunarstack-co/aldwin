@@ -32,7 +32,7 @@ const Nothing = () => null;
 const cleanParts = { Text: MarkdownText, ChainOfThought: WorkChip, Empty: Nothing };
 const detailParts = { Text: MarkdownText, tools: { Fallback: ToolRow }, ToolGroup: DetailToolGroup, Empty: Nothing };
 
-/** Copy and Retry, and nothing else; Retry asks the last question again as a new turn. */
+/** Retry asks the last question again as a new turn. */
 function Actions() {
   const isLast = useAuiState((s) => s.message.isLast);
   // Earlier answers keep the bar's space and only fade it in, so hovering never moves the transcript.
@@ -72,7 +72,6 @@ function Actions() {
   );
 }
 
-/** The answer to one question: the work behind it, the text, how it ended, and what to do next. */
 export function AssistantMessage() {
   const [density] = useDensity();
   const turn = useMessageTurn();

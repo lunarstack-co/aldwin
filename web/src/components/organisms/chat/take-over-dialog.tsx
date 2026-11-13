@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import copy from "@/data/chat/take-over.json";
 
-/** Another tab holds the socket; this one can take it. Nothing else here works until then. */
+/** Nothing else works until this tab takes the socket. */
 export function TakeOverDialog({ onTakeOver }: { onTakeOver: () => void }) {
   return (
     <Dialog open disablePointerDismissal>

@@ -5,7 +5,7 @@ const GRID = 5;
 const CENTER = (GRID - 1) / 2;
 const DOT_INDEXES = Array.from({ length: GRID * GRID }, (_, i) => i);
 
-/* Deterministic bit-mixing hash so server and client render identical markup; takes a range in milliseconds and returns seconds. A plain (i * prime) % range correlates indexes a grid-stride apart and renders as column-synchronized waves instead of a twinkle. */
+/* Bit-mixing hash so server and client match; a plain `(i * prime) % range` makes neighbouring dots blink in waves. */
 const hash = (n: number, salt: number, range: number) => {
   let h = (Math.imul(n, 374761393) + Math.imul(salt, 668265263)) >>> 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
@@ -196,7 +196,7 @@ export type DotMatrixProps = Omit<ComponentProps<"span">, "children"> & {
   label?: string;
 };
 
-/* The blink animation runs on every dot in every state (static states set hi = lo) and the registered hi/lo custom properties carry a transition, because removing or adding an animation never triggers a CSS transition on the animated property itself; transitioning the amplitude bounds is what makes state changes cross-fade. */
+/* Every dot always animates and only the hi/lo bounds transition, since adding or removing an animation never transitions. */
 const DOT_MATRIX_CSS =
   '@property --aui-dot-matrix-hi{syntax:"<number>";inherits:false;initial-value:1}@property --aui-dot-matrix-lo{syntax:"<number>";inherits:false;initial-value:0.15}@keyframes aui-dot-matrix-blink{0%,100%{opacity:var(--aui-dot-matrix-hi,1)}50%{opacity:var(--aui-dot-matrix-lo,0.15)}}';
 
@@ -205,13 +205,6 @@ const HOISTED_STYLE: Record<string, string> = {
   precedence: "low",
 };
 
-/**
- * Tiny 5x5 dot-matrix status indicator with 20 built-in states. Dots inherit the text color and animate in state-specific patterns: twinkle, waves, ripples, sweeps, equalizer columns, and check/cross/bang glyphs. State changes cross-fade per dot.
- *
- * ```tsx
- * <DotMatrix state={isRunning ? "loading" : "success"} />
- * ```
- */
 function DotMatrix({
   className,
   state = "loading",
@@ -228,7 +221,7 @@ function DotMatrix({
       {...props}
     >
       <span className="sr-only">{label ?? state}</span>
-      {/* React 19 hoists and deduplicates this across instances; React 18 renders it inline, and its types don't declare href or precedence, so they're spread. It must live in HTML scope: inside the SVG it would be an SVG-namespace element React does not hoist. */}
+      {/* React 19 hoists this once per page; inside the SVG it would not be hoisted. */}
       <style {...HOISTED_STYLE}>{DOT_MATRIX_CSS}</style>
       <svg
         aria-hidden

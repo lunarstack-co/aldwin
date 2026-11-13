@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from importlib.resources import files
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
@@ -14,6 +15,11 @@ from aldwin.core.connectors.config import (
     check_url,
     is_valid_name,
 )
+
+Category = Literal[
+    "work", "developer", "payments", "design", "automation", "data", "search"
+]
+"""The heading an app is listed under in the catalogue."""
 
 
 class CatalogEntry(BaseModel):
@@ -28,6 +34,7 @@ class CatalogEntry(BaseModel):
     auth: AuthKind
     docs_url: StrictStr
     keywords: list[str] = Field(default_factory=list)
+    category: Category | None = None
     oauth: OAuthSettings | None = None
     token_help_url: StrictStr | None = None
 

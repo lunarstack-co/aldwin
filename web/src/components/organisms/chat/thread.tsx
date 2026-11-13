@@ -5,6 +5,7 @@ import { ArrowDown } from "lucide-react";
 import dynamic from "next/dynamic";
 
 import { Button } from "@/components/ui/button";
+import composerCopy from "@/data/chat/composer.json";
 import copy from "@/data/chat/transcript.json";
 import { useChatStore } from "@/state/chat-store";
 import { useConnectionStore } from "@/state/connection-store";
@@ -28,11 +29,6 @@ function PlanSlot() {
 
 const components = { UserMessage, AssistantMessage };
 
-/**
- * The conversation and its composer: centred on an empty conversation (at the
- * bottom on phones), with the composer docked to the bottom once there is
- * something to read.
- */
 export function Thread({ model, disabled }: { model: string; disabled: boolean }) {
   const isEmpty = useChatStore((s) => s.turns.length === 0);
   // Until the first history arrives the conversation is unknown, so show nothing rather than the wrong screen.
@@ -85,6 +81,9 @@ export function Thread({ model, disabled }: { model: string; disabled: boolean }
             </ThreadPrimitive.ScrollToBottom>
             <ApprovalPill />
             <PlanSlot />
+            <p data-testid="composer-disclaimer" className="text-muted-foreground -mb-1 text-center text-xs">
+              {composerCopy.disclaimer}
+            </p>
             <Composer variant={isEmpty ? "centered" : "docked"} model={model} disabled={disabled} />
           </ThreadPrimitive.ViewportFooter>
         </div>

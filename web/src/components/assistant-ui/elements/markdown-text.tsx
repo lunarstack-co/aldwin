@@ -105,10 +105,7 @@ const preprocessMath = (text: string) =>
 
 type FenceNode = FenceHighlighterProps["node"];
 
-/**
- * Whether a code block is still being revealed. The text animates in behind the message, so this follows the
- * revealed text's status, and a block counts as closed only once its own closing fence line is on screen.
- */
+/** Text is revealed behind the message, so a block is closed only once its closing fence is on screen. */
 function useIsFenceStreaming(node: FenceNode, code: string): boolean {
   const revealing = INTERNAL.useSmoothStatus().type === "running";
   if (!revealing) return false;

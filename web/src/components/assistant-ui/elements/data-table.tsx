@@ -140,10 +140,7 @@ const numberOptions = (decimals: number | undefined, compact: boolean) => ({
   ...fractionDigits(decimals),
 });
 
-/**
- * Formats with Intl, falling back to the raw value: a model can send a
- * currency code or locale that Intl rejects by throwing.
- */
+/** Falls back to the raw value, since Intl throws on a currency or locale it does not know. */
 const formatted = (
   value: Exclude<DataTableValue, null | undefined>,
   format: () => string,

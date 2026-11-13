@@ -12,10 +12,7 @@ const SENTINEL = "aldwinUnsaved";
 
 type Router = ReturnType<typeof useRouter>;
 
-/**
- * Moves to `href`. While the guard's extra history entry is the current one, it
- * is replaced rather than pushed over, so one Back press leaves the new page.
- */
+/** Replaces the guard's extra history entry when it is current, so one Back leaves the new page. */
 export function leaveTo(router: Router, href: string): void {
   if (window.history.state?.[SENTINEL]) router.replace(href);
   else router.push(href);
@@ -25,18 +22,13 @@ function isPlainClick(event: MouseEvent): boolean {
   return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 }
 
-/**
- * Asks before unsaved edits are lost: on a link click, Back and Forward, and a
- * reload or tab close. Forms opt in with `useUnsavedChanges`; code that moves
- * away on its own uses `confirmLeave`.
- */
+/** Covers link clicks, Back and Forward, reload and tab close. Forms opt in with `useUnsavedChanges`. */
 export function LeaveGuard() {
   const router = useRouter();
   const dirty = useUnsavedStore((s) => s.dirty.size > 0);
   const pending = useUnsavedStore((s) => s.pending);
   const answer = useUnsavedStore((s) => s.answer);
-  // Back is caught with an extra history entry while edits are unsaved. The steps the guard takes through
-  // history itself land later as popstate events, so it marks them to tell them apart from the user's Back.
+  // Back is caught with an extra history entry; the guard marks its own history steps to tell them from the user's.
   const ownStep = useRef<"off-entry" | "leave" | null>(null);
 
   // Always listening, because a step off the extra entry can land after the form that caused it is gone.

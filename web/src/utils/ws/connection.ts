@@ -24,7 +24,6 @@ export type ConnectionDeps = {
   mintTicket: () => Promise<string>;
   openSocket: (url: string) => SocketLike;
   pageUrl: () => string;
-  /** Run `fn` after `ms`; returns a way to cancel it. */
   schedule: (fn: () => void, ms: number) => () => void;
 };
 
@@ -59,11 +58,7 @@ export const browserDeps: ConnectionDeps = {
   },
 };
 
-/**
- * The one socket to Aldwin: a fresh ticket for every connect, a bounded set
- * of retries after a drop, an offer to take over when another tab holds the
- * socket, and a final stop when the server is gone.
- */
+/** Fresh ticket per connect, bounded retries after a drop, and a take-over offer when another tab holds the socket. */
 export function createConnection(
   handlers: ConnectionHandlers,
   deps: ConnectionDeps = browserDeps,

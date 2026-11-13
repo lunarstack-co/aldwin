@@ -12,7 +12,7 @@ from agentling.memory import ActionStep, FinalStep, Memory, TaskStep, ToolResult
 from fakes.model import FakeModel, FakeTurn
 
 from aldwin.host.sessions import SessionStore
-from aldwin.protocol import HistoryItem
+from aldwin.protocol import HistoryApp, HistoryItem
 
 
 def test_session_save_creates_file_with_0600_and_derives_60_char_title(
@@ -203,6 +203,65 @@ def test_render_history_windows_last_limit_and_summarises_tools(
     assert ua_items[-1] == HistoryItem(role="assistant", text="assistant 14")
     assert tool_items == [HistoryItem(role="tool", text="✓ run_command · 41 GB free")]
     assert store.render_history(memory, limit=0) == []
+
+
+def _two_turns() -> Memory:
+    memory = Memory()
+    for i in range(2):
+        memory.add(TaskStep(task=f"task {i}"))
+        memory.add(FinalStep(answer=f"answer {i}"))
+    return memory
+
+
+def _user_apps(
+    store: SessionStore, memory: Memory, turns: list[dict[str, object]], limit: int = 20
+) -> list[list[HistoryApp]]:
+    rows = store.render_history(memory, limit=limit, turns=turns)
+    return [row.apps for row in rows if row.role == "user"]
+
+
+def test_history_returns_the_apps_saved_with_each_message() -> None:
+    store = SessionStore()
+    turns: list[dict[str, object]] = [
+        {"text": "a", "apps": [{"name": "linear", "title": "Linear"}]},
+        {"text": "b"},
+    ]
+    rows = store.render_history(_two_turns(), turns=turns)
+    assert rows[0].apps == [HistoryApp(name="linear", title="Linear")]
+    assert all(row.apps == [] for row in rows[1:])
+
+
+@pytest.mark.parametrize(
+    ("stored", "expected"),
+    [
+        (["linear"], [HistoryApp(name="linear", title="linear")]),
+        (
+            [{"title": "No name"}, {"name": "github"}, {"name": "x", "title": 3}],
+            [
+                HistoryApp(name="github", title="github"),
+                HistoryApp(name="x", title="x"),
+            ],
+        ),
+        ("linear", []),
+        ({"name": "linear"}, []),
+        ([None, 4, ""], []),
+    ],
+)
+def test_older_or_malformed_saved_apps_never_stop_history(
+    stored: object, expected: list[HistoryApp]
+) -> None:
+    store = SessionStore()
+    turns: list[dict[str, object]] = [{"text": "a", "apps": stored}, {"text": "b"}]
+    assert _user_apps(store, _two_turns(), turns) == [expected, []]
+
+
+def test_trimmed_history_keeps_apps_on_their_own_message() -> None:
+    store = SessionStore()
+    turns: list[dict[str, object]] = [
+        {"text": "a", "apps": [{"name": "linear", "title": "Linear"}]},
+        {"text": "b"},
+    ]
+    assert _user_apps(store, _two_turns(), turns, limit=2) == [[]]
 
 
 async def test_fake_model_drives_two_step_agent_session_and_saves(

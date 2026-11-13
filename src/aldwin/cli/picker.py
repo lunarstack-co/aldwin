@@ -87,6 +87,9 @@ async def pick_index(
                 continue
 
             chosen = idx == selected
+            if chosen:
+                # The window scrolls to keep this line in view when the list is taller.
+                fragments.append(("[SetCursorPosition]", ""))
             if plain:
                 fragments.append(("", f"{'> ' if chosen else '  '}{row_text(label)}\n"))
                 continue

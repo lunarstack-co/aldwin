@@ -294,3 +294,51 @@ async def test_sign_out_is_not_offered_for_token_connectors() -> None:
     client = FakeSignInClient(catalog=[], items=[_info(auth="bearer")])
     out = await _run(client, "1", "")
     assert "Sign out" not in out
+
+
+async def test_catalogue_groups_apps_under_headings_and_numbers_only_apps(
+    opened: list[str],
+) -> None:
+    notion = NOTION.model_copy(update={"category": "work"})
+    github = GITHUB.model_copy(update={"category": "developer"})
+    context7 = CONTEXT7.model_copy(update={"category": "developer"})
+    client = FakeSignInClient(catalog=[notion, github, context7])
+    client.browser = opened
+    out = await _run(client, "1", "3")
+    lines = [line.strip() for line in out.splitlines()]
+    assert lines.index("Work and projects") < lines.index(
+        "1. Notion       Notes and docs    sign in"
+    )
+    assert lines.index("Developer") < lines.index(
+        "2. GitHub       Code and issues   token"
+    )
+    assert "3. Context7     Library docs      no sign-in" in lines
+    assert "4. Custom URL…  any MCP server address" in lines
+    assert ("add", {"url": CONTEXT7.url, "name": "context7"}) in client.calls
+
+
+def test_catalogue_menu_maps_rows_to_apps_and_keeps_old_hosts_flat() -> None:
+    from aldwin.cli.connectors_view import catalog_menu
+
+    grouped = [
+        NOTION.model_copy(update={"category": "work"}),
+        GITHUB.model_copy(update={"category": "developer"}),
+    ]
+    rows, choices = catalog_menu(grouped)
+    assert [getattr(c, "name", c) for c in choices] == [
+        None,
+        "notion",
+        None,
+        "github",
+        "custom",
+        "local",
+    ]
+    assert len(rows) == len(choices)
+
+    rows, choices = catalog_menu([NOTION, GITHUB])
+    assert [getattr(c, "name", c) for c in choices] == [
+        "notion",
+        "github",
+        "custom",
+        "local",
+    ]

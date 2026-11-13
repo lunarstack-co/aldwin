@@ -1,14 +1,12 @@
 import { create } from "zustand";
 
 type UnsavedState = {
-  /** Ids of the forms on screen that hold edits not yet saved. */
   dirty: ReadonlySet<string>;
   /** A move away that waits on the user's answer in the leave dialog. */
   pending: (() => void) | null;
   /** The user chose to leave; history is the router's to change now. */
   leaving: boolean;
   setDirty: (id: string, dirty: boolean) => void;
-  /** Runs `leave` now, or once the user agrees to drop their edits. */
   confirmLeave: (leave: () => void) => void;
   answer: (leave: boolean) => void;
 };
@@ -36,5 +34,5 @@ export const useUnsavedStore = create<UnsavedState>((set, get) => ({
   },
 }));
 
-/** Moves away now, or after the user agrees to drop unsaved edits; for code-driven navigation. */
+/** For navigation started by code rather than a link. */
 export const confirmLeave = (leave: () => void) => useUnsavedStore.getState().confirmLeave(leave);

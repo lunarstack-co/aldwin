@@ -1,5 +1,3 @@
-/* Live-state keyframes, and the reduced-motion switch that stops every animation. */
-
 @keyframes live-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
@@ -9,10 +7,7 @@
   animation: live-pulse 1.6s ease-in-out infinite;
 }
 
-/*
- * The mark's moods on one 7s loop: blink, open, happy, wink, open. Each face
- * cross-fades into the next, so exactly one is fully shown between fades.
- */
+/* One 7s loop: blink, open, happy, wink, open. Faces cross-fade so only one is fully shown at a time. */
 @keyframes mark-open {
   0%, 7.4%, 42.9%, 72.5%, 100% { opacity: 1; }
   1.4%, 4.4%, 47.3%, 69.5% { opacity: 0; }

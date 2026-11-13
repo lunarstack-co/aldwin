@@ -34,9 +34,6 @@ const ConversationJsonSheetLazy = dynamic(
 
 const noop = () => () => {};
 
-/**
- * How the page looks in this browser: transcript density, theme, and saved JSON.
- */
 export function ViewMenu() {
   const [density, setDensity] = useDensity();
   const { theme, setTheme } = useTheme();

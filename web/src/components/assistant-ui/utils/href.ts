@@ -10,11 +10,7 @@ const parse = (url: string) => {
   }
 };
 
-/**
- * `url` when a browser following it runs no script: an `http:`, `https:`, or
- * `mailto:` URL, or one relative to the page. Anything else, including a
- * string that is not a URL at all, is `undefined`.
- */
+/** Only URLs that run no script when followed: http, https, mailto or relative. */
 export function safeHref(url: string | undefined): string | undefined {
   if (typeof url !== "string") return undefined;
   const trimmed = url.trim();

@@ -29,5 +29,15 @@
   "addLede": "Pick an app Aldwin knows how to connect to, or search for one.",
   "searchLabel": "Search apps",
   "noMatch": "No app matches \"{query}\". If it has an MCP server, add it by address below.",
-  "adding": "Adding {title}…"
+  "adding": "Adding {title}…",
+  "categories": {
+    "work": "Work and projects",
+    "developer": "Developer",
+    "payments": "Payments",
+    "design": "Design and media",
+    "automation": "Automation",
+    "data": "Data and analytics",
+    "search": "Search and knowledge",
+    "other": "Other"
+  }
 }

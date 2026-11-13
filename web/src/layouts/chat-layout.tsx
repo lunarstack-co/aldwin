@@ -40,10 +40,6 @@ function subscribeCollapsed(listener: () => void): () => void {
   return () => collapseListeners.delete(listener);
 }
 
-/**
- * The post-setup frame: a 260 px rail beside a fluid stage from 768 px up,
- * collapsible with Cmd/Ctrl+B, and a sheet from the left on smaller screens.
- */
 export function ChatLayout({
   rail,
   railLabel,

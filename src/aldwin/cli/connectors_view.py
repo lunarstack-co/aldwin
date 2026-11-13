@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
-from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Collection, Sequence
 from typing import Literal, Protocol
 
 from prompt_toolkit.input import Input
@@ -60,6 +60,15 @@ _AUTH_TAGS = {
     "none": ("no sign-in", "muted"),
 }
 _TAG_WIDTH = 10
+CATEGORY_HEADINGS = {
+    "work": "Work and projects",
+    "developer": "Developer",
+    "payments": "Payments",
+    "design": "Design and media",
+    "automation": "Automation",
+    "data": "Data and analytics",
+    "search": "Search and knowledge",
+}
 Outcome = Literal["ok", "warn", "err"]
 _OUTCOME_GLYPHS: dict[Outcome, str] = {"ok": "✓", "warn": "!", "err": "✗"}
 
@@ -237,15 +246,17 @@ class _View:
     # --- add ----------------------------------------------------------------
 
     async def add(self, catalog: Sequence[CatalogItem] = ()) -> None:
-        rows = catalog_rows(catalog, self.console.width)
-        choice = await self._choose(rows, title="Add a connector")
-        if choice is None:
+        rows, choices = catalog_menu(catalog, self.console.width)
+        headings = {i for i, choice in enumerate(choices) if choice is None}
+        index = await self._choose(rows, title="Add a connector", disabled=headings)
+        if index is None:
             return
-        if choice < len(catalog):
-            await self.add_from_catalog(catalog[choice])
-        elif choice == len(catalog):
+        choice = choices[index]
+        if isinstance(choice, CatalogItem):
+            await self.add_from_catalog(choice)
+        elif choice == "custom":
             await self.add_custom()
-        else:
+        elif choice == "local":
             await self.add_local()
 
     async def add_from_catalog(self, item: CatalogItem) -> None:
@@ -526,9 +537,16 @@ class _View:
 
     # --- helpers ------------------------------------------------------------
 
-    async def _choose(self, rows: Sequence[Row], *, title: str) -> int | None:
+    async def _choose(
+        self,
+        rows: Sequence[Row],
+        *,
+        title: str,
+        disabled: Collection[int] = (),
+    ) -> int | None:
         """Arrow-key picker on a terminal, otherwise a numbered list.
 
+        Rows in `disabled` are headings: shown, never chosen, never numbered.
         The picker is erased once used; one line keeps what was chosen.
         """
         from aldwin.cli.picker import pick_index
@@ -545,6 +563,7 @@ class _View:
                 plain=self.renderer.plain,
                 header=f"  {title}",
                 erase_when_done=True,
+                disabled=disabled,
             )
             if choice is not None:
                 picked = row_text(rows[choice]).split("  ")[0].strip()
@@ -552,11 +571,16 @@ class _View:
             return choice
         self._gap()
         self._line(title, "bold")
-        for idx, row in enumerate(rows, start=1):
-            self.console.print(Text(f"  {idx}. {row_text(row)}".rstrip()))
+        numbered: list[int] = []
+        for idx, row in enumerate(rows):
+            if idx in disabled:
+                self.console.print(Text(f"  {row_text(row)}".rstrip(), style="bold"))
+                continue
+            numbered.append(idx)
+            self.console.print(Text(f"  {len(numbered)}. {row_text(row)}".rstrip()))
         raw = (await self.prompt_line("Choose a number (Enter to cancel): ")).strip()
-        if raw.isdigit() and 1 <= int(raw) <= len(rows):
-            return int(raw) - 1
+        if raw.isdigit() and 1 <= int(raw) <= len(numbered):
+            return numbered[int(raw) - 1]
         return None
 
     def _gap(self) -> None:
@@ -671,6 +695,35 @@ def catalog_rows(catalog: Sequence[CatalogItem], width: int = 100) -> list[Row]:
     )
     rows.append([("", LOCAL_LABEL)])
     return rows
+
+
+CatalogChoice = CatalogItem | Literal["custom", "local"] | None
+
+
+def catalog_menu(
+    catalog: Sequence[CatalogItem], width: int = 100
+) -> tuple[list[Row], list[CatalogChoice]]:
+    """The catalogue under its category headings, then `Custom URL…` and the local
+    entry. `None` in the choices marks a heading row. A catalogue without
+    categories, from an older host, stays one flat list.
+    """
+    rows = catalog_rows(catalog, width)
+    app_rows, extra_rows = rows[: len(catalog)], rows[len(catalog) :]
+    grouped = any(item.category for item in catalog)
+    menu_rows: list[Row] = []
+    choices: list[CatalogChoice] = []
+    current: str | None = None
+    for item, row in zip(catalog, app_rows, strict=True):
+        if grouped and item.category != current:
+            current = item.category
+            heading = CATEGORY_HEADINGS.get(current or "", "Other")
+            menu_rows.append([("class:heading", heading)])
+            choices.append(None)
+        menu_rows.append(row)
+        choices.append(item)
+    menu_rows += extra_rows
+    choices += ["custom", "local"]
+    return menu_rows, choices
 
 
 def catalog_label(item: CatalogItem) -> str:

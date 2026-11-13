@@ -10,7 +10,6 @@ import { useUnsavedChanges } from "@/hooks/use-unsaved-changes";
 
 import { SecretInput } from "../secret-input";
 
-/** An OpenAI-compatible server by name and address, with an optional key. */
 export function ServerForm({
   busy,
   onSubmit,

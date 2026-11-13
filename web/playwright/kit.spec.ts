@@ -52,6 +52,14 @@ test("every ui component and installed element renders in both themes", async ({
     expect(src, name).not.toContain("@/lib/utils");
     expect(src, name).not.toContain("@/utils/cn/index");
   }
+  const marks = page.getByRole("region", { name: "Light" }).locator('[data-kit-item="brand-marks"]');
+  await expect(marks.locator('svg[data-brand="linear"]')).toBeVisible();
+  await expect(marks.locator('svg[data-brand="stripe"]')).toBeVisible();
+  await expect(marks.locator('svg[data-brand="monday"] path')).toHaveCount(3);
+  await expect(marks.locator('svg[data-brand="canva"] linearGradient stop')).toHaveCount(3);
+  await expect(marks.locator('svg[data-brand="monday"] path').first()).toHaveAttribute("fill", "#FF3D57");
+  await expect(marks.locator('[data-brand="acme"][data-letter]')).toHaveText("a");
+
   for (const noImg of ["link-preview.tsx", "web-search.tsx"]) {
     const src = readFileSync(join(elementsDir, noImg), "utf8");
     expect(src, noImg).not.toMatch(/<img\b/);

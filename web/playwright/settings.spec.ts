@@ -486,3 +486,90 @@ test("the section list and Back to chat stay in view while a section scrolls", a
   await expect(page.getByRole("link", { name: "Back to chat" })).toBeInViewport();
   await expect(nav(page).getByRole("link", { name: "Tools" })).toBeInViewport();
 });
+
+test.describe("app catalogue", () => {
+  const app = (name: string, title: string, category: string, keywords: string[]) => ({
+    name,
+    title,
+    purpose: `Work with ${title}`,
+    url: `https://mcp.${name}.example.com/mcp`,
+    auth: "oauth" as const,
+    docs_url: `https://${name}.example.com/docs`,
+    keywords: [name, ...keywords],
+    token_help_url: null,
+    added: false,
+    category,
+  });
+
+  test.beforeEach(({ host }) => {
+    host.connectors.catalog = [
+      app("notion", "Notion", "work", ["notes"]),
+      app("stripe", "Stripe", "payments", ["payments"]),
+      app("paypal", "PayPal", "payments", ["payments"]),
+      app("canva", "Canva", "design", ["design"]),
+      app("acme", "Acme", "work", ["tasks"]),
+      app("zapier", "Zapier", "automation", ["automation"]),
+      app("make", "Make", "automation", ["automation"]),
+      app("ifttt", "IFTTT", "automation", ["automation"]),
+    ];
+  });
+
+  async function openCatalogue(page: Page) {
+    await openSettings(page, "tools");
+    await page.getByTestId("add-app-open").click();
+    return page.getByTestId("add-app").getByTestId("connector-catalog");
+  }
+
+  test("apps sit under their headings in order, and the headings go while searching", async ({ page }) => {
+    const catalog = await openCatalogue(page);
+    await expect(catalog.locator("h3")).toHaveText(["Work and projects", "Payments", "Design and media", "Automation"]);
+    await expect(catalog.locator('[data-category="automation"] [data-catalog]')).toHaveCount(3);
+    await page.getByTestId("add-app").getByRole("searchbox").fill("s");
+    await expect(catalog.locator("h3")).toHaveCount(0);
+  });
+
+  test("searching for a plain word finds the apps it describes, with their logos @cross", async ({ page }) => {
+    const catalog = await openCatalogue(page);
+    const search = page.getByTestId("add-app").getByRole("searchbox");
+    await search.fill("pay");
+    await expect(catalog.locator("[data-catalog]")).toHaveCount(2);
+    for (const name of ["stripe", "paypal"]) {
+      await expect(catalog.locator(`[data-catalog="${name}"] svg[data-brand="${name}"]`)).toBeVisible();
+    }
+    await search.fill("automation");
+    await expect(catalog.locator("[data-catalog]")).toHaveCount(3);
+    await search.fill("canva");
+    const canva = catalog.locator('[data-catalog="canva"] svg[data-brand="canva"]');
+    await expect(canva).toBeVisible();
+    const gradient = canva.locator("linearGradient");
+    await expect(gradient.locator("stop")).toHaveCount(3);
+    const id = await gradient.getAttribute("id");
+    expect(id).toMatch(/^mark-\w+$/);
+    await expect(canva).toHaveAttribute("fill", `url(#${id})`);
+  });
+
+  test("an app without a logo shows its first letter", async ({ page }) => {
+    const catalog = await openCatalogue(page);
+    const letter = catalog.locator('[data-catalog="acme"] [data-letter]');
+    await expect(letter).toHaveText("a");
+    await expect(letter).toHaveCSS("text-transform", "uppercase");
+  });
+
+  test("a catalogue from an older host without categories stays one list", async ({ page, host }) => {
+    host.connectors.catalog = host.connectors.catalog.map((item) => ({ ...item, category: null }));
+    const catalog = await openCatalogue(page);
+    await expect(catalog.locator("h3")).toHaveCount(0);
+    await expect(catalog.locator("[data-catalog]")).toHaveCount(8);
+  });
+
+  test("the catalogue and its logos load nothing from other sites", async ({ page }) => {
+    const outside: string[] = [];
+    page.on("request", (req) => {
+      if (!req.url().startsWith("http://127.0.0.1")) outside.push(req.url());
+    });
+    const catalog = await openCatalogue(page);
+    await expect(catalog.locator('[data-catalog="stripe"] svg[data-brand="stripe"]')).toBeVisible();
+    await catalog.evaluate((el) => el.parentElement?.scrollTo(0, el.parentElement.scrollHeight));
+    expect(outside).toEqual([]);
+  });
+});

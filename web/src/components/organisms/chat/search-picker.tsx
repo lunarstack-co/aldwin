@@ -27,7 +27,7 @@ import { loadSearch, makeSearchActive } from "@/utils/settings/actions";
 import { cn } from "@/utils/cn";
 import { fill } from "@/utils/text";
 
-/** Which engine Aldwin searches the web with; only connected engines can be chosen here. */
+/** Only connected engines can be chosen here. */
 export function SearchPicker({ disabled }: { disabled: boolean }) {
   const session = useSession();
   const router = useRouter();

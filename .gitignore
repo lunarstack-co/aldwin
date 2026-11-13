@@ -48,3 +48,6 @@ web/**/*.tsbuildinfo
 web/playwright-report/
 web/test-results/
 web/playwright/.cache/
+
+# Connector catalogue import cache (scripts/connectors/import_catalog.py)
+scripts/connectors/.cache/

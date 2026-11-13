@@ -318,8 +318,11 @@ async def test_server_without_sign_in_connects_without_it(
 
 async def test_list_carries_the_catalogue(rig: Rig, oauth_server: OAuthFixture) -> None:
     listing = await rig.client.connectors_list()
-    assert [c.name for c in listing.catalog][:2] == ["notion", "linear"]
-    assert len(listing.catalog) == 9
+    from aldwin.core.connectors.catalog import load_catalog
+
+    assert [c.name for c in listing.catalog] == [e.name for e in load_catalog()]
+    assert {c.name: c.category for c in listing.catalog}["stripe"] == "payments"
+    assert all(c.category for c in listing.catalog)
     assert not any(c.added for c in listing.catalog)
 
 

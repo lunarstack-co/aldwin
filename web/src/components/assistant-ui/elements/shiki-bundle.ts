@@ -1,9 +1,6 @@
 import type { LanguageInput, ThemeInput } from "shiki/core";
 
-/**
- * The languages code blocks are highlighted in, by grammar name. Anything else
- * shows as plain code: the full grammar set would add megabytes to the package.
- */
+/** Anything else shows as plain code; the full grammar set adds megabytes. */
 export const codeLanguages: Record<string, LanguageInput> = {
   c: () => import("@shikijs/langs/c"),
   cpp: () => import("@shikijs/langs/cpp"),
@@ -73,7 +70,6 @@ export function resolveCodeLanguage(fence: string): string {
   return Object.hasOwn(codeLanguages, canonical) ? canonical : "text";
 }
 
-/** The two themes the highlighter uses, for light and dark. */
 export const codeThemes: Record<string, ThemeInput> = {
   "github-dark-default": () => import("@shikijs/themes/github-dark-default"),
   "github-light-default": () => import("@shikijs/themes/github-light-default"),

@@ -8,10 +8,7 @@ import appCopy from "@/data/app.json";
 import { useChatStore } from "@/state/chat-store";
 import { pageTitle } from "@/utils/page-title";
 
-/**
- * The tab title on a conversation page: its name, with a dot while Aldwin
- * answers. The static export cannot know the name, so it is set here.
- */
+/** The static export cannot know a conversation's name, so the title is set here. */
 export function usePageTitle(): void {
   const pathname = usePathname();
   const onConversation = isConversationPage(pathname);

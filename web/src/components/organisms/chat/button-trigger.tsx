@@ -3,10 +3,7 @@
 import { ComposerPrimitive, useAui, useAuiState } from "@assistant-ui/react";
 import { useEffect, type MutableRefObject } from "react";
 
-/**
- * What the `@` or apps button typed to open its menu: where, what, and the text
- * that followed. Browsing must leave the message as it was unless something is picked.
- */
+/** What the `@` or apps button typed, so browsing without a pick leaves the message as it was. */
 export type ButtonTrigger = {
   char: "@" | "/";
   before: string;
@@ -24,11 +21,7 @@ export function markPicked(ref: ButtonTriggerRef | undefined, char: "@" | "/"): 
   if (ref?.current?.char === char) ref.current.picked = true;
 }
 
-/**
- * When a menu the button opened closes without a pick, takes back what the button
- * typed, along with any search word after it. Text the user typed past the menu
- * (a space, more words) stays.
- */
+/** On close without a pick, removes what the button typed and any search word; text typed past the menu stays. */
 export function ClearUnusedTrigger({ char, triggerRef }: { char: "@" | "/"; triggerRef: ButtonTriggerRef }) {
   const popover = ComposerPrimitive.unstable_useTriggerPopoverScopeContext();
   const aui = useAui();

@@ -15,7 +15,6 @@ import { fill } from "@/utils/text";
 
 import { SecretInput } from "../secret-input";
 
-/** What the user gives back to finish a paste or token sign-in. */
 function Answer({ signIn }: { signIn: SignIn }) {
   const session = useSession();
   const [value, setValue] = useState("");
@@ -69,10 +68,7 @@ function Answer({ signIn }: { signIn: SignIn }) {
   );
 }
 
-/**
- * A sign-in the host is waiting on. The sign-in page opens only when the user
- * clicks, and the panel closes itself when the host's time runs out.
- */
+/** The sign-in page opens only on a click; the panel closes when the host's time runs out. */
 export function ConnectorSignIn({ onExpired }: { onExpired: (title: string) => void }) {
   const session = useSession();
   const signIn = useSettingsStore((s) => s.signIn);

@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { ANSWER_STYLE_IDS } from "@/constants/answer-styles";
 import copy from "@/data/onboarding/personality.json";
 
-/** Pick any number of answer styles; each stays pressed while chosen. */
 export function AnswerStylePicker({
   chosen,
   onChange,

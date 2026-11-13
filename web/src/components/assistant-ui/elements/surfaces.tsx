@@ -59,16 +59,7 @@ export function ShimmerLabel({
   );
 }
 
-/**
- * Scroll region for content that keeps its own whitespace. `whitespace-pre` in
- * a bounded box clips a long line with no way to reach it, so the rows scroll
- * instead.
- *
- * `codeSurface` wraps all the rows as one block, and the rows are its children.
- * It cannot go on each row: `min-width: 100%` resolves against the scroll
- * container's visible width rather than its scroll width, so a per-row width
- * leaves every row except the longest ending its background at the fold.
- */
+/** Scrolls rather than clipping long lines. `codeSurface` wraps all rows because a row's `min-width: 100%` stops at the visible width. */
 export const codeScroll = "overflow-x-auto";
 
 export const codeSurface = "w-max min-w-full";

@@ -1,14 +1,14 @@
 "use client";
 
 import { ThreadListPrimitive } from "@assistant-ui/react";
-import { ChevronRight, Plus, Search, Settings } from "lucide-react";
+import { Bug, ChevronRight, Plus, Search, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { Lockup } from "@/components/brand/lockup";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { RAIL_HISTORY_LIMIT } from "@/constants/chat";
-import { ROUTES, isSettingsPage } from "@/constants/routes";
+import { REPORT_BUG_URL, ROUTES, isSettingsPage } from "@/constants/routes";
 import copy from "@/data/chat/rail.json";
 import { useChatStore } from "@/state/chat-store";
 import type { SessionMeta } from "@/types/protocol";
@@ -23,10 +23,6 @@ function railIds(sessions: SessionMeta[], currentId: string | null): string[] {
   return current >= RAIL_HISTORY_LIMIT ? [...ids, sessions[current].id] : ids;
 }
 
-/**
- * The left rail: brand, new chat and search, the most recent conversations
- * and a way to see all of them, then Settings.
- */
 export function Rail({
   sessions,
   currentId,
@@ -106,6 +102,17 @@ export function Rail({
         )}
       </div>
       <div className="flex flex-col gap-1 border-t pt-3">
+        <a
+          href={REPORT_BUG_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="report-bug"
+          className={cn(buttonVariants({ variant: "ghost" }), "justify-start max-md:h-10")}
+        >
+          <Bug aria-hidden />
+          {copy.reportBug}
+          <span className="sr-only"> {copy.opensNewTab}</span>
+        </a>
         <Link
           href={ROUTES.settings}
           onClick={onNavigate}

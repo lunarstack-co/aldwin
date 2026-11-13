@@ -1,9 +1,6 @@
 import { create } from "zustand";
 
-/**
- * Where the socket is. `taken` means another tab holds it, `not_ready` that
- * no host is serving yet, and `stopped` that Aldwin is gone for good.
- */
+/** `taken`: another tab holds the socket. `not_ready`: no host yet. `stopped`: Aldwin is gone. */
 export type ConnectionPhase =
   | "connecting"
   | "open"

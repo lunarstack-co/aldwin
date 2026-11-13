@@ -251,11 +251,7 @@ const HighlightedCode: FC<CodeProps> = (props) => {
   return <EngineCode {...props} options={options} engine={engine} />;
 };
 
-/**
- * Skips tokenization while `streaming` and renders the plain code in the
- * same container, so streaming costs no Shiki work and settling is a color
- * change rather than a layout shift.
- */
+/** Plain code while streaming, so it costs no Shiki work and settling only changes colour. */
 export const SyntaxHighlighter: FC<SyntaxHighlighterProps> = ({
   code,
   language,

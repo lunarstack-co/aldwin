@@ -32,7 +32,7 @@ function toneOf(provider: ProviderModels): Tone {
 
 const LOOPBACK = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(\/|$)/i;
 
-/** A provider's key field; the host checks the key with the provider before it saves it. */
+/** The host checks the key with the provider before saving it. */
 function KeyEntry({
   provider,
   onSaved,
@@ -163,7 +163,6 @@ function ProviderRow({
   );
 }
 
-/** Model providers: their status and keys, adding a server, and the model Aldwin uses. */
 export function ProvidersSection() {
   const session = useSession();
   const models = useModels();

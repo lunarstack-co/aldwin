@@ -41,10 +41,9 @@ export type ToolRow = {
 
 export type TurnStatus = "streaming" | "stopping" | "answered" | "stopped" | "max_steps" | "error";
 
-/** What the stage shows: the conversation, or every saved one with search. */
 export type HistoryView = "chat" | "see-all";
 
-/** Why the host refused to switch conversations; `message` is the host's own sentence. */
+/** `message` is the host's own sentence. */
 export type SessionNotice = { code: "busy" | "not_found" | "other"; message: string };
 
 export type Turn = {
@@ -61,7 +60,6 @@ export type Turn = {
   endedAt: number | null;
   userAt: string | null;
   assistantAt: string | null;
-  /** The host's latest status line and running tool while the turn is live. */
   statusMessage: string;
   activeTool: string | null;
   usage: TokenUsage | null;
@@ -74,12 +72,11 @@ export type Turn = {
   breakBeforeText: boolean;
   /** What the host made of the `@` skills on this turn; `null` when none were picked. */
   skillsUsed: { names: string[]; dropped: DroppedSkill[] } | null;
-  /** Connected apps picked with `/` for this turn, and what the host made of them. */
   pickedApps: PickedApp[];
   appsUsed: { names: string[]; dropped: DroppedSkill[] } | null;
 };
 
-/** A connected app the user picked with `/`; `name` is its connector name, as the host knows it. */
+/** `name` is the connector name the host knows. */
 export type PickedApp = { name: string; title: string };
 
 export type Todos = { items: TodoItem[]; done: number; total: number };
@@ -87,7 +84,7 @@ export type Todos = { items: TodoItem[]; done: number; total: number };
 /** The `@` menu's catalogue: asked for the first time it opens, then kept up to date by the host. */
 export type SkillsCatalog = { status: "idle" | "loading" | "ready" | "error"; items: SkillCatalogItem[] };
 
-/** A passing message from the host, shown as a toast and never in the transcript. */
+/** Shown as a toast, never in the transcript. */
 export type Notice = { id: number; message: string };
 
 export type TurnEnd = {
@@ -117,7 +114,6 @@ type ChatState = {
   /** Text to put back in the composer, after the host refused to start it. */
   draft: string | null;
   skills: SkillsCatalog;
-  /** Latest prompt context window usage reported on `done`. */
   context: ContextUsage | null;
   waitingApproval: string | null;
   setWaitingApproval: (summary: string | null) => void;
@@ -231,7 +227,10 @@ function groupHistory(items: HistoryItem[]): Turn[] {
   items.forEach((item, index) => {
     if (item.role === "user" || turns.length === 0) {
       const turn = newTurn(`history_${index}`, item.role === "user" ? item.text : "", 0, "answered");
-      if (item.role === "user") turn.userAt = item.at ?? null;
+      if (item.role === "user") {
+        turn.userAt = item.at ?? null;
+        turn.pickedApps = (item.apps ?? []).map(({ name, title }) => ({ name, title }));
+      }
       turns.push(turn);
     }
     const turn = turns[turns.length - 1];
@@ -578,7 +577,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }),
 }));
 
-/** Pending approval in `request` state on the active turn, if any. */
 export function selectPendingApproval(state: { turns: Turn[]; activeId: string | null }): TurnApproval | null {
   if (state.activeId === null) return null;
   const active = state.turns.find((t) => t.id === state.activeId);

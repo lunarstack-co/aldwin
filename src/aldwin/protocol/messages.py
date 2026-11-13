@@ -79,6 +79,15 @@ class TokenUsage(BaseModel):
     output_tokens: int = Field(ge=0)
 
 
+class HistoryApp(BaseModel):
+    """An app picked for a past message: its connector name and the title shown then."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    title: str
+
+
 class HistoryItem(BaseModel):
     """One rendered message or tool summary returned in a history event."""
 
@@ -87,6 +96,8 @@ class HistoryItem(BaseModel):
     role: HistoryRole
     text: str
     at: str | None = None
+    # Only user rows carry apps: the ones picked with that message.
+    apps: list[HistoryApp] = Field(default_factory=list)
 
 
 class SessionMetaItem(BaseModel):
@@ -720,6 +731,7 @@ class CatalogItem(BaseModel):
     keywords: list[str] = Field(default_factory=list)
     token_help_url: str | None = None
     added: bool = False
+    category: str | None = None
 
 
 class ConnectorsEvent(EventBase):

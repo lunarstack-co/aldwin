@@ -5,7 +5,6 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import copy from "@/data/app.json";
 
-/** The skip link, the main landmark every page sits in, and the toasts above it all. */
 export function AppShell({ children }: { children: ReactNode }) {
   return (
     <TooltipProvider>

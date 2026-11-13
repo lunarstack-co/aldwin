@@ -16,7 +16,7 @@ from agentling.errors import MemoryLoadError
 from agentling.memory import ActionStep, FinalStep, Memory, TaskStep
 
 from aldwin.core.home import FILE_MODE, atomic_write, home_dir
-from aldwin.protocol import HistoryItem
+from aldwin.protocol import HistoryApp, HistoryItem
 
 logger = logging.getLogger("aldwin.host.sessions")
 
@@ -175,6 +175,31 @@ def _normalise_turns_payload(raw: Any) -> list[dict[str, Any]]:
             item["done_at"] = done_at
         items.append(item)
     return items
+
+
+def _stored_apps(raw: object) -> list[HistoryApp]:
+    """The apps saved with a turn. Accepts `{name, title}` objects, bare names
+    from older saves, or nothing; a malformed value gives no apps."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        logger.debug("ignoring stored apps that are not a list: %r", type(raw))
+        return []
+    apps: list[HistoryApp] = []
+    for entry in raw:
+        if isinstance(entry, str) and entry:
+            apps.append(HistoryApp(name=entry, title=entry))
+        elif isinstance(entry, dict):
+            name = entry.get("name")
+            if not isinstance(name, str) or not name:
+                continue
+            title = entry.get("title")
+            apps.append(
+                HistoryApp(
+                    name=name, title=title if isinstance(title, str) and title else name
+                )
+            )
+    return apps
 
 
 class SessionStore:
@@ -403,7 +428,9 @@ class SessionStore:
                     else None
                 )
                 user_at: str | None = None
+                user_apps: list[HistoryApp] = []
                 if isinstance(active_turn, dict):
+                    user_apps = _stored_apps(active_turn.get("apps"))
                     stored = active_turn.get("text")
                     if isinstance(stored, str):
                         text = stored
@@ -411,7 +438,9 @@ class SessionStore:
                     if isinstance(raw_at, str) and raw_at:
                         user_at = raw_at
                 turn_idx += 1
-                items.append(HistoryItem(role="user", text=text, at=user_at))
+                items.append(
+                    HistoryItem(role="user", text=text, at=user_at, apps=user_apps)
+                )
             elif isinstance(step, ActionStep):
                 for result in step.tool_results:
                     if result.name == "final_answer" and not result.is_error:

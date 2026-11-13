@@ -1,12 +1,8 @@
-/**
- * The two page backgrounds, for the places outside CSS that need them, such
- * as the viewport theme-color meta. They are the sRGB of `--background` in
- * src/styles/tokens.css: oklch(0.992 0.002 106) and oklch(0.17 0.003 106).
- */
+/** sRGB of `--background` in tokens.css, for the theme-color meta tag. */
 export const THEME_COLORS = {
   light: "#fcfcfb",
   dark: "#0f0f0e",
 } as const;
 
-/** The theme choices; next-themes keeps the pick in this browser only. */
+/** next-themes keeps the pick in this browser only. */
 export const THEMES = ["light", "dark", "system"] as const;

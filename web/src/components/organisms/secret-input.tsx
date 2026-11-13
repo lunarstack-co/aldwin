@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import copy from "@/data/onboarding/secret.json";
 
-/** A key or password field, hidden until the user chooses to see it. */
 export function SecretInput(props: Omit<ComponentProps<typeof Input>, "type">) {
   const [shown, setShown] = useState(false);
   return (
