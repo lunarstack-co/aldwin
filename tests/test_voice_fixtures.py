@@ -47,6 +47,10 @@ def test_instructions_include_voice_rules() -> None:
         .joinpath("instructions.md")
         .read_text(encoding="utf-8")
     )
-    assert "at most one short sentence" in text.lower() or "one short sentence" in text
-    assert "Let's proceed" in text or "let's proceed" in text.lower()
-    assert "ask what to do instead" in text.lower()
+    lower = text.lower()
+    assert "at most one short sentence" in lower
+    assert "let's proceed" in lower
+    # A failure is retried or worked around; a decline is respected, never retried.
+    assert "never make the identical call a third time" in lower
+    assert "declined approval is different" in lower
+    assert "do not retry it" in lower
