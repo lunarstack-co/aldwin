@@ -10,12 +10,16 @@
 | `tools/` | Unit tests for built-in tools |
 | `cli/` | Rich render / parity snapshots |
 | `integration/` | In-process host turns |
+| `connectors/` | MCP connectors: config, credentials, sign-in, catalogue, local servers, import |
+| `test_web_*.py` | The `aldwin web` server: sign-in link and cookie, `/v1` guards, WebSocket tickets, REST routes, onboarding gates |
+| `providers/` | Model provider registry, translators and key checks |
+| `fixtures/` | MCP and OAuth fixture servers, import samples |
 | `security/` | Guardrail suites (must pass to release; dedicated CI job) |
 | `security/policy/` | Policy-engine families (fail closed, table, commands, denials, …) |
 | `perf/` | `@pytest.mark.perf` budgets (Linux CI) |
 | `e2e/` | pexpect against installed `aldwin` + OpenAI (`@pytest.mark.e2e`) |
 | `live/` | Real API smoke (`@pytest.mark.live`) |
-| `TRACEABILITY.md` | Requirement → test map for 0.0.2 |
+| `TRACEABILITY.md` | Requirement → test map |
 
 Policy table and approval-log coverage live under `tests/security/policy/`. Thin stubs remain at `tests/test_policy_table.py` and `tests/test_approval_log.py` pointing there.
 
@@ -26,6 +30,12 @@ uv run pytest                          # unit + security + render (no live/perf/
 uv run pytest tests/security -q        # security + policy suites
 uv run pytest -m perf -q               # performance budgets
 uv run pytest -m e2e -q                # OpenAI demos (needs OPENAI_API_KEY)
+```
+
+The browser UI has its own suite in `web/playwright/`, which runs against the static export with a fake host. See [web/README.md](../web/README.md#tests).
+
+```bash
+cd web && npm run test:pw              # Playwright, all browsers
 ```
 
 ## Isolation

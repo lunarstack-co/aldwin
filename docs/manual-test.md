@@ -361,6 +361,38 @@ Needs at least one real search key (any of Tavily, Brave, Exa, Perplexity, Paral
    - Expect: the plain text list of every provider with `ready` / `not ready`.
 - [ ] Pass / Fail
 
+### Step 22: The browser (`aldwin web`)
+
+Use a home folder that has a working model. Keep the terminal that runs `aldwin web` visible.
+
+1. Run `aldwin web`.
+   - Expect: `Aldwin web is running at http://127.0.0.1:7841`, `Open this link to start: http://127.0.0.1:7841/?t=…`, `Press Ctrl-C to stop.`, and the browser opening on a new chat. The `?t=…` part is gone from the address bar.
+2. Open `http://127.0.0.1:7841/` in a private window, without the link.
+   - Expect: ``Open Aldwin from the link that `aldwin web` printed.`` and no chat.
+3. In a second terminal, run `aldwin web`.
+   - Expect: `aldwin web is already running at http://127.0.0.1:7841 (pid …). Stop it with Ctrl-C in its terminal first.` and exit code 1.
+4. Run `aldwin web --host 0.0.0.0`.
+   - Expect: `aldwin web only listens on this computer. Use --host 127.0.0.1, localhost or ::1.`
+5. Send `Explain what a workspace is in two sentences.`
+   - Expect: the answer streams in; **Stop** shows while it runs; the conversation appears under **Recents** with a title.
+6. Ask `Make a file called web-test.md with one line: hello.`
+   - Expect: an approval card titled `Write a file` with the new file as a diff, the message box locked, and `Aldwin needs your OK`. Pressing `Esc` does nothing. **Deny** with a reason leaves no file. Ask again and **Allow**: the file exists in the workspace.
+7. Switch the view menu from **Clean** to **Detail** and ask something that searches or reads a file.
+   - Expect: Clean shows one `Worked for …` line; Detail shows each step.
+8. From the conversation's options menu: **Rename**, **Pin chat**, then **Delete** and confirm.
+   - Expect: the new title shows; a **Pinned** group appears and goes when unpinned; after delete the chat is gone, a new chat opens, and its file is gone from `~/.aldwin/sessions/`.
+9. Open **Settings**. Under **Models**, add a key with a wrong value, then a real one. Under **Search** and **Tools**, connect one provider and one app (Context7 needs no sign-in).
+   - Expect: the wrong key is refused with the reason and nothing saved; the real key shows masked; the app shows `Connected` with its tool count.
+10. Open `http://127.0.0.1:7841/` in a second tab of the same browser.
+    - Expect: `Open in another tab` with **Take over**; taking over disconnects the first tab.
+11. In a terminal, run `aldwin` on the same home folder.
+    - Expect: the conversation from the browser is there, with the same model.
+12. Press `Ctrl-C` in the `aldwin web` terminal.
+    - Expect: the page shows `Connection lost. Reconnecting…`, then `Aldwin stopped` with **Reload**.
+- [ ] Pass / Fail
+
+---
+
 ## 3. Manual test run log template
 
 Copy the template below and fill it in for each platform tested (`macOS` and `Linux`):
@@ -388,6 +420,15 @@ Copy the template below and fill it in for each platform tested (`macOS` and `Li
 | 11 | `Ctrl-C` once/twice & `Ctrl-D` save and exit | PASS | |
 | 12 | Plain mode (`NO_COLOR=1` and `--plain`) | PASS | |
 | 13 | Upgrade keeps data; `uninstall` keeps data; `--purge` deletes data | PASS | |
+| 14 | Connectors: Context7 without auth, GitHub with a token | PASS | |
+| 15 | Connectors: sign in with your browser | PASS | |
+| 16 | Connectors: local servers | PASS | |
+| 17 | Connectors: import | PASS | |
+| 18 | Ask Aldwin to connect | PASS | |
+| 19 | Pasted secrets | PASS | |
+| 20 | Providers | PASS | |
+| 21 | Connect web search | PASS | |
+| 22 | The browser (`aldwin web`): link, approval card, conversations, settings, second tab, stop | PASS | |
 ```
 
 ---
@@ -402,6 +443,7 @@ Tick every item below on clean **macOS** and clean **Linux** (Python 3.11+) afte
 - [ ] `"Be more direct"` updates `persona.md` after `y/n` and persists
 - [ ] `/model` switches model mid-conversation
 - [ ] `/search` connects a provider; `web_search` works for SearXNG and one hosted key
+- [ ] `aldwin web` opens the browser, serves the real UI (not the placeholder page), and a turn with an approval works end to end
 - [ ] Streaming markdown, tool cards, `Esc` stops within 1 second
 - [ ] Every terminal command asks `y/n`
 - [ ] A 50-turn conversation stays fast and survives tool errors

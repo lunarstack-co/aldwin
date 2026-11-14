@@ -16,6 +16,15 @@ Every tool has one of three tiers.
 
 Outside the workspace, reads ask once per folder per session, and writes ask every time.
 
+## Approvals in the browser
+
+`aldwin web` uses the same policy engine and the same tiers. Only the way you answer changes:
+
+- An approval is a card in the chat, on the step it belongs to, showing the command, the diff, or the app action.
+- **Allow** answers yes. **Always allow in this chat** appears only where the terminal would offer a session grant. **Deny** takes an optional reason of up to 280 characters, which the model sees.
+- Nothing is answered without a click. `Esc` does not answer a card, and the message box is locked while one waits.
+- A waiting approval survives a dropped connection and can be answered after the page reconnects. An approval asked while no page is connected is denied.
+
 ## Hard floor
 
 These are refused before Aldwin even asks you.
@@ -73,6 +82,7 @@ When a message looks like it holds a token, Aldwin replaces the token with `‹r
 
 ## Known limits
 
+- **The browser link is a key.** Anyone with the link `aldwin web` prints, or the cookie it sets, can use Aldwin as you until the server stops. The server only listens on this computer, but do not share the link. See [Data and privacy](privacy.md#the-browser-window).
 - **Read, then send to the web.** Workspace reads and `web_fetch` both run without asking, so a prompt-injected document could try to send non-blocked workspace text out through a fetched URL. Secret files are blocked, all tool output is marked untrusted, and every `web_fetch` URL is recorded in the approval log.
 - **Hard links.** A hard link inside the workspace that points to a non-blocked file outside the workspace is not detected.
 - **Shell inspection is best-effort.** Shell commands can't be fully parsed ahead of time. The main control is that every command needs your `y/n`, with risk labels shown.

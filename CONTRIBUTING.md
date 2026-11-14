@@ -9,10 +9,10 @@ If something here is unclear or out of date, that is a bug too. Open an issue or
 - **Pick up an issue.** Issues labelled [`good first issue`](https://github.com/lunarstack-co/aldwin/labels/good%20first%20issue) are small and self-contained. Issues labelled [`help wanted`](https://github.com/lunarstack-co/aldwin/labels/help%20wanted) are larger but well defined. Leave a comment saying you'd like to take one, so two people don't do the same work.
 - **Report a bug.** Use the bug report template and include your OS, Python version, `aldwin --version`, and the steps to reproduce it.
 - **Suggest a feature.** Use the feature request template. For anything large, please open an issue to agree the approach before writing code.
-- **Improve the docs.** Fixes to the README, the [protocol spec](docs/protocol.md) or this guide are always welcome.
-
-Security problems should not go in a public issue. Email [contact@lunarstack.co](mailto:contact@lunarstack.co) instead.
+- **Improve the docs.** Fixes to the README, the [protocol spec](docs/protocol.md) or this guide are always welcome. The user guides at [askaldwin.com/docs](https://askaldwin.com/docs) live in the [aldwin-docs](https://github.com/lunarstack-co/aldwin-docs) repository.
 - **Add an app to import from.** `aldwin connectors import` reads other agent apps' MCP configs. Adding an app is one YAML file plus a fixture, with no Python when the format is already known. See [docs/import-sources.md](docs/import-sources.md).
+
+Security problems should not go in a public issue. See [SECURITY.md](SECURITY.md).
 
 ## Set up
 
@@ -34,7 +34,7 @@ uv run aldwin --version
 
 `uv sync` installs the development dependencies, including the optional document libraries, so the whole test suite can run.
 
-To try your changes by hand, run `uv run aldwin`. You need an OpenAI API key for a real conversation.
+To try your changes by hand, run `uv run aldwin`, or `uv run aldwin web` for the browser interface. A real conversation needs a model: a local one from Ollama or LM Studio, or a key for a cloud provider.
 
 ## Run the checks
 
@@ -76,10 +76,19 @@ npm ci
 npm run lint
 npm run typecheck
 npm run build        # writes the static export into src/aldwin/web/static/
-npm run test:e2e     # serves the export and runs the Cypress smoke test
+npm run test:pw      # serves the export and runs the Playwright suite against a fake host
 ```
 
-CI runs these in a separate `web` job. See [web/README.md](web/README.md) for the dev server and the design tokens.
+CI runs these in a separate `web` job, plus the timing checks (`npm run test:pw:timing`) and the component gallery check (`npm run test:pw:kit`). `npm run test:pw:docker` runs the suite in the Linux image CI uses.
+
+`npm run build` replaces the small placeholder page that is tracked in `src/aldwin/web/static/`. Restore the placeholder before you commit:
+
+```bash
+git restore --staged --worktree src/aldwin/web/static
+git clean -fd src/aldwin/web/static
+```
+
+See [web/README.md](web/README.md) for the dev server, the source layout and the design tokens.
 
 ## How the code is organised
 
@@ -92,7 +101,7 @@ Aldwin is split into packages that only talk to each other in one direction:
 | `aldwin.host` | Runs turns, turns agent events into protocol events, handles approvals and sessions |
 | `aldwin.client` | The Python API an interface uses to talk to the host |
 | `aldwin.cli` | The terminal interface: commands, input and rendering |
-| `aldwin.web` | The browser interface: holds the bundled web UI in `static/` |
+| `aldwin.web` | The browser interface: the loopback server behind `aldwin web`, its sign-in and WebSocket transport, and the bundled web UI in `static/` |
 
 The rules below are checked by [tests/test_architecture.py](tests/test_architecture.py), so a pull request that breaks them fails CI:
 
@@ -147,8 +156,8 @@ Every change in behaviour comes with a test. Bug fixes should include a test tha
    docs: explain how to run a single test
    ```
 
-   Common types are `feat`, `fix`, `docs`, `test`, `refactor` and `chore`. Common scopes are `core`, `host`, `protocol`, `client`, `cli` and `release`.
-4. In the pull request description, link the issue (`Closes #123`), say what changed and why, and say how you tested it. For CLI changes, a screenshot or a short terminal recording helps.
+   Common types are `feat`, `fix`, `docs`, `test`, `refactor` and `chore`. Common scopes are `core`, `host`, `protocol`, `client`, `cli`, `web`, `connectors` and `release`.
+4. In the pull request description, link the issue (`Closes #123`), say what changed and why, and say how you tested it. For CLI or web UI changes, a screenshot or a short recording helps.
 5. Make sure CI is green.
 
 You don't need to edit `CHANGELOG.md` or bump the version. Maintainers do that when cutting a release.

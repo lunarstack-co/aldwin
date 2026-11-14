@@ -18,6 +18,23 @@ uv run mypy src tests
 uv run pytest --cov=aldwin --cov-fail-under=90
 ```
 
+Then the web UI, from `web/` (Node 22):
+
+```bash
+npm ci
+npm run lint
+npm run typecheck
+npm run build
+npm run test:pw
+```
+
+`npm run build` writes the real pages into `src/aldwin/web/static/`. Keep them for a local `uv build` (section 4), and restore the tracked placeholder before you commit anything:
+
+```bash
+git restore --staged --worktree src/aldwin/web/static
+git clean -fd src/aldwin/web/static
+```
+
 If you have valid model and search credentials in your environment, run the opt-in live verification suite (at least one hosted search key such as `TAVILY_API_KEY`, or a reachable SearXNG with JSON enabled):
 
 ```bash
@@ -58,6 +75,8 @@ Confirm that `docs/assets/demo.gif` is under `5 MB` and that `README.md` referen
 
 ## 4. Build and inspect the distribution
 
+The wheel must carry the built web UI, or `aldwin web` serves a placeholder page. The release workflow runs `npm run build` before `uv build`. For a local build, run `npm ci && npm run build` in `web/` first.
+
 Clean `dist/`, build the source distribution and wheel, and validate package metadata:
 
 ```bash
@@ -66,7 +85,7 @@ uv build
 uvx twine check dist/*
 ```
 
-Verify the wheel contents and size (`< 1 MB`), ensuring all starter assets (`config.yaml`, `instructions.md`, `persona.md`, `profile.md`, `skills/using-aldwin/SKILL.md`) are included and no `tests/` or `.env` files are bundled:
+Verify the wheel contents and size (under 4 MB), ensuring all starter assets (`config.yaml`, `instructions.md`, `persona.md`, `profile.md`, `skills/using-aldwin/SKILL.md`) and the web UI (`aldwin/web/static/index.html`) are included and no `tests/` or `.env` files are bundled:
 
 ```bash
 uv run pytest tests/test_release_package.py
@@ -139,9 +158,10 @@ On clean **macOS** and clean **Linux** (Python 3.11+) environments (see [`docs/m
 uv tool install aldwin
 aldwin --version
 aldwin
+aldwin web
 ```
 
-Run through the 13 steps and 9 Release Checklist items in [`docs/manual-test.md`](./manual-test.md) and check `https://pypi.org/project/aldwin/` to confirm the README, code blocks, and demo GIF render properly.
+Run through every step and every release checklist item in [`docs/manual-test.md`](./manual-test.md) and check `https://pypi.org/project/aldwin/` to confirm the README, code blocks, and demo GIF render properly.
 
 ---
 
@@ -156,3 +176,13 @@ gh release create v<X.Y.Z> dist/* \
 ```
 
 *(Prepare `release-notes.md` from the `## [<X.Y.Z>]` section of `CHANGELOG.md` before running this command.)*
+
+---
+
+## 9. Update the docs site
+
+The user guides at [askaldwin.com](https://askaldwin.com) live in the [aldwin-docs](https://github.com/lunarstack-co/aldwin-docs) repository. After the tag exists (its licence and contributing links point at the tag):
+
+1. Add `content/changelog/<X.Y.Z>.md` and, for a notable release, a post in `content/blog/`.
+2. Set `VERSION` in `src/lib/site.ts`, and update the tag in the licence and contributing links.
+3. Update any guide the release changes, then run `npm run validate`.
