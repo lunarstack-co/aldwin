@@ -98,11 +98,11 @@ Typing `/` in the composer, or pressing its apps button, opens a menu of the app
 `/settings/` sits in the `(chat)` layout, so it shares the chat's socket; the chat shell loads it only when it is opened. `?section=` names one of six sections, so Back and Forward move between them: Models, Search, Skills, Tools, Advanced and Appearance. Each section opens with a sentence on what it is for, and Providers, Search and Tools start with a line saying what is connected and what needs attention.
 
 - **Models**, **Search** and **Tools** read their lists over the socket (`models.list`, `search.list`, `connectors.list`, kept in `state/settings-store.ts`) and change them with the matching requests in `utils/settings/actions.ts`. A list that was on screen is asked for again after a reconnect.
-- **Tools** shows a search box, then Your apps (every connected app, with its status), then Browse apps: the catalogue under its category headings, without the apps already connected. Search filters both lists and drops the headings. Add a custom app opens a dialog that takes only an MCP server address; if that server asks for a sign-in or a token, the sign-in panel appears at the top of the page.
+- **Tools** shows a search box, then Your apps (every connected app, with its status), then Browse apps: the catalogue under its category headings, without the apps already connected. Search filters both lists and drops the headings. Add a custom app opens a dialog that takes only an MCP server address. Adding any app happens in one dialog that moves through connecting, sign-in when the server asks for one, then connected or failed with Try again; Cancel stops the request.
 - **Keys** go to `POST /v1/settings/secrets`. The host checks a key with the provider before saving it and answers with it masked; the page never shows or keeps a full key.
 - **Advanced** sends only the changed limits through `PATCH /v1/settings` and shows a refused field's reason beside it. The terminal reads the same settings.
 - **Appearance** (theme and how much of each chat to show) stays in the browser.
-- **Connector sign-in** follows the host's `connector.auth`: browser, paste or token. The sign-in page opens only when the user clicks it, and the panel closes when the host's time runs out.
+- **Connector sign-in** follows the host's `connector.auth`: browser, paste or token. The sign-in page opens only when the user clicks it, and the sign-in step ends when the host's time runs out.
 
 ### Approvals
 

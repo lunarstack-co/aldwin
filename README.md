@@ -1,6 +1,6 @@
 # Aldwin
 
-An open-source personal assistant that works with your files and documents, knows good habits out of the box, and runs on your own computer, in your terminal, built on [Agentling](https://agentling.dev).
+An open-source personal assistant that works with your files and documents, knows good habits out of the box, and runs on your own computer, in your terminal or your browser, built on [Agentling](https://agentling.dev).
 
 ![Aldwin 0.0.3 session: connecting a Linear workspace and asking about open issues](https://raw.githubusercontent.com/lunarstack-co/aldwin/main/docs/assets/demo.gif)
 
@@ -26,13 +26,19 @@ Or install with `pip`:
 pip install aldwin
 ```
 
-Then start Aldwin:
+Then start Aldwin in your terminal:
 
 ```bash
 aldwin
 ```
 
-Already on `0.0.4`? Upgrade in place and keep your conversation, memory, persona, and settings:
+Or open it in your browser:
+
+```bash
+aldwin web
+```
+
+Already have Aldwin? Upgrade in place and keep your conversations, memory, persona, and settings:
 
 ```bash
 uv tool upgrade aldwin
@@ -45,6 +51,31 @@ The first time you run `aldwin`, it creates a private home folder at `~/.aldwin`
 If you already have an OpenAI key from an earlier install, Aldwin keeps it and does not force you to reconfigure.
 
 After that, `aldwin` picks up your latest conversation where you left off. Type `/help` at the prompt to see what you can do. Switch models any time with `/model`.
+
+The first `aldwin web` asks the same thing in the browser: connect a model with an API key, a local model, or another server, then optionally tell Aldwin your name, your work, and how you like answers.
+
+---
+
+## Use it in your browser
+
+`aldwin web` serves Aldwin from your own computer and opens it in your browser. It comes with the normal install; there is nothing else to set up.
+
+```text
+Aldwin web is running at http://127.0.0.1:7841
+Open this link to start: http://127.0.0.1:7841/?t=…
+Press Ctrl-C to stop.
+```
+
+- **Chat** with streamed answers, and choose how much of Aldwin's work to see (Clean or Detail).
+- **Approve** file edits, commands, and app actions from a card that shows exactly what will happen.
+- **Find, rename, pin, and delete** past conversations in the sidebar.
+- **Settings** for models, search, skills, connected apps, limits, and appearance, with no files to edit.
+
+The terminal and the browser share one home folder, so conversations, memory, skills, keys, and settings are the same in both. A conversation answers in one place at a time.
+
+The server listens on this computer only, and each run prints a new one-time link. Leave the terminal open while you use it, and press `Ctrl-C` to stop. Options: `--port`, `--no-open`, `--workspace`, and `--host` (loopback addresses only).
+
+The full guide is at [askaldwin.com/docs/web](https://askaldwin.com/docs/web/install).
 
 ---
 
@@ -92,7 +123,7 @@ Supported shapes are `openai_chat`, `anthropic`, and `ollama`. Non-loopback `htt
 ## What Aldwin can do
 
 - **Files:** list, find, search, and read files in your workspace; edit or create them after showing you a diff.
-- **Documents:** read PDF, Word, PowerPoint, Excel, CSV, and HTML files as markdown, and download files from the web.
+- **Documents:** read PDF, CSV, and HTML files as markdown, plus Word, PowerPoint, and Excel with the `aldwin[office]` extra, and download files from the web.
 - **Notes and memory:** remember facts you tell it, search past notes and conversations, and keep a profile you write yourself.
 - **Persona:** change how Aldwin talks by editing `persona.md` or asking it to.
 - **Web:** search the web with SearXNG or a hosted key (`/search`), and read pages.
@@ -100,7 +131,7 @@ Supported shapes are `openai_chat`, `anthropic`, and `ollama`. Non-loopback `htt
 - **Planning:** keep a live checklist for longer jobs and do exact arithmetic and date maths.
 - **Skills:** ten built-in skills, your own skills in `~/.aldwin/skills/`, and an `@` picker to choose one for a message.
 - **Models:** switch between local and cloud providers with `/model`; see [Run it fully local](#run-it-fully-local).
-- **Connectors:** connect Notion, Linear, GitHub, and more with `/connectors`; see the [Connectors](#connectors) section below.
+- **Connectors:** connect Notion, Linear, GitHub, and more with `/connectors`, or from Settings in the browser; see the [Connectors](#connectors) section below.
 
 See the [full tool list](https://github.com/lunarstack-co/aldwin/blob/main/docs/tools.md) and the [skills guide](https://github.com/lunarstack-co/aldwin/blob/main/docs/skills.md).
 
@@ -108,11 +139,11 @@ See the [full tool list](https://github.com/lunarstack-co/aldwin/blob/main/docs/
 
 ## Connectors
 
-Aldwin can connect to your other apps as MCP servers. Add one with `/connectors`.
+Aldwin can connect to your other apps as MCP servers. Add one with `/connectors` in the terminal, or under Settings, Tools in the browser.
 
-**Catalogue:** pick Notion, Linear, GitHub, Context7, and others from the built-in catalogue. Sign in through your browser and Aldwin stores the token in `~/.aldwin/credentials` (mode 0600).
+**Catalogue:** pick from 34 apps in the built-in catalogue, including Notion, Linear, GitHub, and Context7. Sign in through your browser and Aldwin stores the token in `~/.aldwin/credentials` (mode 0600).
 
-**Any MCP server:** paste a URL to add any remote server that isn't in the catalogue.
+**Any MCP server:** paste a URL to add any remote server that isn't in the catalogue. If the server needs a sign-in, Aldwin offers a browser sign-in when the server supports one, and asks for a token when it doesn't.
 
 **Local servers:** run a server from a command, for example:
 
@@ -132,7 +163,7 @@ Local servers start only after you approve the command. They run with a minimal 
 
 Aldwin runs on your machine without a sandbox, so every tool call goes through a policy engine first:
 
-- **Reading is free, changing asks.** Read-only tools run straight away. Edits show a diff and default to **No**. Shell commands and downloads ask every time.
+- **Reading is free, changing asks.** Read-only tools run straight away. Edits show a diff and default to **No**. Shell commands and downloads ask every time. In the browser, each request is a card with Allow and Deny, and nothing runs until you click one.
 - **Secrets are off limits.** SSH keys, cloud credentials, `.env` files and similar are blocked outright, whatever you or the model ask for.
 - **Dangerous commands are refused.** `sudo`, `rm -rf /`, disk formatting and similar are refused before you're even asked.
 - **Commands get a clean environment.** API keys, tokens, and passwords in your shell are never passed to commands Aldwin runs.
@@ -156,6 +187,7 @@ Read the [safety model](https://github.com/lunarstack-co/aldwin/blob/main/docs/s
 - **Fully local:** when you use Ollama, LM Studio, or another loopback model, conversation data stays on your machine (except optional web tools, remote connectors, and the PyPI update check).
 - **Web search:** with SearXNG, the query goes to your instance (often localhost). With a hosted key, the query goes to that provider. Connect or switch with `/search`.
 - **Stays local:** everything else in `~/.aldwin`, including your API keys, saved conversations, sign-in tokens, and logs. Connector tokens never go to the model.
+- **In the browser:** `aldwin web` listens on this computer only, needs the one-time link it prints, and loads nothing from other sites.
 - **Platforms:** macOS 13+ and Linux. Local MCP servers are not supported on Windows.
 
 Read [data and privacy](https://github.com/lunarstack-co/aldwin/blob/main/docs/privacy.md) for the home folder layout and every network call Aldwin makes.
@@ -167,6 +199,7 @@ Read [data and privacy](https://github.com/lunarstack-co/aldwin/blob/main/docs/p
 | Command | What it does |
 |---|---|
 | `aldwin` | Open the chat and resume the latest conversation |
+| `aldwin web` | Open Aldwin in your browser, served from this computer only |
 | `aldwin setup` | Set or update API keys and the default model |
 | `/help` | Show slash commands and keyboard shortcuts inside the chat |
 | `Esc` | Stop the current answer |
@@ -177,7 +210,7 @@ See all [commands, slash commands, and shortcuts](https://github.com/lunarstack-
 
 ## Web search
 
-Web search works with self-hosted SearXNG or one hosted search key — all behind the same `web_search` tool. Type `/search`, pick a provider with the arrow keys, and paste its key: Aldwin checks the key with the provider before saving it, and tells you why if it doesn't work. The same screen switches provider, updates a key, or disconnects one. Step-by-step guides for every provider are at [askaldwin.com/docs/search](https://askaldwin.com/docs/search/overview); for SearXNG see also [Set up SearXNG](docs/searxng.md).
+Web search works with self-hosted SearXNG or one hosted search key, all behind the same `web_search` tool. Type `/search` (or open Settings, Search in the browser), pick a provider, and paste its key: Aldwin checks the key with the provider before saving it, and tells you why if it doesn't work. The same screen switches provider, updates a key, or disconnects one. Step-by-step guides for every provider are at [askaldwin.com/docs/search](https://askaldwin.com/docs/search/overview); for SearXNG see also [Set up SearXNG](docs/searxng.md).
 
 | Provider | Cost | Key check |
 |---|---|---|
@@ -197,7 +230,7 @@ SearXNG must expose JSON results (`format=json` / `search.formats`). Prefer Sear
 
 ## What's next
 
-Aldwin runs inside your terminal process; it isn't always-on yet. Closing the terminal stops any active task, and your conversation resumes next time you run `aldwin`. Windows is not yet supported.
+Aldwin runs while its terminal window is open, whether you started `aldwin` or `aldwin web`; it isn't always-on yet. Closing the terminal stops any active task, and your conversation resumes next time you start Aldwin. The browser interface only opens on the computer running it. Windows is not yet supported.
 
 ---
 

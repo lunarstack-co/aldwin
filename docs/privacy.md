@@ -31,6 +31,8 @@ All local data lives in `~/.aldwin`. Set `ALDWIN_HOME=/path/to/dir` to use a dif
 ```text
 ~/.aldwin/                  (mode 0700)
 ├── config.yaml             model, theme, limits, providers:, run_command.env_allow, connectors.import_paths
+├── connectors.yaml         the apps you connected (MCP servers) and each tool's setting; never holds a token
+├── credentials/            connector sign-in tokens, one file per app under mcp/ (mode 0600)
 ├── secrets.yaml            model provider keys (openai, anthropic, gemini, …) and search keys (tavily, brave, exa, …) (mode 0600)
 ├── *.yaml.lock             empty lock files for config.yaml and secrets.yaml, so two Aldwin windows never write settings at once (mode 0600)
 ├── persona.md              assistant persona (user-editable or y/n approved)

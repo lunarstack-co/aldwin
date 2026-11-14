@@ -20,6 +20,19 @@
 | `aldwin --version` | Print the installed version and protocol/Agentling versions, then exit |
 | `aldwin --help` | Show CLI flags and subcommands |
 
+## In the browser
+
+`aldwin web` prints the address it is running at and a one-time link, opens the link in your browser, and runs until you press `Ctrl-C`. A second `aldwin web` on the same home folder is refused and names the address of the first.
+
+| Option | What it does |
+|---|---|
+| `--port PORT` | Listen on this port. Without it, 7841, or any free port if 7841 is busy |
+| `--no-open` | Print the link without opening a browser |
+| `--workspace PATH` | Use this folder as the workspace for this run |
+| `--host` | `127.0.0.1` (the default), `localhost` or `::1`. Any other address is refused |
+
+The browser has no slash commands. Models, search, skills, connected apps and limits are under Settings; `@` picks a skill and `/` picks a connected app for one message. `Enter` sends, `Shift+Enter` starts a new line, and `Cmd+B` or `Ctrl+B` hides the sidebar. The guide is at [askaldwin.com/docs/web](https://askaldwin.com/docs/web/install).
+
 ## Slash commands
 
 Type `/` at the prompt for autocomplete:

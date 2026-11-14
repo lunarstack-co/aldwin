@@ -6,6 +6,52 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+Aldwin opens in your browser: `aldwin web` serves the same assistant as the terminal, from your own computer.
+
+### Added
+
+- **`aldwin web`:** a loopback server that opens Aldwin in your browser. Listens on `127.0.0.1` port 7841 (or a free port), prints a one-time link, and takes `--host`, `--port`, `--no-open` and `--workspace`. The UI ships inside the wheel, so no Node is needed to run it.
+- **Browser first run:** connect a model with an API key, a local model, or another server, then an optional profile step (first name, occupation, answer styles).
+- **Chat in the browser:** streamed answers with highlighted code, tables, Mermaid diagrams and maths; Stop, Retry and Continue; model and search pickers; a context ring; Clean and Detail views; light and dark themes.
+- **Conversations:** a sidebar with search, Pinned and Recents, a See all page grouped by date, and rename, pin and delete from each conversation's menu.
+- **Approval cards:** Allow, Always allow in this chat (where grantable) and Deny with an optional reason, shown on the step they belong to.
+- **Tool displays:** typed displays for terminal output, diffs, file lists, search results, pages, tables, memory and denials.
+- **Skills and apps per message:** `@` picks up to three skills and `/` up to three connected apps in the browser's message box.
+- **Settings in the browser:** Models, Search, Skills, Tools, Advanced (limits and the update check) and Appearance.
+- **Tools page:** connected apps first, then a library by category with one search across both, and a single dialog for connecting, signing in and retrying.
+- **Larger connector catalogue:** 34 apps, built from the MCP Registry by `scripts/connectors/import_catalog.py`, with categories.
+- **Custom connector sign-in:** a server added by URL that answers 401 gets browser sign-in when it publishes OAuth metadata, and a token prompt otherwise. Its own icon is fetched from its site and kept in `~/.aldwin/state/connector-icons/`.
+- **Protocol:** `sessions.list`, `sessions.open`, `sessions.new`, `sessions.rename`, `sessions.pin` and `sessions.delete`; a `pinned` field on conversations; `turn.apps` and `apps.used`; typed `display` on tool results; approval `call_id`; `done.context`; and REST routes under `/v1`. All additive to protocol v2.
+
+### Changed
+
+- **Shared home, two doors:** the terminal and the browser run as separate processes on one home folder. A conversation is locked while a turn runs, so it answers in one place at a time.
+- **Settings reload before each turn,** and writes to `config.yaml` and `secrets.yaml` are locked, so a change in one door applies in the other without a restart.
+- **Approvals survive a dropped connection:** a waiting approval can be answered after the browser reconnects; one asked while no page is attached is denied.
+- **Base instructions:** finish the job, retry or change approach after a failure, respect a declined approval, and look up connector tools first.
+- **Docs:** README, contributing, safety, privacy, commands, releasing, manual test and tests docs cover the browser. `SECURITY.md` now says how to report a vulnerability.
+
+### Security
+
+- `aldwin web` refuses any non-loopback host. Every `/v1` route checks the session cookie, `Host`, `Origin` and `Sec-Fetch-Site`.
+- The session cookie is HttpOnly and SameSite=Strict, and the token is removed from the address bar after sign-in.
+- The WebSocket needs a single-use ticket that lasts 30 seconds, and only one browser tab is connected at a time.
+- API keys saved from the browser are checked with the provider first and only ever returned masked.
+- Connector icons are fetched without credentials, from the app's own host or parent domain only, and served with a sandboxing CSP.
+
+### Upgrade notes
+
+- Upgrading from `0.0.5` keeps sessions, notes, memory index, approvals, connectors, persona, keys, and settings. No home migration runs.
+- Run `uv tool upgrade aldwin`, then `aldwin web`.
+
+### Known limitations
+
+- The browser interface only opens on the computer running `aldwin web`.
+- No attachments, dictation, or editing of sent messages in the browser.
+- The workspace cannot be changed from the browser; restart with `--workspace`.
+- Tool displays are live only: after a reload, past tool rows are plain.
+- Windows is not supported. Local MCP servers remain unsupported on Windows.
+
 ## [0.0.5] - 2026-11-07
 
 Aldwin can search the web your way — self-hosted SearXNG or a hosted key — all behind the same `web_search` tool.
