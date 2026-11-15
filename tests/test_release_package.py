@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -24,6 +25,8 @@ from aldwin.cli.main import app
 from aldwin.core.home import STARTER_ASSETS
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+# The version being released; the archive names and paths below follow it.
+VERSION = "0.0.6"
 # 4 MiB leaves room for the bundled web UI, its fonts and its lazily loaded renderers.
 MAX_DIST_BYTES = 4_194_304
 MAX_GIF_BYTES = 5_242_880  # 5 MB NFR GIF size cap
@@ -106,15 +109,15 @@ def built_distributions(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path,
 
 
 @pytest.mark.uninitialized_home
-def test_version_is_0_0_5(aldwin_home: Path) -> None:
-    """Pyproject.toml, aldwin.__version__, and `aldwin --version` are 0.0.5."""
+def test_version_matches_the_release(aldwin_home: Path) -> None:
+    """Pyproject.toml, aldwin.__version__, and `aldwin --version` agree on VERSION."""
     pyproject_data = tomllib.loads(
         (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )
-    assert pyproject_data["project"]["version"] == "0.0.5"
-    assert aldwin.__version__ == "0.0.5"
+    assert pyproject_data["project"]["version"] == VERSION
+    assert aldwin.__version__ == VERSION
     expected = (
-        f"aldwin 0.0.5 (protocol v2, agentling {metadata.version('agentling')},"
+        f"aldwin {VERSION} (protocol v2, agentling {metadata.version('agentling')},"
         f" mcp {metadata.version('mcp')})"
     )
 
@@ -176,8 +179,8 @@ def test_build_produces_sdist_and_wheel_under_4mib(
 ) -> None:
     """Sdist and wheel stay under the 4 MiB budget."""
     wheel_path, sdist_path = built_distributions
-    assert wheel_path.name == "aldwin-0.0.5-py3-none-any.whl"
-    assert sdist_path.name == "aldwin-0.0.5.tar.gz"
+    assert wheel_path.name == f"aldwin-{VERSION}-py3-none-any.whl"
+    assert sdist_path.name == f"aldwin-{VERSION}.tar.gz"
 
     assert 0 < wheel_path.stat().st_size < MAX_DIST_BYTES
     assert 0 < sdist_path.stat().st_size < MAX_DIST_BYTES
@@ -206,7 +209,7 @@ def test_wheel_and_sdist_include_assets_and_exclude_dev_files(
         sdist_names = set(tf.getnames())
 
     for asset in EXPECTED_WHEEL_ASSETS:
-        expected_sdist_entry = f"aldwin-0.0.5/src/{asset}"
+        expected_sdist_entry = f"aldwin-{VERSION}/src/{asset}"
         assert expected_sdist_entry in sdist_names, (
             f"Missing {expected_sdist_entry} in sdist"
         )
@@ -217,10 +220,10 @@ def test_wheel_and_sdist_include_assets_and_exclude_dev_files(
         "CHANGELOG.md",
         "pyproject.toml",
     ):
-        assert f"aldwin-0.0.5/{required_root_file}" in sdist_names
+        assert f"aldwin-{VERSION}/{required_root_file}" in sdist_names
 
     for entry in sdist_names:
-        rel_entry = entry.removeprefix("aldwin-0.0.5/")
+        rel_entry = entry.removeprefix(f"aldwin-{VERSION}/")
         for forbidden in FORBIDDEN_ARCHIVE_PREFIXES:
             assert not rel_entry.startswith(forbidden), (
                 f"Forbidden path {entry!r} leaked into sdist"
@@ -254,7 +257,8 @@ def test_wheel_ships_web_export_but_not_the_web_project(
 
     with tarfile.open(sdist_path, "r:gz") as tf:
         sdist_names = tf.getnames()
-    assert not any(n.startswith("aldwin-0.0.5/web/") for n in sdist_names)
+    assert any(n.startswith(f"aldwin-{VERSION}/") for n in sdist_names)
+    assert not any(n.startswith(f"aldwin-{VERSION}/web/") for n in sdist_names)
 
 
 def test_wheel_assets_loadable_from_unpacked_package(
@@ -443,6 +447,40 @@ def test_docs_index_links_every_doc() -> None:
         assert Path(doc).name in index, f"docs/README.md does not link to {doc}"
 
 
+def test_changelog_0_0_6_entry() -> None:
+    """CHANGELOG.md has a complete, dated 0.0.6 entry for the browser and long chats."""
+    changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "## [0.0.6] - 2026-11-16" in changelog
+    assert "https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.6" in changelog
+    assert "## [Unreleased]" not in changelog
+
+    start = changelog.index("## [0.0.6]")
+    end = changelog.index("## [0.0.5]")
+    section = changelog[start:end]
+    for heading in (
+        "### Added",
+        "### Changed",
+        "### Removed",
+        "### Fixed",
+        "### Security",
+        "### Upgrade notes",
+        "### Known limitations",
+    ):
+        assert heading in section, f"Missing {heading!r} in the 0.0.6 changelog entry"
+    for snippet in (
+        "aldwin web",
+        "--no-open",
+        "Long conversations",
+        "Make room now",
+        "/compact",
+        "context_compact_percent",
+        "this_conversation",
+    ):
+        assert snippet in section, f"Missing {snippet!r} in the 0.0.6 changelog entry"
+    assert "co-authored-by" not in section.lower()
+    assert "generated with" not in section.lower()
+
+
 def test_changelog_0_0_5_entry() -> None:
     """CHANGELOG.md has a complete 0.0.5 entry for multi-provider web search."""
     changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -588,6 +626,8 @@ def test_docs_protocol_manual_test_and_releasing_present() -> None:
     assert "Step 13" in manual_doc
     assert "Release checklist" in manual_doc
     assert "Step 20" in manual_doc
+    assert "### Step 22: The browser (`aldwin web`)" in manual_doc
+    assert "### Step 23: Long conversations" in manual_doc
     for cmd in (
         "uv build",
         "twine check",
@@ -596,6 +636,43 @@ def test_docs_protocol_manual_test_and_releasing_present() -> None:
         "gh release create",
     ):
         assert cmd in releasing_doc, f"Missing {cmd!r} in docs/releasing.md"
+
+
+def test_docs_cover_the_web_door() -> None:
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    commands = (REPO_ROOT / "docs" / "commands.md").read_text(encoding="utf-8")
+    for snippet in ("aldwin web", "--no-open", "127.0.0.1", "one-time link"):
+        assert snippet in readme, f"Missing {snippet!r} in README.md"
+    for snippet in ("--no-open", "--host"):
+        assert snippet in commands, f"Missing {snippet!r} in docs/commands.md"
+
+
+def test_privacy_doc_covers_the_session_link_and_wiping_both_apps() -> None:
+    privacy = (REPO_ROOT / "docs" / "privacy.md").read_text(encoding="utf-8")
+    assert "Anyone holding that link or cookie can use Aldwin as you" in privacy
+    assert "aldwin uninstall --purge" in privacy
+    assert (
+        "The terminal and the browser share this folder, so deleting it removes "
+        "both apps' conversations, memory, keys and settings."
+    ) in privacy
+
+
+def test_protocol_doc_covers_sessions_and_status() -> None:
+    protocol = (REPO_ROOT / "docs" / "protocol.md").read_text(encoding="utf-8")
+    for snippet in (
+        "sessions.list",
+        "sessions.open",
+        "sessions.new",
+        "sessions.rename",
+        "sessions.pin",
+        "sessions.delete",
+        "turn_streamed_chunks",
+        "partial_text",
+        "active_tool",
+        "/v1/ws",
+        "From `0.1` onward",
+    ):
+        assert snippet in protocol, f"Missing {snippet!r} in docs/protocol.md"
 
 
 def test_docs_have_honest_limitations_and_zero_attribution() -> None:
@@ -690,11 +767,20 @@ def test_release_workflow_permissions_and_version_guard() -> None:
     assert any("tag matches pyproject.toml" in name for name in step_names)
 
 
-def test_release_workflow_builds_spa_before_uv_build() -> None:
-    """Release builds the web UI with Node before `uv build`."""
+WHEEL_CHECK_STEP = "Check the wheel carries the built UI"
+BUILT_INDEX = '<html><script src="/_next/static/chunks/main.js"></script></html>'
+
+
+def _release_build_steps() -> list[dict[str, Any]]:
     workflow_path = REPO_ROOT / ".github" / "workflows" / "release.yml"
     data: dict[str, Any] = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
     steps: list[dict[str, Any]] = data["jobs"]["build"]["steps"]
+    return steps
+
+
+def test_release_workflow_tests_the_tree_then_builds_the_ui() -> None:
+    """Tests run on the committed tree; the UI is built only for the wheel."""
+    steps = _release_build_steps()
 
     def index_of(predicate: Callable[[dict[str, Any]], bool]) -> int:
         matches = [i for i, step in enumerate(steps) if predicate(step)]
@@ -702,13 +788,72 @@ def test_release_workflow_builds_spa_before_uv_build() -> None:
         return matches[0]
 
     node = index_of(lambda s: s.get("uses", "").startswith("actions/setup-node@"))
-    spa = index_of(lambda s: "npm run build" in s.get("run", ""))
     tests = index_of(lambda s: "pytest" in s.get("run", ""))
+    spa = index_of(lambda s: "npm run build" in s.get("run", ""))
     uv_build = index_of(lambda s: s.get("run", "").strip() == "uv build")
+    check = index_of(lambda s: s.get("name") == WHEEL_CHECK_STEP)
 
-    assert node < spa < tests < uv_build
+    assert tests < spa < uv_build < check
+    assert node < spa
     assert steps[node]["with"]["node-version"] == "22"
     spa_step = steps[spa]
     assert spa_step["working-directory"] == "web"
     assert "npm ci" in spa_step["run"]
     assert "test -f ../src/aldwin/web/static/index.html" in spa_step["run"]
+
+
+def _fake_wheel(root: Path, index_html: str, *, padding_bytes: int = 0) -> Path:
+    dist = root / "dist"
+    dist.mkdir()
+    wheel = dist / f"aldwin-{VERSION}-py3-none-any.whl"
+    with zipfile.ZipFile(wheel, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("aldwin/web/static/index.html", index_html)
+        zf.writestr("aldwin/web/static/_next/static/chunks/main.js", "void 0;")
+        if padding_bytes:
+            # Random bytes, stored uncompressed, so the wheel really is this big.
+            info = zipfile.ZipInfo("aldwin/web/static/padding.bin")
+            zf.writestr(info, os.urandom(padding_bytes))
+    return wheel
+
+
+def _run_wheel_check(root: Path) -> subprocess.CompletedProcess[str]:
+    script = next(
+        s["run"] for s in _release_build_steps() if s.get("name") == WHEEL_CHECK_STEP
+    )
+    # The step runs python3; this test's interpreter stands in for the runner's.
+    path = f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"
+    return subprocess.run(
+        ["bash", "-c", script],
+        cwd=root,
+        env={**os.environ, "PATH": path},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_release_wheel_check_rejects_the_placeholder(tmp_path: Path) -> None:
+    _fake_wheel(tmp_path, '<div data-testid="aldwin-stub">Aldwin</div>')
+
+    proc = _run_wheel_check(tmp_path)
+
+    assert proc.returncode != 0
+    assert "the wheel carries the placeholder page" in proc.stderr
+
+
+def test_release_wheel_check_accepts_a_built_ui(tmp_path: Path) -> None:
+    _fake_wheel(tmp_path, BUILT_INDEX)
+
+    proc = _run_wheel_check(tmp_path)
+
+    assert proc.returncode == 0, proc.stderr
+
+
+def test_release_wheel_check_enforces_the_size_limit(tmp_path: Path) -> None:
+    wheel = _fake_wheel(tmp_path, BUILT_INDEX, padding_bytes=4_500_000)
+
+    proc = _run_wheel_check(tmp_path)
+
+    assert proc.returncode != 0
+    assert f"the wheel is {wheel.stat().st_size} bytes" in proc.stderr
+    assert f"the limit is {MAX_DIST_BYTES:,}" in proc.stderr

@@ -5,7 +5,7 @@ from importlib.metadata import PackageNotFoundError, version
 try:
     __version__ = version("aldwin")
 except PackageNotFoundError:
-    __version__ = "0.0.5"
+    __version__ = "0.0.6"
 
 
 def format_version_string() -> str:

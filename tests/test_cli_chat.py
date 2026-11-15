@@ -213,8 +213,8 @@ async def test_prompt_input_bindings_empty_ignored_and_toolbar(
     )
     # gpt-4o window 128k → 15% left needs ~108_800 used; 8% needs ~117_760.
     warn = to_plain_text(format_toolbar_model_segment("gpt-4o", 108_800, plain=True))
-    assert "15% context left" in warn
-    assert "/new to start fresh" in warn
+    assert "15% context left · /compact to make room" in warn
+    assert "/new to start fresh" not in warn
     assert "warn" in warn
     warn_ft = format_toolbar_model_segment("gpt-4o", 108_800, plain=True)
     assert any(
@@ -620,6 +620,13 @@ def test_whats_new_due_matrix(aldwin_home: Path) -> None:
     assert whats_new_due(aldwin_home, "0.0.4") is False
     assert whats_new_due(aldwin_home, "0.0.4.1") is False
 
+    mark_whats_new_seen(aldwin_home, "0.0.5")
+    assert whats_new_due(aldwin_home, "0.0.6") is True
+
+    mark_whats_new_seen(aldwin_home, "0.0.6")
+    assert whats_new_due(aldwin_home, "0.0.6") is False
+    assert whats_new_due(aldwin_home, "0.0.6.1") is False
+
 
 def test_mark_whats_new_seen_persists_and_preserves_comments(aldwin_home: Path) -> None:
     """Mark_whats_new_seen writes last_seen_version and keeps comments."""
@@ -643,16 +650,16 @@ def test_render_whats_new_if_due_shows_once(aldwin_home: Path) -> None:
     renderer = ChatRenderer(console, plain=False)
 
     shown = render_whats_new_if_due(
-        renderer, home=aldwin_home, current_version="0.0.2", boot_created=False
+        renderer, home=aldwin_home, current_version="0.0.6", boot_created=False
     )
     assert shown is True
-    assert "What's new" in console.export_text()
+    assert "What's new in 0.0.6" in console.export_text()
 
     buf2 = io.StringIO()
     console2 = create_console(plain=False, width=80, record=True, file=buf2)
     renderer2 = ChatRenderer(console2, plain=False)
     shown_again = render_whats_new_if_due(
-        renderer2, home=aldwin_home, current_version="0.0.2", boot_created=False
+        renderer2, home=aldwin_home, current_version="0.0.6", boot_created=False
     )
     assert shown_again is False
     assert "What's new" not in console2.export_text()
@@ -698,10 +705,10 @@ def test_render_whats_new_copy_and_plain_mode() -> None:
     buf = io.StringIO()
     console = create_console(plain=True, width=80, record=True, file=buf)
     renderer = ChatRenderer(console, plain=True)
-    renderer.render_whats_new(WHATS_NEW_TEXT, version="0.0.5")
+    renderer.render_whats_new(WHATS_NEW_TEXT, version="0.0.6")
     text = console.export_text()
-    assert "What's new in 0.0.5" in text
-    assert "Web search your way" in text
-    assert "/search" in text
-    assert "SearXNG" in text
-    assert "Conversation, memory and settings" in text
+    assert "What's new in 0.0.6" in text
+    assert "aldwin web" in text
+    assert "/compact" in text
+    assert "Conversations, memory and settings are kept." in text
+    assert "Web search your way" not in text

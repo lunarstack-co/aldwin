@@ -4,7 +4,7 @@ All notable changes to Aldwin are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.0.6] - 2026-11-16
 
 Aldwin opens in your browser, and long chats keep going: `aldwin web` serves the same assistant as the terminal from your own computer, and when a chat gets long, Aldwin writes itself notes on the older part instead of forgetting it.
 
@@ -61,6 +61,7 @@ Aldwin opens in your browser, and long chats keep going: `aldwin web` serves the
 
 - Upgrading from `0.0.5` keeps sessions, notes, memory index, approvals, connectors, persona, keys, and settings. No home migration runs.
 - Run `uv tool upgrade aldwin`, then `aldwin web`.
+- Homes made by `0.0.5` have `max_steps: 15` in `config.yaml`, and it is kept. To use the new default of 50, change Steps per answer under Settings, Advanced.
 
 ### Known limitations
 
@@ -302,6 +303,7 @@ First public release of Aldwin: an open-source personal assistant that runs on y
 - **Fixed built-in toolset:** includes the five built-in tools (`web_search`, `web_fetch`, `run_command`, `remember`, `recall`); custom code tools cannot be added in `0.0.1` (drop-in Markdown skills in `~/.aldwin/skills/` are supported).
 - **macOS and Linux only:** requires Python `3.11+` on macOS or Linux. Windows is not supported yet.
 
+[0.0.6]: https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.6
 [0.0.5]: https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.5
 [0.0.4]: https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.4
 [0.0.3]: https://github.com/lunarstack-co/aldwin/releases/tag/v0.0.3

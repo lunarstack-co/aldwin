@@ -8,9 +8,12 @@ from aldwin.cli.tips import TIPS, next_tip
 
 
 def test_tips_count_and_themes() -> None:
-    """Sixteen tips across core discoverability themes."""
-    assert len(TIPS) == 16
+    """Seventeen tips across core discoverability themes."""
+    assert len(TIPS) == 17
     assert "Switch between cloud and local models any time with /model." in TIPS
+    assert "Open Aldwin in your browser with aldwin web" in TIPS
+    assert "Long chats make room on their own · /compact does it now" in TIPS
+    assert "Use /new when context gets tight" not in TIPS
     assert "Connect web search with /search — SearXNG or a hosted key." in TIPS
     joined = " ".join(TIPS).lower()
     for needle in (
