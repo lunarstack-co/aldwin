@@ -1,9 +1,9 @@
 # Aldwin protocol (`v2`)
 
-Aldwin separates its **brain** (`aldwin.core`) from its **doors** (`aldwin.cli`, and later desktop, browser extension, or Telegram) with a small, typed message contract in `aldwin.protocol`.
+Aldwin separates its **brain** (`aldwin.core`) from its **doors** (`aldwin.cli` and `aldwin.web` today; later desktop, browser extension, or Telegram) with a small, typed message contract in `aldwin.protocol`.
 
 - **The one rule:** a door never imports `aldwin.core` or `agentling`. It talks to the host exclusively through `AldwinClient` and `aldwin.protocol`.
-- **Transport:** in `0.0.1`, client and host exchange messages in-process over `InProcessTransport` (`asyncio.Queue` pair with JSON validation). From `0.1` onward, the daemon uses newline-delimited JSON over `~/.aldwin/aldwin.sock` with the exact same messages.
+- **Transport:** the terminal's client and host exchange messages in-process over `InProcessTransport` (`asyncio.Queue` pair with JSON validation). The browser sends the same messages as JSON text frames over a WebSocket; see [The browser's WebSocket](#the-browsers-websocket). From `0.1` onward, the daemon uses newline-delimited JSON over `~/.aldwin/aldwin.sock` with the exact same messages.
 - **Host transport contract:** the host talks to every door through `HostTransport` (`aldwin.host.transport`). Two properties keep a dropped connection apart from a shutdown:
   - `closed` is permanent. It becomes true only when the host shuts the transport down, and only then does `receive_request()` return `None`. A transport must never return `None` because a peer disconnected: the host would stop serving and deny every pending approval.
   - `attached` reports whether a peer is connected right now. A door whose peer can drop and come back, such as a browser tab, sets `attached` to false on disconnect and back to true on reconnect, without closing the transport. Approvals already waiting stay open and can be answered after reconnecting, and the door may send `hello` again. A new approval asked while no peer is attached is denied with `no_approver`. For the in-process CLI transport, `attached` is simply "not closed".
@@ -183,7 +183,7 @@ The browser door also reads and writes a few documents over plain HTTP. These ro
 | `GET /v1/health`, `GET /v1/home` | Version and the Aldwin home folder. |
 | `GET /v1/conversations` | Saved conversations newest first (`id`, `created_at`, `updated_at`, `model`, `title`, `interrupted`, `pinned`). Conversations with no turns are left out. |
 | `GET /v1/conversations/search?q=` | Saved conversations whose messages hold every word of `q` (a word also matches longer words it starts), best match first: `items` of `{id, snippet}`. Empty when `q` is blank. |
-| `GET /v1/conversations/{id}` | The conversation file exactly as saved in `sessions/`, or 404. |
+| `GET /v1/conversations/{id}` | The conversation file as saved in `sessions/`, without Aldwin's notes on a long chat (`compaction`), or 404. |
 | `GET /v1/connectors/{name}/icon` | A connected app's own icon as an image, or 404 when none is saved. Sent with `nosniff` and a sandboxing `Content-Security-Policy`, so an SVG cannot run scripts. |
 | `GET /v1/settings` | `model`, `check_for_updates`, `limits`, `limit_rules`, `search` and every key masked with its source. `limit_rules` gives each limit the settings page edits its `default`, `min` and `max`: defaults and minimums come from the config schema, and maximums are what the page allows. `config.yaml` itself can hold larger values. |
 | `PATCH /v1/settings` | Changes `model`, `check_for_updates`, `limits.*` or `search.provider`/`search.searxng_url`. Any other field, keys included, is a 400 and nothing is written, and so is a limit above its `limit_rules` maximum. |

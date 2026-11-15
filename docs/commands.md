@@ -20,6 +20,19 @@
 | `aldwin --version` | Print the installed version and protocol/Agentling versions, then exit |
 | `aldwin --help` | Show CLI flags and subcommands |
 
+## In the browser
+
+`aldwin web` prints the address it is running at and a one-time link, opens the link in your browser, and runs until you press `Ctrl-C`. A second `aldwin web` on the same home folder is refused and names the address of the first.
+
+| Option | What it does |
+|---|---|
+| `--port PORT` | Listen on this port. Without it, 7841, or any free port if 7841 is busy |
+| `--no-open` | Print the link without opening a browser |
+| `--workspace PATH` | Use this folder as the workspace for this run |
+| `--host` | `127.0.0.1` (the default), `localhost` or `::1`. Any other address is refused |
+
+The browser has no slash commands. Models, search, skills, connected apps and limits are under Settings; `@` picks a skill and `/` picks a connected app for one message, and **Make room now** in the context ring does what `/compact` does. `Enter` sends, `Shift+Enter` starts a new line, and `Cmd+B` or `Ctrl+B` hides the sidebar. The guide is at [askaldwin.com/docs/web](https://askaldwin.com/docs/web/install).
+
 ## Slash commands
 
 Type `/` at the prompt for autocomplete:
@@ -37,7 +50,7 @@ Type `/` at the prompt for autocomplete:
 | `/search status` | Print the text summary of every provider |
 | `/persona` | Show the active persona and `~/.aldwin/persona.md` character count |
 | `/memory` | Show profile, recent notes, and index status (`N notes · M conversations indexed · index <size>`) |
-| `/skills` | List catalogue skills (`name · source · description`); `/skills show <name>` prints the body |
+| `/skills` | List catalogue skills (`name · source · summary`, or the description when a skill has no summary); `/skills show <name>` prints the body |
 | `@` | Skill picker in the chat input (recent first, Tab to insert); picked skills apply to that message only |
 | `/todo` | Show the current multi-step task checklist for this session |
 | `/workspace` | Show the workspace folder, or switch it with `/workspace <path>` |

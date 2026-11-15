@@ -20,8 +20,8 @@ pip install "aldwin[docs]"
 
 ## Using skills
 
-- Type `@` in chat to pick a skill for the current message (up to three, most recent first, `Tab` to insert). Picked skills apply to that message only.
-- List skills with `/skills` in chat or `aldwin skills` in the terminal.
+- Type `@` in chat to pick a skill for the current message (up to three, most recent first, `Tab` to insert). Picked skills apply to that message only. The browser's message box has the same `@` menu.
+- List skills with `/skills` in chat, `aldwin skills` in the terminal, or Settings, Skills in the browser.
 - Show one skill's body with `/skills show <name>`.
 
 ## Writing your own

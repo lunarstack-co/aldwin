@@ -6,36 +6,71 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+Aldwin opens in your browser, and long chats keep going: `aldwin web` serves the same assistant as the terminal from your own computer, and when a chat gets long, Aldwin writes itself notes on the older part instead of forgetting it.
+
 ### Added
 
+- **`aldwin web`:** a loopback server that opens Aldwin in your browser. Listens on `127.0.0.1` port 7841 (or a free port), prints a one-time link, and takes `--host`, `--port`, `--no-open` and `--workspace`. The UI ships inside the wheel, so no Node is needed to run it.
+- **Browser first run:** connect a model with an API key, a local model, or another server, then an optional profile step (first name, occupation, answer styles).
+- **Chat in the browser:** streamed answers with highlighted code, tables, Mermaid diagrams and maths; Stop, Retry and Continue; model and search pickers; a context ring; Clean and Detail views; light and dark themes.
+- **Conversations:** a sidebar with search, Pinned and Recents, a See all page grouped by date, and rename, pin and delete from each conversation's menu. Search finds chats by the words in their messages as well as their titles, and shows the matching words.
+- **Approval cards:** Allow, Always allow in this chat (where grantable) and Deny with an optional reason, shown on the step they belong to.
+- **Tool displays:** typed displays for terminal output, diffs, file lists, search results, pages, tables, memory and denials.
+- **Skills and apps per message:** `@` picks up to three skills and `/` up to three connected apps in the browser's message box.
+- **Settings in the browser:** Models, Search, Skills, Tools, Advanced, Appearance and About. Advanced groups the limits with their units and defaults, checks each value against its allowed range, and keeps Save and Discard in a bar while there are edits; Reset to defaults puts every field back. About shows the running version and the update check.
+- **Tools page:** connected apps first, then a library by category with one search across both, and a single dialog for connecting, signing in and retrying.
+- **Larger connector catalogue:** 34 apps, built from the MCP Registry by `scripts/connectors/import_catalog.py`, with categories.
+- **Custom connector sign-in:** a server added by URL that answers 401 gets browser sign-in when it publishes OAuth metadata, and a token prompt otherwise. Its own icon is fetched from its site and kept in `~/.aldwin/state/connector-icons/`.
 - **Long conversations:** when a chat fills 60% of what the model can read, Aldwin makes room instead of forgetting. It shortens old tool results first, then writes itself notes on older messages with the model in use, and keeps the recent part word for word. After making room, the chat takes about 10% of what the model can read: the notes up to 4% (at most 4,000 tokens), the recent part the rest (at most 40,000 tokens). If the notes can't be written, it leaves the oldest messages out of the model's view and says so. Every message stays on screen, in `/history` and in search.
-- **Make room now:** `/compact` in the terminal, and **Make room now** in the browser's context ring, do it on request. If the notes can't be written, it says so and changes nothing. Protocol request `compact`.
+- **Make room now:** `/compact` in the terminal, and **Make room now** in the browser's context ring, do it on request. If the notes can't be written, it says so and changes nothing.
 - **`recall` in this chat:** `recall` takes `scope="this_conversation"` to find the exact words of earlier messages and tool results in the current chat.
 - **When to make room:** `limits.context_compact_percent` (60 to 90, default 60), also under Settings, Advanced, as "Summarise older messages at".
+- **Skill summaries:** skills can carry a plain one-line `summary`, which the `@` menu, Settings and `/skills` show instead of the description written for the model. The built-in skills all have one.
+- **Protocol:** `sessions.list`, `sessions.open`, `sessions.new`, `sessions.rename`, `sessions.pin` and `sessions.delete`; a `pinned` field on conversations; `turn.apps` and `apps.used`; typed `display` on tool results; approval `call_id`; `done.context` and `history.context`; `compact`; a `topic` on notices (`room` when Aldwin made room); a `summary` on skills; and REST routes under `/v1`, including conversation search and `limit_rules` in the settings. All additive to protocol v2.
 
 ### Changed
 
+- **Shared home, two doors:** the terminal and the browser run as separate processes on one home folder. A conversation is locked while a turn runs, so it answers in one place at a time.
+- **Settings reload before each turn,** and writes to `config.yaml` and `secrets.yaml` are locked, so a change in one door applies in the other without a restart.
+- **Approvals survive a dropped connection:** a waiting approval can be answered after the browser reconnects; one asked while no page is attached is denied.
+- **Base instructions:** finish the job, retry or change approach after a failure, respect a declined approval, and look up connector tools first.
 - **No 20-message memory:** Aldwin no longer forgets everything older than the last 20 exchanges (8 on local models). `limits.context_exchanges` is still accepted and ignored.
-- **Local models:** room is measured against the window Aldwin actually asks Ollama for, because Ollama cuts over-long requests silently.
-- **Removed:** the terminal's "Context nearly full" notice, which no longer applies.
 - **Steps per answer:** `limits.max_steps` now defaults to 50 instead of 15, with no upper limit. A `config.yaml` that already sets a value keeps it, and local models still stop at 15.
-- **Settings, Advanced, redesigned:** settings are grouped into What Aldwin reads, Long chats and Per-message limits, one per row, each with its unit and its default. "Summarise older messages at" is a slider from 60% to 90%. Values outside the allowed range show an error under the field and can't be saved; steps go up to 1,000 from the page, while `config.yaml` can still hold more. A bar at the bottom offers Save and Discard while there are edits, and Reset to defaults puts every field back. Rows stack on phones, and controls are at least 44px tall there.
-- **Settings, About:** a new section shows the running version and holds "Check for updates", which moved from Advanced and saves as soon as it is switched.
-- **`GET /v1/settings`** adds `limit_rules`, the default and allowed range of each limit the page edits.
-- **Search history by what was said:** Search history in the browser now finds chats by the words in their messages, not just their titles, and shows the matching words under each chat. Host route `GET /v1/conversations/search`.
-- **Skill summaries:** skills can carry a plain one-line `summary`, which the `@` menu, Settings and `/skills` show instead of the description written for the model. The built-in skills all have one.
-- **Quiet room-making:** the browser no longer shows a toast when Aldwin makes room; the working line already shows it. Notices about making room carry `topic: "room"`.
+- **Hosted models:** OpenAI-compatible providers (OpenAI, DeepSeek, OpenRouter) count as 128,000 tokens and Anthropic as 200,000 from the start of a run, so Aldwin can make room before the model list has been fetched.
+- **Local models:** room is measured against the window Aldwin actually asks Ollama for, because Ollama cuts over-long requests silently.
+- **Docs:** README, contributing, safety, privacy, commands, releasing, manual test and tests docs cover the browser. `SECURITY.md` now says how to report a vulnerability.
+
+### Removed
+
+- The terminal's "Context nearly full" notice: Aldwin now makes room on its own.
 
 ### Fixed
 
 - **Long chats lost messages:** when a provider refused a request as too long, Aldwin deleted the oldest exchange from the saved chat, so it vanished from the screen and from search, and the typed text of later messages shifted. Nothing is deleted now.
-- **Context ring and room-making on hosted models:** OpenAI-compatible providers (OpenAI, DeepSeek, OpenRouter) and Anthropic now count as 128,000 and 200,000 tokens from the start of a run. Before, Aldwin only knew the size after the model list had been fetched, so the ring stayed hidden and no room was made ahead of time.
-- **Context ring after a reload:** the browser's context ring now comes back after a page reload, and updates after switching model or making room. The host sends it with `history` and with the replies to `set_model` and `compact`.
-- **Context ring jumping on reopen:** reopening a chat, or restarting Aldwin, no longer moves the ring several percent with nothing changed. The provider's count for the last request is saved with the chat (`measured` in the session file) and reused while the model and what it sees stay the same.
-- **Save bar covering a setting:** on Settings, Advanced, the save bar no longer hides the setting being edited, or its error, when that setting sits at the bottom of the screen.
-- **Making room out of view:** Make room now scrolls its progress line into view when the chat is scrolled up.
-- **Phone sidebar buttons overlapping:** in the phone sidebar, the close button now sits beside Search instead of on top of it.
-- **"1 conversations":** the history count reads "1 conversation".
+
+### Security
+
+- `aldwin web` refuses any non-loopback host. Every `/v1` route checks the session cookie, `Host`, `Origin` and `Sec-Fetch-Site`.
+- The session cookie is HttpOnly and SameSite=Strict, and the token is removed from the address bar after sign-in.
+- The WebSocket needs a single-use ticket that lasts 30 seconds, and only one browser tab is connected at a time.
+- API keys saved from the browser are checked with the provider first and only ever returned masked.
+- Connector icons are fetched without credentials, from the app's own host or parent domain only, and served with a sandboxing CSP.
+- Aldwin's notes on a long chat are written with no tools, framed as background rather than instructions, and have secrets redacted. A file read only in the older part of a chat must be read again before Aldwin edits it.
+
+### Upgrade notes
+
+- Upgrading from `0.0.5` keeps sessions, notes, memory index, approvals, connectors, persona, keys, and settings. No home migration runs.
+- Run `uv tool upgrade aldwin`, then `aldwin web`.
+
+### Known limitations
+
+- The browser interface only opens on the computer running `aldwin web`.
+- No attachments, dictation, or editing of sent messages in the browser.
+- The workspace cannot be changed from the browser; restart with `--workspace`.
+- Tool displays are live only: after a reload, past tool rows are plain.
+- Windows is not supported. Local MCP servers remain unsupported on Windows.
+- Aldwin makes room before each message, not in the middle of one long task.
+- A hosted OpenAI-compatible model that holds fewer than 128,000 tokens can refuse a long chat before Aldwin makes room for it.
 
 ## [0.0.5] - 2026-11-07
 

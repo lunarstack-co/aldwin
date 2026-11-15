@@ -37,7 +37,7 @@ Coverage floor: CI `--cov-fail-under=90` overall; aim ≥85% line on `core/`/`ho
 | Settings | `limits.context_compact_percent` 60 to 90; old `context_exchanges` ignored | `tests/test_settings.py`, `tests/test_web_rest.py` |
 | Doors | `/compact` and Make room now | `tests/test_cli_chat.py`, `web/playwright/make-room.spec.ts` |
 | Hook speed | A 500-step view applied cheaply | `tests/perf/test_budgets.py` |
-| Manual run | Long chats on a hosted and a local model | `docs/manual-test.md` Step 22 |
+| Manual run | Long chats on a hosted and a local model | `docs/manual-test.md` Step 23 |
 
 ## Security, policy, e2e, perf (this change)
 
