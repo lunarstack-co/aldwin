@@ -1,6 +1,7 @@
 ---
 name: files
 description: Find, read, edit, create, move and tidy files without losing data. Use before any search, read, edit, write or reorganisation of files.
+summary: Finds, reads, edits and tidies files on your computer without losing anything.
 ---
 
 # Files

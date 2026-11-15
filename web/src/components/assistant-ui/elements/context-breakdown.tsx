@@ -21,8 +21,9 @@ export function ContextBreakdown({
   headroomLabel = "Headroom",
   formatTokens,
   className,
+  children,
   ...props
-}: Omit<ComponentProps<"div">, "children" | "segments" | "limit" | "title"> & {
+}: Omit<ComponentProps<"div">, "segments" | "limit" | "title"> & {
   segments: readonly ContextSegment[];
   limit: number;
   usedOverride?: number | undefined;
@@ -126,6 +127,12 @@ export function ContextBreakdown({
           </span>
         </div>
       </div>
+
+      {children ? (
+        <div data-slot="context-breakdown-footer" className="border-border/60 flex flex-col gap-2 border-t pt-3">
+          {children}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -14,6 +14,7 @@ from pydantic import SecretStr
 
 from aldwin.core.home import atomic_write, ensure_home
 from aldwin.core.settings import (
+    RETIRED_LIMITS,
     AldwinConfig,
     ConfigError,
     LimitsConfig,
@@ -49,9 +50,10 @@ def test_load_config_missing_file_returns_defaults(aldwin_home: Path) -> None:
             notes_chars=4000,
             notes_days=7,
             persona_chars=2000,
-            max_steps=15,
+            max_steps=50,
             web_searches=5,
             connector_tools=40,
+            context_compact_percent=60,
         ),
     )
 
@@ -73,6 +75,15 @@ def test_starter_assets_are_valid(aldwin_home: Path) -> None:
     profile_raw = (aldwin_home / "memory" / "profile.md").read_text(encoding="utf-8")
     stripped_profile = re.sub(r"<!--.*?-->", "", profile_raw, flags=re.DOTALL).strip()
     assert stripped_profile == ""
+
+
+def test_starter_config_sets_no_retired_limits(aldwin_home: Path) -> None:
+    ensure_home(aldwin_home)
+    raw = yaml.safe_load((aldwin_home / "config.yaml").read_text(encoding="utf-8"))
+
+    limits = raw["limits"]
+    assert not set(limits) & set(RETIRED_LIMITS)
+    assert limits["context_compact_percent"] == LimitsConfig().context_compact_percent
 
 
 def test_load_config_empty_or_comments_only(aldwin_home: Path) -> None:
@@ -189,6 +200,21 @@ def test_load_config_malformed_yaml_or_non_dict_raises_config_error(
         ("limits:\n  max_steps: 0\n", "limits.max_steps", "integer >= 1"),
         ("limits:\n  profile_chars: 99\n", "limits.profile_chars", "integer >= 100"),
         ("limits:\n  connector_tools: 4\n", "limits.connector_tools", "integer >= 5"),
+        (
+            "limits:\n  context_compact_percent: 59\n",
+            "limits.context_compact_percent",
+            "an integer from 60 to 90",
+        ),
+        (
+            "limits:\n  context_compact_percent: 91\n",
+            "limits.context_compact_percent",
+            "an integer from 60 to 90",
+        ),
+        (
+            'limits:\n  context_compact_percent: "60"\n',
+            "limits.context_compact_percent",
+            "an integer from 60 to 90",
+        ),
         (
             "theme: neon\n",
             "theme",
@@ -677,6 +703,7 @@ async def test_concurrent_update_config_maintains_yaml_integrity(
         "max_steps": 21,
         "web_searches": 6,
         "connector_tools": 44,
+        "context_compact_percent": 70,
     }
     jobs: list[Awaitable[object]] = [
         asyncio.to_thread(update_config_limits, {key: value}, aldwin_home)
@@ -1005,3 +1032,20 @@ def test_update_config_limits_keeps_a_column_zero_comment_inside_the_block(
     assert text.index("notes_days") < text.index("# Next")
     limits = load_config(tmp_path).limits
     assert (limits.web_searches, limits.notes_days) == (9, 2)
+
+
+def test_retired_context_exchanges_is_accepted_and_noted_once(
+    aldwin_home: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An old `context_exchanges` value still loads and is logged once per process."""
+    from aldwin.core import settings as settings_module
+
+    settings_module._retired_limits_noted.clear()
+    atomic_write(aldwin_home / "config.yaml", "limits:\n  context_exchanges: 5\n")
+    with caplog.at_level(logging.INFO, logger="aldwin.core.settings"):
+        load_config(aldwin_home)
+        load_config(aldwin_home)
+    noted = [r for r in caplog.records if "no longer used" in r.getMessage()]
+    assert [r.getMessage() for r in noted] == [
+        "limits.context_exchanges is no longer used"
+    ]

@@ -1,6 +1,7 @@
 ---
 name: documents
 description: Read and summarise PDF, Word, PowerPoint, Excel, CSV and HTML files. Use before opening any non-plain-text file or when the user asks what a document says.
+summary: Reads PDFs, Word, PowerPoint, Excel and other documents, and tells you what they say.
 ---
 
 # Documents

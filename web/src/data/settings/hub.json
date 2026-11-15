@@ -26,6 +26,10 @@
     "appearance": {
       "label": "Appearance",
       "lede": "How Aldwin looks in this browser. These choices stay on this device."
+    },
+    "about": {
+      "label": "About",
+      "lede": "Which version of Aldwin is running, and whether it looks for a newer one."
     }
   }
 }

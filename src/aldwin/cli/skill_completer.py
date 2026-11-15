@@ -62,7 +62,7 @@ def _fuzzy_rank(query: str, item: SkillCatalogItem) -> tuple[int, int, str] | No
     """
     q = query.lower()
     name = item.name.lower()
-    desc = item.description.lower()
+    desc = f"{item.description} {item.summary}".lower()
     if name.startswith(q):
         return (0, 0, item.name)
     it = iter(name)
@@ -171,7 +171,7 @@ class SkillCompleter(Completer):
             return
 
         for item in rows:
-            desc = sanitize_display_text(item.description)
+            desc = sanitize_display_text(item.summary or item.description)
             if len(desc) > 60:
                 desc = desc[:59] + "…"
             yield Completion(

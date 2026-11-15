@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Long conversations:** when a chat fills 60% of what the model can read, Aldwin makes room instead of forgetting. It shortens old tool results first, then writes itself notes on older messages with the model in use, and keeps the recent part word for word. After making room, the chat takes about 10% of what the model can read: the notes up to 4% (at most 4,000 tokens), the recent part the rest (at most 40,000 tokens). If the notes can't be written, it leaves the oldest messages out of the model's view and says so. Every message stays on screen, in `/history` and in search.
+- **Make room now:** `/compact` in the terminal, and **Make room now** in the browser's context ring, do it on request. If the notes can't be written, it says so and changes nothing. Protocol request `compact`.
+- **`recall` in this chat:** `recall` takes `scope="this_conversation"` to find the exact words of earlier messages and tool results in the current chat.
+- **When to make room:** `limits.context_compact_percent` (60 to 90, default 60), also under Settings, Advanced, as "Summarise older messages at".
+
+### Changed
+
+- **No 20-message memory:** Aldwin no longer forgets everything older than the last 20 exchanges (8 on local models). `limits.context_exchanges` is still accepted and ignored.
+- **Local models:** room is measured against the window Aldwin actually asks Ollama for, because Ollama cuts over-long requests silently.
+- **Removed:** the terminal's "Context nearly full" notice, which no longer applies.
+- **Steps per answer:** `limits.max_steps` now defaults to 50 instead of 15, with no upper limit. A `config.yaml` that already sets a value keeps it, and local models still stop at 15.
+- **Settings, Advanced, redesigned:** settings are grouped into What Aldwin reads, Long chats and Per-message limits, one per row, each with its unit and its default. "Summarise older messages at" is a slider from 60% to 90%. Values outside the allowed range show an error under the field and can't be saved; steps go up to 1,000 from the page, while `config.yaml` can still hold more. A bar at the bottom offers Save and Discard while there are edits, and Reset to defaults puts every field back. Rows stack on phones, and controls are at least 44px tall there.
+- **Settings, About:** a new section shows the running version and holds "Check for updates", which moved from Advanced and saves as soon as it is switched.
+- **`GET /v1/settings`** adds `limit_rules`, the default and allowed range of each limit the page edits.
+- **Search history by what was said:** Search history in the browser now finds chats by the words in their messages, not just their titles, and shows the matching words under each chat. Host route `GET /v1/conversations/search`.
+- **Skill summaries:** skills can carry a plain one-line `summary`, which the `@` menu, Settings and `/skills` show instead of the description written for the model. The built-in skills all have one.
+- **Quiet room-making:** the browser no longer shows a toast when Aldwin makes room; the working line already shows it. Notices about making room carry `topic: "room"`.
+
+### Fixed
+
+- **Long chats lost messages:** when a provider refused a request as too long, Aldwin deleted the oldest exchange from the saved chat, so it vanished from the screen and from search, and the typed text of later messages shifted. Nothing is deleted now.
+- **Context ring and room-making on hosted models:** OpenAI-compatible providers (OpenAI, DeepSeek, OpenRouter) and Anthropic now count as 128,000 and 200,000 tokens from the start of a run. Before, Aldwin only knew the size after the model list had been fetched, so the ring stayed hidden and no room was made ahead of time.
+- **Context ring after a reload:** the browser's context ring now comes back after a page reload, and updates after switching model or making room. The host sends it with `history` and with the replies to `set_model` and `compact`.
+- **Context ring jumping on reopen:** reopening a chat, or restarting Aldwin, no longer moves the ring several percent with nothing changed. The provider's count for the last request is saved with the chat (`measured` in the session file) and reused while the model and what it sees stay the same.
+- **Save bar covering a setting:** on Settings, Advanced, the save bar no longer hides the setting being edited, or its error, when that setting sits at the bottom of the screen.
+- **Making room out of view:** Make room now scrolls its progress line into view when the chat is scrolled up.
+- **Phone sidebar buttons overlapping:** in the phone sidebar, the close button now sits beside Search instead of on top of it.
+- **"1 conversations":** the history count reads "1 conversation".
+
 ## [0.0.5] - 2026-11-07
 
 Aldwin can search the web your way — self-hosted SearXNG or a hosted key — all behind the same `web_search` tool.

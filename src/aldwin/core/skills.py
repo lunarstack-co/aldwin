@@ -23,6 +23,7 @@ SKILL_TEMPLATE_FILENAME: Final[str] = "SKILL.md.tmpl"
 MAX_USER_BODY_CHARS: Final[int] = 20_000
 MAX_USER_FILE_BYTES: Final[int] = 64 * 1024
 MAX_DESCRIPTION_CHARS: Final[int] = 200
+MAX_SUMMARY_CHARS: Final[int] = 120
 
 Source = Literal["default", "user", "user override"]
 
@@ -63,6 +64,8 @@ class LoadedSkill:
     body: str
     path: Path | None
     skill: Skill | None
+    # Plain words for people choosing a skill; `description` is written for the model.
+    summary: str = ""
 
 
 def _assets_skills_root() -> Path:
@@ -84,6 +87,18 @@ def _split_frontmatter(source: str) -> tuple[dict[str, object], str]:
     if not isinstance(meta, dict):
         raise ValueError("frontmatter must be a mapping")
     return meta, body.strip()
+
+
+def _summary_from_text(text: str) -> str:
+    """The optional one-line `summary` a skill gives people, or "" when it has none."""
+    try:
+        meta, _ = _split_frontmatter(text)
+    except ValueError:
+        return ""
+    raw = meta.get("summary")
+    if not isinstance(raw, str):
+        return ""
+    return " ".join(raw.split())[:MAX_SUMMARY_CHARS]
 
 
 def _clean_reason(exc: BaseException) -> str:
@@ -168,6 +183,7 @@ def _load_default_skill(
         body=skill.instructions,
         path=None,
         skill=skill,
+        summary=_summary_from_text(text),
     )
 
 
@@ -222,6 +238,7 @@ def _load_user_folder(folder: Path) -> LoadedSkill:
             body=skill.instructions,
             path=folder,
             skill=skill,
+            summary=_summary_from_text(text),
         )
     except (
         OSError,
@@ -358,6 +375,7 @@ def build_catalogue(
                 body=chosen.body,
                 path=chosen.path,
                 skill=chosen.skill,
+                summary=chosen.summary,
             )
         by_name[name] = chosen
 
@@ -440,6 +458,7 @@ def to_catalog_items(
             {
                 "name": entry.name,
                 "description": entry.description,
+                "summary": entry.summary,
                 "source": entry.source,
                 "flags": list(entry.flags),
                 "last_used": recent.get(entry.name),

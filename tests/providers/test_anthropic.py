@@ -236,6 +236,7 @@ async def test_anthropic_list_models() -> None:
     assert sonnet.context_window == 200000
     assert sonnet.supports_tools is True
     assert sonnet.local is False
+    assert backend.build_model(sonnet.id).context_window == 200000
 
 
 async def test_anthropic_describe_and_check_access() -> None:

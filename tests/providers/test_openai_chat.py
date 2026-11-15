@@ -316,6 +316,7 @@ async def test_list_models_filtering() -> None:
     assert "chatgpt-4o-latest" in ids
     assert "text-embedding-3-small" not in ids
     assert "dall-e-3" not in ids
+    assert backend.build_model("gpt-4o").context_window == 128000
 
 
 async def test_lmstudio_tool_capability_parsing() -> None:

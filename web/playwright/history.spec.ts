@@ -204,3 +204,37 @@ test("a new conversation joins the rail under its title", async ({ page, host })
   await send(page, "Weekend plan");
   await expect(page.getByTestId("history-row").first()).toHaveText(/Weekend plan/);
 });
+
+test("on Settings the open conversation is not marked, and clicking it goes back to it @cross", async ({ page, host }) => {
+  host.sessions = [session("a", "Alpha"), session("g", "Groceries")];
+  await openChat(page);
+  const mobile = (page.viewportSize()?.width ?? 1280) < 768;
+  if (mobile) await page.getByTestId("open-rail").click();
+  await page.getByTestId("history-row").filter({ visible: true, hasText: "Groceries" }).click();
+  await expect(page.getByTestId("assistant-message")).toContainText("Notes on Groceries.");
+
+  if (mobile) await page.getByTestId("open-rail").click();
+  await page.getByTestId("settings").filter({ visible: true }).click();
+  await expect(page).toHaveURL(/\/settings\/$/);
+  if (mobile) await page.getByTestId("open-rail").click();
+  await expect(page.locator('[data-testid=history-row][aria-current="page"]')).toHaveCount(0);
+
+  await page.getByTestId("history-row").filter({ visible: true, hasText: "Groceries" }).click();
+  await expect(page).toHaveURL(/\/c\/\?id=g$/);
+  await expect(page.getByTestId("assistant-message")).toContainText("Notes on Groceries.");
+});
+
+test("search finds a chat by what was said in it, not just its title @cross", async ({ page, host }) => {
+  host.sessions = [session("a", "Alpha"), session("b", "Weekly plan")];
+  host.searchHits = [{ id: "b", snippet: "…your average food spend was £415…" }];
+  await openChat(page);
+  if ((page.viewportSize()?.width ?? 1280) < 768) await page.getByTestId("open-rail").click();
+  await page.getByTestId("rail-search").filter({ visible: true }).click();
+  await page.getByTestId("history-search").fill("food spend");
+  await expect(page.getByTestId("see-all-row")).toHaveCount(1);
+  await expect(page.getByTestId("see-all-row")).toContainText("Weekly plan");
+  await expect(page.getByTestId("history-match")).toHaveText("…your average food spend was £415…");
+  await expect(page.getByTestId("history-see-all").getByRole("status")).toHaveText("1 conversation");
+  await page.getByTestId("history-search").fill("alp");
+  await expect(page.getByTestId("see-all-row")).toContainText(["Alpha", "Weekly plan"]);
+});

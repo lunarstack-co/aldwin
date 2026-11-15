@@ -52,6 +52,12 @@ def test_tc25_default_skill_lint() -> None:
         assert _LOAD_TRIGGER.search(desc), (
             f"{name}: description missing Load/Use when/before/for"
         )
+        summary = meta.get("summary")
+        assert isinstance(summary, str) and summary.strip(), f"{name}: no summary"
+        assert len(summary) <= 120, f"{name}: summary over 120 characters"
+        # People read the summary, so no tool names and no instructions to the model.
+        assert not re.search(r"\b[a-z]+_[a-z_]+\b", summary), f"{name}: tool name"
+        assert "use when" not in summary.lower(), f"{name}: summary reads as a rule"
         total_desc += len(desc)
         lines = body.splitlines()
         assert len(lines) <= 80, f"{name}: body has {len(lines)} lines"

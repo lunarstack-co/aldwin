@@ -87,6 +87,10 @@ class FakeHost:
         self.new_conversations = 0
         self.todo_event = TodoUpdatedEvent(re="req_todo", items=[], done=0, total=0)
         self.requests: list[tuple[object, ...]] = []
+        self.compact_result: tuple[DoneEvent | ErrorEvent, list[str]] = (
+            DoneEvent(re="req_compact", reason="ok"),
+            ["Made room to keep going. Your messages are all still here."],
+        )
         self.custom_workspace = WorkspaceSummary(
             root=Path("/tmp/ws"),
             display_root="~/code/aldwin",
@@ -284,6 +288,10 @@ class FakeHost:
         self.model_switches.append(canonical)
         return DoneEvent(re="req_model", reason="ok")
 
+    async def compact(self) -> tuple[DoneEvent | ErrorEvent, list[str]]:
+        self.requests.append(("compact",))
+        return self.compact_result
+
     async def new_conversation(self) -> None:
         self.new_conversations += 1
         self.requests.append(("new_conversation",))
@@ -406,6 +414,7 @@ class FakeHost:
                 source=s.source,
                 flags=list(getattr(s, "flags", ())),
                 last_used=getattr(s, "last_used", None),
+                summary=getattr(s, "summary", ""),
             )
             for s in self.custom_skills.valid
         )

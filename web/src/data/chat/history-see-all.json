@@ -10,5 +10,6 @@
   "yesterday": "Yesterday",
   "previous7": "Previous 7 days",
   "older": "Older",
-  "searchShortcut": "Press / to search"
+  "searchShortcut": "Press / to search",
+  "resultCountOne": "{count} conversation"
 }

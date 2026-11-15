@@ -133,6 +133,10 @@ class StoredSession:
     todo: list[dict[str, str]] | None = None
     # One entry per TaskStep: the typed text and resolved skill names, not bodies.
     turns: list[dict[str, Any]] | None = None
+    # What the model sees of a long chat (core.compaction.CompactionState.to_dict()).
+    compaction: dict[str, Any] | None = None
+    # Provider's last count and Aldwin's estimate, so the ring holds steady on reopen.
+    measured: dict[str, Any] | None = None
 
 
 def _normalise_todo_payload(raw: Any) -> list[dict[str, str]]:
@@ -269,6 +273,10 @@ class SessionStore:
             payload["todo"] = stored.todo
         if stored.turns:
             payload["turns"] = stored.turns
+        if stored.compaction:
+            payload["compaction"] = stored.compaction
+        if stored.measured:
+            payload["measured"] = stored.measured
         serialized = json.dumps(payload, indent=2) + "\n"
         atomic_write(stored.path, serialized, mode=FILE_MODE)
 
@@ -394,12 +402,16 @@ class SessionStore:
                 pinned=raw_meta.get("pinned") is True,
             )
             todo = _normalise_todo_payload(raw_obj.get("todo"))
+            raw_compaction = raw_obj.get("compaction")
+            raw_measured = raw_obj.get("measured")
             return StoredSession(
                 path=path,
                 meta=meta,
                 memory=memory,
                 todo=todo or None,
                 turns=turns or None,
+                compaction=raw_compaction if isinstance(raw_compaction, dict) else None,
+                measured=raw_measured if isinstance(raw_measured, dict) else None,
             )
         except (
             OSError,

@@ -367,6 +367,25 @@ class Workspace:
             session.read_files[resolved] = mtime_ns
         return resolved
 
+    def forget_read(
+        self,
+        path: str | Path,
+        *,
+        session: _GrantClearableSession | None = None,
+    ) -> None:
+        """Forget that `path` was read, so editing it needs a fresh read."""
+        try:
+            resolved = (
+                path
+                if isinstance(path, Path) and path.is_absolute()
+                else self.resolve_safe(path).path
+            )
+        except WorkspaceError:
+            return
+        self._read_files.pop(resolved, None)
+        if session is not None:
+            session.read_files.pop(resolved, None)
+
     def set_root(
         self,
         new_root: Path | str,

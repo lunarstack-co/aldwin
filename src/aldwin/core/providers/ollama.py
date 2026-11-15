@@ -70,6 +70,10 @@ def parse_ollama_show_response(data: dict[str, Any]) -> tuple[bool | None, int]:
     return supports_tools, context_length
 
 
+# The largest window Aldwin asks Ollama for; Ollama silently cuts anything longer.
+MAX_NUM_CTX: Final[int] = 32768
+
+
 class OllamaModel:
     """Streams chat responses from Ollama's native API."""
 
@@ -108,7 +112,7 @@ class OllamaModel:
     ) -> AsyncIterator[Delta]:
         """Stream one assistant turn as Deltas."""
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
-        options = {"num_ctx": min(self.context_window, 32768)}
+        options = {"num_ctx": min(self.context_window, MAX_NUM_CTX)}
         merged_body = {
             **request_body(self.model, messages, tools, options=options),
             **self.extra_body,

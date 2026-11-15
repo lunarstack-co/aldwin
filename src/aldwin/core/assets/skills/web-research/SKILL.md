@@ -1,6 +1,7 @@
 ---
 name: web-research
 description: Research a question on the web and cite sources. Use for current facts, prices, news, documentation, release notes, or anything that may have changed.
+summary: Looks things up on the web and tells you where each answer came from.
 ---
 
 # Web research

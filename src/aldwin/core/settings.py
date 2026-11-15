@@ -40,6 +40,8 @@ CONFIG_FILENAME: Final[str] = "config.yaml"
 SECRETS_FILENAME: Final[str] = "secrets.yaml"
 
 KeySource = Literal["env", "file", "missing"]
+# Still accepted in config.yaml so older files load, but nothing reads them.
+RETIRED_LIMITS: Final[tuple[str, ...]] = ("context_exchanges",)
 
 _EXPECTED_FIELD_TYPES: Final[dict[str, str]] = {
     "model": "a non-empty string",
@@ -55,6 +57,7 @@ _EXPECTED_FIELD_TYPES: Final[dict[str, str]] = {
     "limits.max_steps": "an integer >= 1",
     "limits.web_searches": "an integer >= 1",
     "limits.connector_tools": "an integer >= 5",
+    "limits.context_compact_percent": "an integer from 60 to 90",
     "run_command": "a mapping of run_command settings",
     "run_command.env_allow": "a list of environment variable names",
     "run_command.env_allow.*": "an environment variable name (a string)",
@@ -160,10 +163,12 @@ class LimitsConfig(BaseModel):
     notes_chars: StrictInt = Field(default=4000, ge=100)
     notes_days: StrictInt = Field(default=7, ge=1)
     persona_chars: StrictInt = Field(default=2000, ge=100)
-    max_steps: StrictInt = Field(default=15, ge=1)
+    max_steps: StrictInt = Field(default=50, ge=1)
     # Stops one turn from spending many searches and tripping upstream rate limits.
     web_searches: StrictInt = Field(default=5, ge=1)
     connector_tools: StrictInt = Field(default=40, ge=5)
+    # Share of the model's window a chat may fill before Aldwin makes room.
+    context_compact_percent: StrictInt = Field(default=60, ge=60, le=90)
 
 
 class RunCommandConfig(BaseModel):
@@ -482,6 +487,17 @@ class ResolvedKey:
         return self.__str__()
 
 
+_retired_limits_noted: set[str] = set()
+
+
+def _note_retired_limits(raw_limits: dict[str, Any]) -> None:
+    """Log once per process that a retired limit is still set."""
+    for key in RETIRED_LIMITS:
+        if key in raw_limits and key not in _retired_limits_noted:
+            _retired_limits_noted.add(key)
+            logger.info("limits.%s is no longer used", key)
+
+
 def _warn_unknown_config_keys(raw: dict[str, Any], config_path: Path) -> None:
     """Log a warning for any unknown keys in ``config.yaml``."""
     known_top = set(AldwinConfig.model_fields.keys())
@@ -493,6 +509,7 @@ def _warn_unknown_config_keys(raw: dict[str, Any], config_path: Path) -> None:
         known_limits = set(LimitsConfig.model_fields.keys())
         for key in sorted(set(raw_limits.keys()) - known_limits):
             logger.warning("Ignoring unknown key 'limits.%s' in %s", key, config_path)
+        _note_retired_limits(raw_limits)
 
     raw_run_cmd = raw.get("run_command")
     if isinstance(raw_run_cmd, dict):

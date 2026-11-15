@@ -1,6 +1,7 @@
 ---
 name: memory
 description: Save, update, recall and forget lasting facts about the user. Use when they share a durable fact or preference, ask what you know about them, or ask you to forget something.
+summary: Remembers facts and preferences about you, and forgets them when you ask.
 ---
 
 # Memory

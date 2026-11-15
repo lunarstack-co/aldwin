@@ -1,7 +1,7 @@
 "use client";
 
 import { ThreadListPrimitive } from "@assistant-ui/react";
-import { Bug, ChevronRight, Search, Settings, SquarePen } from "lucide-react";
+import { Bug, ChevronRight, Search, Settings, SquarePen, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -41,6 +41,7 @@ export function Rail({
   onSearch,
   seeAllOpen,
   onNavigate,
+  onClose,
 }: {
   sessions: SessionMeta[];
   currentId: string | null;
@@ -52,6 +53,8 @@ export function Rail({
   onSearch: () => void;
   seeAllOpen: boolean;
   onNavigate?: () => void;
+  /** Set in the phone drawer, which closes from the rail's own header. */
+  onClose?: () => void;
 }) {
   // Until the host lists them, "no conversations" would be a guess.
   const listed = useChatStore((s) => s.sessionsLoaded);
@@ -62,18 +65,33 @@ export function Rail({
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center justify-between gap-2">
         <Lockup onNavigate={onNavigate} className="ms-1" />
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onSearch}
-          disabled={disabled}
-          aria-label={copy.search}
-          title={copy.search}
-          data-testid="rail-search"
-          className="max-md:size-10"
-        >
-          <Search aria-hidden />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onSearch}
+            disabled={disabled}
+            aria-label={copy.search}
+            title={copy.search}
+            data-testid="rail-search"
+            className="max-md:size-10"
+          >
+            <Search aria-hidden />
+          </Button>
+          {onClose ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onClose}
+              aria-label={copy.close}
+              title={copy.close}
+              data-testid="rail-close"
+              className="max-md:size-10"
+            >
+              <X aria-hidden />
+            </Button>
+          ) : null}
+        </div>
       </div>
       <ThreadListPrimitive.New
         render={

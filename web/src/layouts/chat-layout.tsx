@@ -47,7 +47,8 @@ export function ChatLayout({
   header,
   children,
 }: {
-  rail: (close: () => void) => ReactNode;
+  /** `inSheet` is the phone drawer, which needs its own close button in the rail's header. */
+  rail: (close: () => void, inSheet: boolean) => ReactNode;
   railLabel: string;
   stageLabel: string;
   header?: ReactNode;
@@ -87,12 +88,17 @@ export function ChatLayout({
           collapsed && "md:invisible md:w-0",
         )}
       >
-        <div className="border-sidebar-border flex w-[260px] shrink-0 flex-col border-r p-3">{rail(() => {})}</div>
+        <div className="border-sidebar-border flex w-[260px] shrink-0 flex-col border-r p-3">{rail(() => {}, false)}</div>
       </nav>
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent side="left" className="bg-sidebar text-sidebar-foreground w-[280px] p-3 md:hidden" data-testid="rail-sheet">
+        <SheetContent
+          side="left"
+          showCloseButton={false}
+          className="bg-sidebar text-sidebar-foreground w-[280px] p-3 md:hidden"
+          data-testid="rail-sheet"
+        >
           <SheetTitle className="sr-only">{railLabel}</SheetTitle>
-          {rail(() => setSheetOpen(false))}
+          {rail(() => setSheetOpen(false), true)}
         </SheetContent>
       </Sheet>
       <section aria-label={stageLabel} className="relative flex min-w-0 flex-1 flex-col">

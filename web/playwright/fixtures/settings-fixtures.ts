@@ -18,20 +18,21 @@ export type SettingsView = {
   model: string;
   check_for_updates: boolean;
   limits: Record<string, number>;
+  limit_rules: Record<string, { default: number; min: number; max: number }>;
   search: { provider: string; searxng_url: string | null };
   keys: KeyRow[];
 };
 
-/** The minimums `LimitsConfig` enforces, so the fake refuses what the host would. */
-export const LIMIT_MINIMUMS: Record<string, number> = {
-  context_exchanges: 1,
-  profile_chars: 100,
-  notes_chars: 100,
-  notes_days: 1,
-  persona_chars: 100,
-  max_steps: 1,
-  web_searches: 1,
-  connector_tools: 5,
+/** Mirrors the host's `limit_rules`. */
+export const LIMIT_RULES: Record<string, { default: number; min: number; max: number }> = {
+  profile_chars: { default: 4000, min: 100, max: 20000 },
+  persona_chars: { default: 2000, min: 100, max: 10000 },
+  notes_chars: { default: 4000, min: 100, max: 20000 },
+  notes_days: { default: 7, min: 1, max: 30 },
+  context_compact_percent: { default: 60, min: 60, max: 90 },
+  max_steps: { default: 50, min: 1, max: 1000 },
+  web_searches: { default: 5, min: 1, max: 50 },
+  connector_tools: { default: 40, min: 5, max: 100 },
 };
 
 export function settingsFixture(): SettingsView {
@@ -39,15 +40,16 @@ export function settingsFixture(): SettingsView {
     model: "openai/gpt-4o",
     check_for_updates: true,
     limits: {
-      context_exchanges: 20,
+      context_compact_percent: 60,
       profile_chars: 4000,
       notes_chars: 4000,
       notes_days: 7,
       persona_chars: 2000,
-      max_steps: 15,
+      max_steps: 50,
       web_searches: 5,
       connector_tools: 40,
     },
+    limit_rules: structuredClone(LIMIT_RULES),
     search: { provider: "tavily", searxng_url: null },
     keys: [
       { kind: "provider", name: "openai", title: "OpenAI", source: "file", masked: "sk-…a1b2" },

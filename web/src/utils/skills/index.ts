@@ -43,7 +43,7 @@ export function searchSkills(items: readonly SkillCatalogItem[], query: string):
 }
 
 export function toTriggerItem(item: SkillCatalogItem): TriggerItem {
-  return { id: item.name, type: SKILL_ITEM_TYPE, label: item.name, description: item.description };
+  return { id: item.name, type: SKILL_ITEM_TYPE, label: item.name, description: item.summary || item.description };
 }
 
 /** `@name` is the form the host and the CLI read. */

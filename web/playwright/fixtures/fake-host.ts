@@ -10,7 +10,6 @@ import type {
 } from "../../src/types/protocol";
 
 import {
-  LIMIT_MINIMUMS,
   SKILL_BODIES,
   connectorsFixture,
   modelsFixture,
@@ -124,12 +123,17 @@ export class FakeHost {
   holdOpen = false;
   /** Hold `hello` replies until `release()`. */
   holdHello = false;
+  /** Hold `compact` replies until `release()`, so a spec sees room being made. */
+  holdCompact = false;
   skills: SkillCatalogItem[] = SKILL_FIXTURE.map((s) => ({ ...s }));
   /** Answer `skills.list` with this error message instead of the catalogue. */
   skillsListError: string | null = null;
   /** Hold `skills.list` replies until `releaseSkills()`. */
   holdSkills = false;
   settings = settingsFixture();
+  homeInfo = { home: "~/.aldwin", version: "0.0.6" };
+  /** What `GET /v1/conversations/search` answers for any non-empty query. */
+  searchHits: { id: string; snippet: string }[] = [];
   models = modelsFixture();
   search = searchFixture();
   connectors = connectorsFixture();
@@ -138,6 +142,10 @@ export class FakeHost {
   responses: { path: string; body: unknown }[] = [];
   /** Settings request types the fake answers with an error, to test the page's fallbacks. */
   failing = new Set<string>();
+  /** Answer the next `compact` with this error instead of making room. */
+  compactError: { code: string; message: string } | null = null;
+  /** How full the chat is; history replies and model switches send it back. */
+  context: ContextUsage | null = null;
   /** The id of the last `connectors.login` or `connectors.add`, for sign-in events tied to it. */
   lastSignInId: string | null = null;
   /** An error reply to the next `approve` frame (`unknown_approval` or digest mismatch). */
@@ -237,6 +245,7 @@ export class FakeHost {
 
   release(): void {
     this.holdHello = false;
+    this.holdCompact = false;
     for (const go of this.held.splice(0)) go();
   }
 
@@ -262,7 +271,7 @@ export class FakeHost {
             : this.current
               ? (this.histories.get(this.current.id) ?? [])
               : [];
-        this.emit({ re: frame.id, kind: "history", messages, interrupted: this.interrupted }, ws);
+        this.emit({ re: frame.id, kind: "history", messages, interrupted: this.interrupted, context: this.context }, ws);
         done();
         break;
       }
@@ -275,6 +284,7 @@ export class FakeHost {
         this.current = null;
         this.history = [];
         this.todos = [];
+        this.context = null;
         this.emit({ re: frame.id, kind: "sessions", items: [], current: null }, ws);
         done();
         break;
@@ -295,6 +305,23 @@ export class FakeHost {
         this.history = this.historyFor(found);
         this.emit({ re: frame.id, kind: "sessions", items: [], current: found }, ws);
         done();
+        break;
+      }
+      case "compact": {
+        if (this.compactError) {
+          this.emit({ re: frame.id, kind: "error", ...this.compactError }, ws);
+          this.compactError = null;
+          break;
+        }
+        const message = "Made room to keep going. Your messages are all still here.";
+        this.emit({ re: frame.id, kind: "status", message: "Writing notes on earlier messages to make room..." }, ws);
+        const finish = () => {
+          this.emit({ re: frame.id, kind: "notice", message, topic: "room" }, ws);
+          if (this.context) this.context = { ...this.context, used: Math.round(this.context.used / 2) };
+          this.emit({ re: frame.id, kind: "done", reason: "ok", context: this.context }, ws);
+        };
+        if (this.holdCompact) this.held.push(finish);
+        else finish();
         break;
       }
       case "sessions.rename":
@@ -417,7 +444,7 @@ export class FakeHost {
         if (!known) return fail("unknown_model", `Unknown model ${ref}.`);
         this.models = { ...this.models, current: ref };
         this.settings.model = ref;
-        return done();
+        return this.emit({ re: frame.id, kind: "done", reason: "ok", context: this.context }, ws);
       }
       case "provider.server":
         this.models.providers.push({
@@ -636,8 +663,8 @@ export class FakeHost {
     this.emit({ re, kind: "todo.updated", ...this.todoCounts() });
   }
 
-  notice(message: string): void {
-    this.emit({ re: this.activeTurn ?? "host", kind: "notice", message });
+  notice(message: string, topic?: "room"): void {
+    this.emit({ re: this.activeTurn ?? "host", kind: "notice", message, ...(topic ? { topic } : {}) });
   }
 
   done(
@@ -651,6 +678,7 @@ export class FakeHost {
     const re = this.turnId;
     this.activeTurn = null;
     if (this.current && this.current.title === "") this.current.title = "Untitled";
+    if (event.context !== undefined) this.context = event.context;
     this.emit({ re, kind: "done", reason: "answered", ...event });
   }
 
@@ -750,6 +778,8 @@ export class FakeHost {
         return route.fulfill({ json: { ticket: `t-${this.sockets.length + 1}`, expires_in: 30 } });
       case "GET /v1/settings":
         return reply(this.settings);
+      case "GET /v1/home":
+        return reply(this.homeInfo);
       case "PATCH /v1/settings":
         return this.patchSettings(body as Record<string, unknown>, reply);
       case "POST /v1/settings/secrets":
@@ -760,6 +790,8 @@ export class FakeHost {
         else if (update.complete) this.status = { ...this.status, profile_done: true };
         return route.fulfill({ json: this.status });
       }
+      case "GET /v1/conversations/search":
+        return reply({ items: new URL(route.request().url()).searchParams.get("q")?.trim() ? this.searchHits : [] });
       case "GET /v1/conversations":
         return reply({ items: this.sessions });
       default: {
@@ -800,10 +832,11 @@ export class FakeHost {
   private patchSettings(patch: Record<string, unknown>, reply: (json: unknown, status?: number) => Promise<void>) {
     const limits = (patch.limits ?? {}) as Record<string, unknown>;
     for (const [field, value] of Object.entries(limits)) {
-      const minimum = LIMIT_MINIMUMS[field];
-      if (minimum === undefined) return reply({ detail: `limits.${field}: Extra inputs are not permitted.` }, 400);
+      const rule = this.settings.limit_rules[field];
+      if (rule === undefined) return reply({ detail: `limits.${field}: Extra inputs are not permitted.` }, 400);
       if (typeof value !== "number" || !Number.isInteger(value)) return reply({ detail: `limits.${field}: Input should be a valid integer.` }, 400);
-      if (value < minimum) return reply({ detail: `limits.${field}: Input should be greater than or equal to ${minimum}.` }, 400);
+      if (value < rule.min) return reply({ detail: `limits.${field}: Input should be greater than or equal to ${rule.min}.` }, 400);
+      if (value > rule.max) return reply({ detail: `limits.${field}: Input should be less than or equal to ${rule.max}.` }, 400);
     }
     const unknown = Object.keys(patch).find((k) => !["model", "limits", "search", "check_for_updates"].includes(k));
     if (unknown) return reply({ detail: `${unknown} cannot be changed here.` }, 400);

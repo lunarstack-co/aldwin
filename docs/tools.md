@@ -43,7 +43,7 @@ pip install "aldwin[office]"
 | Tool | What it does | Needs approval? |
 |---|---|---|
 | `remember` | Saves a short durable fact, or updates one in place with `replace=` | No for new; **Diff** for replace |
-| `recall` | Ranked search across daily notes and past conversations | No |
+| `recall` | Ranked search across daily notes and past conversations; `scope="this_conversation"` finds the exact words of earlier messages and tool results in the current chat | No |
 | `forget` | Deletes a saved note after showing it | **Diff** (never grantable) |
 
 Notes live in `~/.aldwin/memory/notes/YYYY-MM-DD.md`. A rebuildable SQLite FTS5 index at `~/.aldwin/memory/index.sqlite` powers ranked `recall`.

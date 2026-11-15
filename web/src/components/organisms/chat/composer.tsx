@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useId, useRef, type KeyboardEvent } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import copy from "@/data/chat/composer.json";
 import { selectPendingApproval, useChatStore } from "@/state/chat-store";
 import { cn } from "@/utils/cn";
@@ -23,6 +24,33 @@ const ContextRing = dynamic(() => import("./context-ring").then((m) => m.Context
 function ContextSlot() {
   const hasContext = useChatStore((s) => s.context !== null && s.context.limit > 0);
   return hasContext ? <ContextRing /> : null;
+}
+
+/** Stands in for Send while room is being made; aria-disabled keeps it hoverable for the tooltip. */
+function WaitForRoomButton() {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              size="icon-sm"
+              aria-disabled="true"
+              aria-label={copy.waitForRoom}
+              data-testid="composer-send"
+              data-waiting=""
+              onClick={(event) => event.preventDefault()}
+              className="cursor-not-allowed rounded-full opacity-50 max-md:size-10"
+            />
+          }
+        >
+          <ArrowUp aria-hidden />
+        </TooltipTrigger>
+        <TooltipContent data-testid="composer-send-wait">{copy.waitForRoom}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 }
 
 /** Send becomes Stop while an answer runs; Esc stops it too. */
@@ -44,6 +72,7 @@ export function Composer({
   const stopping = active?.status === "stopping";
   const draft = useChatStore((s) => s.draft);
   const pickedApps = useChatStore((s) => s.pickedApps);
+  const makingRoom = useChatStore((s) => s.makingRoomSince !== null);
 
   useEffect(() => {
     if (draft === null) return;
@@ -52,6 +81,11 @@ export function Composer({
   }, [draft, aui]);
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    // Typing goes on while room is being made; only sending waits.
+    if (makingRoom && event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      return;
+    }
     if (event.key === "Escape" && active !== null && !stopping && !approvalWaiting) {
       event.preventDefault();
       aui.composer().cancel();
@@ -106,21 +140,25 @@ export function Composer({
         <SearchPicker disabled={disabled} />
         <ContextSlot />
         <span aria-hidden className="flex-1" />
-        <AuiIf condition={(s) => !s.composer.canCancel}>
-          <ComposerPrimitive.Send
-            render={
-              <Button
-                size="icon-sm"
-                aria-label={copy.send}
-                title={copy.send}
-                data-testid="composer-send"
-                className="rounded-full max-md:size-10"
-              />
-            }
-          >
-            <ArrowUp aria-hidden />
-          </ComposerPrimitive.Send>
-        </AuiIf>
+        {makingRoom ? (
+          <WaitForRoomButton />
+        ) : (
+          <AuiIf condition={(s) => !s.composer.canCancel}>
+            <ComposerPrimitive.Send
+              render={
+                <Button
+                  size="icon-sm"
+                  aria-label={copy.send}
+                  title={copy.send}
+                  data-testid="composer-send"
+                  className="rounded-full max-md:size-10"
+                />
+              }
+            >
+              <ArrowUp aria-hidden />
+            </ComposerPrimitive.Send>
+          </AuiIf>
+        )}
         <AuiIf condition={(s) => s.composer.canCancel}>
           <ComposerPrimitive.Cancel
             render={
