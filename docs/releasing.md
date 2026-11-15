@@ -111,16 +111,16 @@ UV_PUBLISH_TOKEN="<testpypi-scoped-token>" uv publish --publish-url https://test
 ```
 
 ### Verify the TestPyPI build on a clean environment
-Because TestPyPI does not mirror third-party dependencies (`pydantic`, `rich`, `typer`, `agentling`), pass PyPI as `--extra-index-url`:
+TestPyPI does not mirror third-party dependencies (`pydantic`, `rich`, `typer`, `agentling`). Mixing the two indexes does not work with uv: it takes each package from the first index that has it, so it finds only PyPI's older `aldwin`. Download the exact TestPyPI wheel instead, then install it; its dependencies come from PyPI:
 
 ```bash
-uv tool install \
-  --index-url https://test.pypi.org/simple/ \
-  --extra-index-url https://pypi.org/simple/ \
-  aldwin==<X.Y.Z>
+pip download --no-deps --index-url https://test.pypi.org/simple/ aldwin==<X.Y.Z> -d /tmp/aldwin-rc
+uv tool install /tmp/aldwin-rc/aldwin-<X.Y.Z>-py3-none-any.whl
 aldwin --version
-aldwin
+aldwin web
 ```
+
+Run these steps in a `python:3.12-slim` container to check that `aldwin web` needs no Node: that image has none.
 
 ---
 
