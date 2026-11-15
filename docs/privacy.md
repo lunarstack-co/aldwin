@@ -82,3 +82,5 @@ Lines already in an older `history` file are not rewritten. To give Aldwin a tok
 ## Removing your data
 
 `aldwin uninstall` keeps `~/.aldwin`. `aldwin uninstall --purge` also deletes it, after two confirmations. See [Commands](commands.md#uninstall).
+
+The terminal and the browser share this folder, so deleting it removes both apps' conversations, memory, keys and settings. The browser keeps only its theme, view and sidebar choices, in its own site data.

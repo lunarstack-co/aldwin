@@ -79,9 +79,9 @@ logger = logging.getLogger("aldwin.cli")
 ESCAPE_FLUSH_DELAY: Final[float] = 0.05
 
 WHATS_NEW_TEXT: Final[str] = (
-    "Web search your way. Connect SearXNG or a hosted key (Tavily, Brave, Exa, "
-    "Perplexity, Parallel, Firecrawl) with /search. Existing Tavily setups keep "
-    "working. Conversation, memory and settings are kept."
+    "Aldwin opens in your browser: run aldwin web. Long chats keep going: Aldwin "
+    "writes itself notes on older messages instead of forgetting them, and /compact "
+    "does it now. Conversations, memory and settings are kept."
 )
 
 
@@ -288,11 +288,11 @@ def format_toolbar_model_segment(
     level = context_meter_level(pct)
     bar = context_bar(pct, plain=plain)
     todo_bit = f" · {todo_label}" if todo_label else ""
-    fresh_bit = ""
+    room_bit = ""
     if level in ("warn", "err"):
-        fresh_bit = " · /new to start fresh"
+        room_bit = " · /compact to make room"
     key_bit = "Key rejected · run aldwin setup · " if key_rejected else ""
-    main = f"{key_bit}{display_name}{search_bit} · {bar}{pct}% context left{fresh_bit}"
+    main = f"{key_bit}{display_name}{search_bit} · {bar}{pct}% context left{room_bit}"
     fragments: list[tuple[str, str]] = [("", main)]
     if level == "warn":
         fragments.append(("class:bottom-toolbar.warn", " · warn"))

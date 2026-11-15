@@ -35,6 +35,24 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      - name: Verify git tag matches pyproject.toml version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(uv run python -c 'import tomllib, pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) does not match pyproject.toml version ($PKG_VERSION)"
+            exit 1
+          fi
+
+      # Before the UI build, because the tests expect the committed placeholder page.
+      - name: Lint, format check, type check, and test
+        run: |
+          uv run ruff check src tests
+          uv run ruff format --check src tests
+          uv run mypy src tests
+          uv run pytest --cov=aldwin --cov-fail-under=90
+
       - name: Set up Node 22
         uses: actions/setup-node@v4
         with:
@@ -51,25 +69,20 @@ jobs:
           npm run build
           test -f ../src/aldwin/web/static/index.html
 
-      - name: Verify git tag matches pyproject.toml version
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          PKG_VERSION="$(uv run python -c 'import tomllib, pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
-          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "Tag version ($TAG_VERSION) does not match pyproject.toml version ($PKG_VERSION)"
-            exit 1
-          fi
-
-      - name: Lint, format check, type check, and test
-        run: |
-          uv run ruff check src tests
-          uv run ruff format --check src tests
-          uv run mypy src tests
-          uv run pytest --cov=aldwin --cov-fail-under=90
-
       - name: Build sdist and wheel
         run: uv build
+
+      - name: Check the wheel carries the built UI
+        run: |
+          python3 - <<'EOF'
+          import glob, os, sys, zipfile
+          wheel = glob.glob("dist/*.whl")[0]
+          if b"aldwin-stub" in zipfile.ZipFile(wheel).read("aldwin/web/static/index.html"):
+              sys.exit("the wheel carries the placeholder page")
+          size = os.path.getsize(wheel)
+          if size >= 4_194_304:
+              sys.exit(f"the wheel is {size} bytes; the limit is 4,194,304")
+          EOF
 
       - name: Check distribution metadata with twine
         run: uvx twine check dist/*

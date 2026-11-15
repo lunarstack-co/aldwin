@@ -10,6 +10,7 @@ TIPS: Final[tuple[str, ...]] = (
     "Try: find every TODO in this folder",
     "Try: summarise report.pdf",
     "Switch between cloud and local models any time with /model.",
+    "Open Aldwin in your browser with aldwin web",
     "Connect web search with /search — SearXNG or a hosted key.",
     "Press Esc to stop an answer in progress",
     "Alt+Enter (or Shift+Enter) inserts a newline",
@@ -20,7 +21,7 @@ TIPS: Final[tuple[str, ...]] = (
     "Use /todo to review the task checklist",
     "Use /workspace to set where file tools run",
     "Use /memory to browse notes and profile",
-    "Use /new when context gets tight",
+    "Long chats make room on their own · /compact does it now",
     "Try: /connectors to connect Notion, Linear or GitHub",
 )
 
