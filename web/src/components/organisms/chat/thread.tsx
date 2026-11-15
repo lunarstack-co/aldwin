@@ -15,6 +15,7 @@ import { ApprovalPill } from "./approval-pill";
 import { AssistantMessage } from "./assistant-message";
 import { Composer } from "./composer";
 import { EmptyHome } from "./empty-home";
+import { MakingRoomRow } from "./making-room-row";
 import { UserMessage } from "./user-message";
 
 // Loaded only once a plan exists, so the chat page does not carry it up front.
@@ -59,6 +60,7 @@ export function Thread({ model, disabled }: { model: string; disabled: boolean }
           </ThreadPrimitive.Empty>
           <section aria-label={copy.label} className="flex flex-col gap-8 py-6 empty:hidden">
             <ThreadPrimitive.Messages components={components} />
+            <MakingRoomRow />
           </section>
           <ThreadPrimitive.ViewportFooter
             className={cn(

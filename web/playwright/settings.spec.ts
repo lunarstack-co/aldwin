@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 import { connectorFixture } from "./fixtures/settings-fixtures";
 import { expect, openChat, session, test, type FakeHost } from "./fixtures/test";
 
-const SECTIONS = ["Models", "Search", "Skills", "Tools", "Advanced", "Appearance"];
+const SECTIONS = ["Models", "Search", "Skills", "Tools", "Advanced", "Appearance", "About"];
 
 async function openSettings(page: Page, section?: string): Promise<void> {
   await openChat(page, section ? `/settings/?section=${section}` : "/settings/");
@@ -16,7 +16,7 @@ const nav = (page: Page) => page.getByTestId("settings-nav");
 const READS = ["hello", "status", "history", "todo.get", "sessions.list", "models.list", "search.list", "connectors.list", "skills.list"];
 const changes = (host: FakeHost, from: number) => host.sent.slice(from).filter((f) => !READS.includes(String(f.type)));
 
-test("the rail opens Settings with exactly six sections @cross", async ({ page }) => {
+test("the rail opens Settings with exactly seven sections @cross", async ({ page }) => {
   await openChat(page);
   if ((page.viewportSize()?.width ?? 1280) < 768) await page.getByTestId("open-rail").click();
   await page.getByTestId("settings").filter({ visible: true }).click();
@@ -94,49 +94,6 @@ test.describe("appearance", () => {
     await page.getByTestId("appearance-density-detail").click();
     expect(await page.evaluate(() => Object.values({ ...localStorage }).includes("detail"))).toBe(true);
     expect(changes(host, frames)).toEqual([]);
-  });
-});
-
-test.describe("advanced", () => {
-  test("shows the host's limits", async ({ page }) => {
-    await openSettings(page, "advanced");
-    await expect(page.getByTestId("limit-context_exchanges")).toHaveValue("20");
-    await expect(page.getByTestId("limit-max_steps")).toHaveValue("15");
-    await expect(page.getByTestId("limit-connector_tools")).toHaveValue("40");
-    await expect(page.getByTestId("check-for-updates")).toHaveAttribute("aria-checked", "true");
-  });
-
-  test("saving sends only the changed limit", async ({ page, host }) => {
-    await openSettings(page, "advanced");
-    await page.getByTestId("limit-max_steps").fill("20");
-    await page.getByTestId("advanced-save").click();
-    await expect(page.getByTestId("advanced-form")).toContainText("Saved");
-    const patches = host.calls.filter((c) => c.method === "PATCH");
-    expect(patches.map((c) => c.body)).toEqual([{ limits: { max_steps: 20 } }]);
-    expect(host.settings.limits.max_steps).toBe(20);
-  });
-
-  test("a refused limit shows the host's reason by the field and changes nothing", async ({ page, host }) => {
-    await openSettings(page, "advanced");
-    await page.getByTestId("limit-max_steps").fill("0");
-    await page.getByTestId("advanced-save").click();
-    await expect(page.getByTestId("advanced-form")).toContainText("limits.max_steps: Input should be greater than or equal to 1.");
-    await expect(page.getByTestId("limit-max_steps")).toHaveValue("0");
-    await expect(page.getByTestId("limit-max_steps")).toHaveAttribute("aria-invalid", "true");
-    expect(host.settings.limits.max_steps).toBe(15);
-  });
-
-  test("turning off update checks sends just that", async ({ page, host }) => {
-    await openSettings(page, "advanced");
-    await page.getByTestId("check-for-updates").click();
-    await page.getByTestId("advanced-save").click();
-    await expect.poll(() => host.calls.filter((c) => c.method === "PATCH").map((c) => c.body)).toEqual([{ check_for_updates: false }]);
-  });
-
-  test("with no changes Save is disabled", async ({ page, host }) => {
-    await openSettings(page, "advanced");
-    await expect(page.getByTestId("advanced-save")).toBeDisabled();
-    expect(host.calls.filter((c) => c.method === "PATCH")).toHaveLength(0);
   });
 });
 

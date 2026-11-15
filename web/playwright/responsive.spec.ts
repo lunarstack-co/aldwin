@@ -216,7 +216,7 @@ test("reduced motion stops every animation and keeps Working and Stop", async ({
 
 test("Settings fits a phone with big targets @cross", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 720 });
-  for (const section of ["providers", "search", "skills", "tools", "advanced", "appearance"]) {
+  for (const section of ["providers", "search", "skills", "tools", "advanced", "appearance", "about"]) {
     await openChat(page, `/settings/?section=${section}`);
     await expect(page.locator(`[data-testid=settings-${section}]`)).not.toContainText("Loading");
     const wide = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
@@ -231,6 +231,8 @@ test("Settings fits a phone with big targets @cross", async ({ page }) => {
         .filter((el) => el.getAttribute("aria-hidden") !== "true" && !(el instanceof HTMLInputElement && el.type === "checkbox"))
         // A switch's label is its target.
         .filter((el) => !(el.getAttribute("role") === "switch" && (el.closest("label")?.getBoundingClientRect().height ?? 0) >= 40))
+        // A slider's whole track takes the touch, so the track is its target.
+        .filter((el) => !(el instanceof HTMLInputElement && el.type === "range" && (el.closest("[data-slot=slider-control]")?.getBoundingClientRect().height ?? 0) >= 40))
         // The show-key toggle sits inside its 40px field, which is the target.
         .filter((el) => !(el.hasAttribute("aria-pressed") && el.parentElement?.querySelector("input") !== null))
         // Inline text links sit in a sentence; everything else needs a 40px target.
@@ -320,4 +322,20 @@ test("approval cards, permission grants and displays fit 320 px and phones witho
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
   ).toBe(true);
+});
+
+test("the phone drawer's search and close buttons sit side by side @cross", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.use.isMobile !== true, "the drawer is for phones");
+  await openChat(page);
+  await page.getByTestId("open-rail").click();
+  const sheet = page.getByTestId("rail-sheet");
+  const search = (await sheet.getByTestId("rail-search").boundingBox())!;
+  const close = (await sheet.getByTestId("rail-close").boundingBox())!;
+  const overlap =
+    search.x < close.x + close.width && close.x < search.x + search.width &&
+    search.y < close.y + close.height && close.y < search.y + search.height;
+  expect(overlap).toBe(false);
+  await expect(sheet.locator("[data-slot=sheet-close]")).toHaveCount(0);
+  await sheet.getByTestId("rail-close").click();
+  await expect(sheet).toHaveCount(0);
 });

@@ -80,6 +80,7 @@ from aldwin.protocol import (
     ApprovalAnswer,
     ApprovalEvent,
     ApproveRequest,
+    CompactRequest,
     ConnectorAuth,
     ConnectorProbeEvent,
     ConnectorsAddRequest,
@@ -442,6 +443,10 @@ class AldwinClient:
             cleaned = name.strip()
             self._fallback_model = cleaned if "/" in cleaned else f"openai/{cleaned}"
         return result
+
+    async def compact(self) -> tuple[DoneEvent | ErrorEvent, list[str]]:
+        """Make room in this conversation now; returns the result and its notices."""
+        return await self._request_with_notices(CompactRequest())
 
     async def new_conversation(self) -> None:
         """Close the current session file and start a new conversation."""

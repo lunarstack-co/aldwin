@@ -213,14 +213,14 @@ def test_classify_missing_model_without_explicit_model_uses_generic_subject() ->
 
 
 def test_classify_context_length_overflow_suggests_new_conversation() -> None:
-    """Context length error produces request_rejected with fresh session copy."""
+    """Context length error, after making room failed, suggests a new chat."""
     code, msg = classify_model_error(
         ModelContextLengthError("context overflow"), model="ollama/llama3.1:8b"
     )
     assert code == "request_rejected"
-    assert (
-        msg
-        == "This conversation is too long for llama3.1:8b. Start a fresh one with /new."
+    assert msg == (
+        "This chat is too long for llama3.1:8b, even after making room. "
+        "Start a new chat or choose a model with more room."
     )
 
 
@@ -615,7 +615,7 @@ async def test_host_missing_local_model_404(aldwin_home: Path) -> None:
 
 
 async def test_host_context_trim_recovery(aldwin_home: Path) -> None:
-    """ModelContextLengthError trims older history, clears step calls, and recovers."""
+    """A refusal leaves out older turns from the model's view, then recovers."""
     ensure_home(aldwin_home)
     fake_model = FakeModel(
         turns=[
@@ -643,9 +643,15 @@ async def test_host_context_trim_recovery(aldwin_home: Path) -> None:
         notices = [ev.message for ev in events if isinstance(ev, NoticeEvent)]
         texts = [ev.delta for ev in events if isinstance(ev, TextEvent)]
         assert notices == [
-            "This conversation is too long for llama3.1:8b. "
-            "Aldwin trimmed older messages."
+            "Made room to keep going. Aldwin may recall less of the earlier chat. "
+            "Your messages are all still here."
         ]
+        tasks = [
+            step.task
+            for step in host._agent_session.memory.steps
+            if isinstance(step, TaskStep)
+        ]
+        assert tasks == ["Old question 1", "Old question 2", "new question"]
         assert "".join(texts) == "Recovered"
         assert isinstance(events[-1], DoneEvent)
         assert events[-1].reason == "answered"
@@ -655,7 +661,7 @@ async def test_host_context_trim_recovery(aldwin_home: Path) -> None:
 
 
 async def test_host_context_overflow_unrecoverable(aldwin_home: Path) -> None:
-    """ModelContextLengthError with single exchange cannot trim and fails."""
+    """A refusal with nothing older to leave out ends the turn."""
     ensure_home(aldwin_home)
     fake_model = FakeModel(turns=[FakeTurn.error(ModelContextLengthError("too long"))])
     transport = InProcessTransport()
@@ -675,8 +681,8 @@ async def test_host_context_overflow_unrecoverable(aldwin_home: Path) -> None:
         assert isinstance(err, ErrorEvent)
         assert err.code == "request_rejected"
         assert err.message == (
-            "This conversation is too long for llama3.1:8b. "
-            "Start a fresh one with /new."
+            "This chat is too long for llama3.1:8b, even after making room. "
+            "Start a new chat or choose a model with more room."
         )
     finally:
         await client.close()

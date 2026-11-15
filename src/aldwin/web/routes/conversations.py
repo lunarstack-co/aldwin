@@ -24,6 +24,11 @@ def conversations_router(home: Path) -> APIRouter:
     def list_conversations() -> dict[str, Any]:
         return {"items": client.list_conversation_metas(home)}
 
+    # Registered before the id route, so "search" is never read as a conversation id.
+    @router.get("/search")
+    def search_conversations(q: str = "") -> dict[str, Any]:
+        return {"items": client.search_conversations(q, home)}
+
     @router.get("/{session_id}")
     def get_conversation(session_id: str) -> dict[str, Any]:
         data = client.load_conversation_json(session_id, home)

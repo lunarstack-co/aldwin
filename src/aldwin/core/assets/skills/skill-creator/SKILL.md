@@ -1,6 +1,7 @@
 ---
 name: skill-creator
 description: Write a skill and save it with create_skill. Use when the user asks Aldwin to learn a routine, make or change a skill, or keeps repeating the same multi-step request.
+summary: Teaches Aldwin a routine you repeat, so you can run it again with @.
 ---
 
 # Skill creator

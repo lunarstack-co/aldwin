@@ -729,6 +729,11 @@ class PolicySession:
         """Record `path` and its `st_mtime_ns` in `self.read_files`."""
         return self.workspace.mark_read(path, session=self)
 
+    def forget_reads(self, paths: Iterable[str | Path]) -> None:
+        """Forget reads of files whose contents the model no longer sees."""
+        for path in paths:
+            self.workspace.forget_read(path, session=self)
+
     def add_grant(self, grant_key: str) -> None:
         """Store a `file:`, `folder:` or `tool:` grant in memory (never saved)."""
         self.grants.add(grant_key)

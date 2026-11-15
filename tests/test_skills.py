@@ -403,3 +403,28 @@ def test_skills_fingerprint_tracks_user_files(aldwin_home: Path) -> None:
     fp = skills_fingerprint(aldwin_home)
     assert len(fp) == 1
     assert fp[0][0] == "mine/SKILL.md"
+
+
+def test_summary_is_the_plain_line_people_see(aldwin_home: Path) -> None:
+    """A skill's optional summary reaches the catalogue; a bad one is ignored."""
+    skills = aldwin_home / "skills"
+    (skills / "weekly").mkdir(parents=True)
+    (skills / "weekly" / "SKILL.md").write_text(
+        "---\nname: weekly\ndescription: Use when the user asks for an update.\n"
+        "summary: Writes your weekly update.\n---\n\nStep 1.\n",
+        encoding="utf-8",
+    )
+    (skills / "odd").mkdir()
+    (skills / "odd" / "SKILL.md").write_text(
+        "---\nname: odd\ndescription: Use when testing.\n"
+        "summary: [1, 2]\n---\n\nStep.\n",
+        encoding="utf-8",
+    )
+    _write_skill(skills / "plain", "plain", "Use when nothing else fits.")
+
+    cat = {e.name: e for e in build_catalogue(aldwin_home, version="0.0.2", model="m")}
+
+    assert cat["weekly"].summary == "Writes your weekly update."
+    assert cat["odd"].summary == "" and cat["odd"].skill is not None
+    assert cat["plain"].summary == ""
+    assert cat["connectors"].summary.startswith("Connects Aldwin to apps you use")

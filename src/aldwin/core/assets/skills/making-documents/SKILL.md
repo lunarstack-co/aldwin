@@ -1,6 +1,7 @@
 ---
 name: making-documents
 description: Create .docx, .xlsx and .pdf files with a short Python script. Use when the user asks for a Word document, spreadsheet or PDF to be produced.
+summary: Makes Word documents, spreadsheets and PDFs for you.
 ---
 
 # Making documents

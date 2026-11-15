@@ -26,6 +26,7 @@ from aldwin.core.memory import (
 from aldwin.core.memory_index import (
     default_memory_index,
     is_note_id_query,
+    search_session_file,
 )
 from aldwin.core.policy import ApprovalPreview, looks_like_secret
 from aldwin.core.tools import ToolOutput
@@ -39,7 +40,7 @@ _OBJECT_SCHEMA: Final[dict[str, Any]] = {
     "type": "object",
     "additionalProperties": False,
 }
-Scope = Literal["notes", "conversations", "both"]
+Scope = Literal["notes", "conversations", "both", "this_conversation"]
 
 
 def running_summary(
@@ -317,7 +318,9 @@ class RecallTool(Tool):
     name = "recall"
     description = (
         "Search saved memory notes and past conversations. "
-        "scope: notes | conversations | both (default both)."
+        "scope: notes | conversations | both (default both). "
+        "Use this_conversation to find the exact words of earlier messages and "
+        "tool results in the current chat."
     )
     parallel_safe = True
     timeout = 10.0
@@ -331,7 +334,7 @@ class RecallTool(Tool):
             },
             "scope": {
                 "type": "string",
-                "enum": ["notes", "conversations", "both"],
+                "enum": ["notes", "conversations", "both", "this_conversation"],
                 "description": "Where to search (default both).",
                 "default": "both",
             },
@@ -344,8 +347,14 @@ class RecallTool(Tool):
         "required": ["query"],
     }
 
-    def __init__(self, home: Path | None = None) -> None:
+    def __init__(
+        self,
+        home: Path | None = None,
+        *,
+        current_session: Callable[[], Path | None] | None = None,
+    ) -> None:
         self._home = home
+        self._current_session = current_session
 
     async def forward(  # type: ignore[override]
         self,
@@ -354,6 +363,8 @@ class RecallTool(Tool):
         days: int = DEFAULT_RECALL_DAYS,
     ) -> ToolOutput:
         started = time.monotonic()
+        if scope == "this_conversation":
+            return await self._this_conversation(str(query), started)
         if scope not in ("notes", "conversations", "both"):
             scope = "both"
         idx = default_memory_index(_home(self._home))
@@ -370,6 +381,18 @@ class RecallTool(Tool):
             ok=True,
             duration_ms=elapsed_ms,
         )
+
+    async def _this_conversation(self, query: str, started: float) -> ToolOutput:
+        path = self._current_session() if self._current_session else None
+        if path is None or not path.is_file():
+            text = "this conversation has not been saved yet"
+            return ToolOutput(text, summary=f"Recall · {text}", ok=False)
+        result = await asyncio.to_thread(search_session_file, path, query)
+        elapsed_ms = max(0, int((time.monotonic() - started) * 1000))
+        hits = result.count("\n[turn ")
+        shown = " ".join(query.split())[:40]
+        summary = f'Recall "{shown}" · {hits} in this chat'
+        return ToolOutput(result, summary=summary, ok=True, duration_ms=elapsed_ms)
 
 
 class ForgetTool(Tool):
@@ -523,6 +546,7 @@ def build_memory_tools(
     *,
     session_context: Any = None,
     session_id_getter: Callable[[], str] | None = None,
+    session_path_getter: Callable[[], Path | None] | None = None,
 ) -> tuple[RememberTool, RecallTool, ForgetTool]:
     """Construct `(RememberTool, RecallTool, ForgetTool)` for `home`."""
     return (
@@ -531,7 +555,7 @@ def build_memory_tools(
             session_context=session_context,
             session_id_getter=session_id_getter,
         ),
-        RecallTool(home=home),
+        RecallTool(home=home, current_session=session_path_getter),
         ForgetTool(home=home),
     )
 

@@ -10,7 +10,7 @@ import re
 import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Final, Literal
+from typing import Any, Final, Literal
 
 from aldwin.core.home import FILE_MODE
 from aldwin.core.memory import (
@@ -657,6 +657,41 @@ class MemoryIndex:
         finally:
             conn.close()
 
+    def matching_sessions(self, query: str, *, limit: int = 50) -> list[dict[str, str]]:
+        """Saved chats whose messages hold every word of `query`, best first.
+
+        Each word also matches words it starts, so results follow typing.
+        """
+        words = [w for w in (query or "").strip()[:MAX_QUERY_CHARS].split() if w]
+        if not words or not self.fts5_available():
+            return []
+        fts_q = " ".join('"' + word.replace('"', '""') + '"*' for word in words)
+        self.sync()
+        try:
+            conn = self._connect()
+        except sqlite3.DatabaseError:
+            return []
+        try:
+            ranked = conn.execute(
+                "SELECT session_id, MIN(rank) AS best FROM turns WHERE turns MATCH ? "
+                "GROUP BY session_id ORDER BY best LIMIT ?",
+                (fts_q, limit),
+            ).fetchall()
+            found: list[dict[str, str]] = []
+            for row in ranked:
+                snip = conn.execute(
+                    "SELECT snippet(turns, 0, '', '', '…', ?) FROM turns "
+                    "WHERE turns MATCH ? AND session_id = ? ORDER BY rank LIMIT 1",
+                    (SNIPPET_TOKENS, fts_q, row["session_id"]),
+                ).fetchone()
+                snippet = str(snip[0]) if snip else ""
+                found.append({"id": str(row["session_id"]), "snippet": snippet})
+            return found
+        except sqlite3.DatabaseError:
+            return []
+        finally:
+            conn.close()
+
     def search_notes_all_time(self, query: str) -> list[dict[str, str]]:
         """Return matching note dicts over all time (for `forget`)."""
         self.sync()
@@ -723,6 +758,86 @@ def is_note_id_query(query: str) -> bool:
     return bool(_NOTE_ID_RE.match(query.strip()))
 
 
+THIS_CHAT_HITS: Final[int] = 5
+THIS_CHAT_WINDOW_CHARS: Final[int] = 1_500
+NO_MATCH_THIS_CHAT: Final[str] = "(no matches in this conversation)"
+
+
+def _session_passages(path: Path) -> list[tuple[int, str, str]]:
+    """`(turn, label, text)` for every message and tool result in a session file."""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        steps = json.loads(payload["memory"])["steps"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+    passages: list[tuple[int, str, str]] = []
+    turn = 0
+    for step in steps if isinstance(steps, list) else []:
+        data = step.get("data") if isinstance(step, dict) else None
+        if not isinstance(data, dict):
+            continue
+        kind = step.get("type")
+        if kind == "task":
+            turn += 1
+            passages.append((turn, "user", str(data.get("task") or "")))
+        elif kind == "final":
+            passages.append((turn, "Aldwin", str(data.get("answer") or "")))
+        elif kind == "action":
+            passages.extend(_action_passages(turn, data))
+    return passages
+
+
+def _action_passages(turn: int, data: dict[str, Any]) -> list[tuple[int, str, str]]:
+    found: list[tuple[int, str, str]] = []
+    message = data.get("model_message")
+    if isinstance(message, dict):
+        if message.get("content"):
+            found.append((turn, "Aldwin", str(message["content"])))
+        calls = message.get("tool_calls")
+        for call in calls if isinstance(calls, list) else []:
+            if isinstance(call, dict):
+                args = json.dumps(call.get("arguments"), ensure_ascii=False)
+                found.append((turn, f"tool call {call.get('name')}", args))
+    results = data.get("tool_results")
+    for result in results if isinstance(results, list) else []:
+        if isinstance(result, dict):
+            label = f"tool result from {result.get('name')}"
+            found.append((turn, label, str(result.get("content") or "")))
+    return found
+
+
+def _excerpt(text: str, words: list[str]) -> str:
+    lowered = text.lower()
+    first = min((lowered.find(w) for w in words if w in lowered), default=0)
+    start = max(0, first - THIS_CHAT_WINDOW_CHARS // 3)
+    end = start + THIS_CHAT_WINDOW_CHARS
+    excerpt = text[start:end]
+    prefix = "…" if start > 0 else ""
+    suffix = "…" if end < len(text) else ""
+    return f"{prefix}{excerpt}{suffix}"
+
+
+def search_session_file(path: Path, query: str) -> str:
+    """Find the words of `query` in one saved conversation, tool results included.
+
+    Shows the newest five matches, preferring passages that hold every word.
+    """
+    words = [w for w in re.findall(r"\w+", query.lower()) if w]
+    if not words:
+        return NO_MATCH_THIS_CHAT
+    passages = _session_passages(path)
+    every = [p for p in passages if all(w in p[2].lower() for w in words)]
+    hits = every or [p for p in passages if any(w in p[2].lower() for w in words)]
+    if not hits:
+        return NO_MATCH_THIS_CHAT
+    blocks = [
+        f"[turn {turn} · {label}]\n{_excerpt(text, words)}"
+        for turn, label, text in reversed(hits[-THIS_CHAT_HITS:])
+    ]
+    shown = " ".join(query.split())
+    return f'Matches in this conversation for "{shown}":\n\n' + "\n\n".join(blocks)
+
+
 __all__ = [
     "FTS5_UNAVAILABLE_MSG",
     "MemoryIndex",
@@ -730,5 +845,6 @@ __all__ = [
     "default_memory_index",
     "format_index_size",
     "is_note_id_query",
+    "search_session_file",
     "synthetic_note_id",
 ]

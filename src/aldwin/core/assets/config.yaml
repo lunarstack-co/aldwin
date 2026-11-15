@@ -15,8 +15,9 @@ check_for_updates: true
 
 # Context and turn limits
 limits:
-  # Number of recent user/assistant exchanges sent to the model
-  context_exchanges: 20
+  # How full a chat gets (percent of what the model can read, 60 to 90)
+  # before Aldwin makes room by summarising older messages
+  context_compact_percent: 60
 
   # Maximum characters read from memory/profile.md
   profile_chars: 4000
@@ -31,7 +32,7 @@ limits:
   persona_chars: 2000
 
   # Maximum agent steps per turn before asking to continue
-  max_steps: 15
+  max_steps: 50
 
   # Maximum web_search tool calls per user turn
   web_searches: 5

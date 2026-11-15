@@ -392,3 +392,62 @@ def test_perf_budget_rebuild_and_query(tmp_path: Path) -> None:
     assert rebuild_s <= budget(2.0), f"rebuild {rebuild_s:.3f}s"
     assert noop_s <= budget(0.030), f"noop sync {noop_s:.3f}s"
     assert query_s <= budget(0.050), f"query {query_s:.3f}s"
+
+
+def test_matching_sessions_finds_chats_by_what_was_said(tmp_path: Path) -> None:
+    """History search matches every word, word starts too, one row per chat."""
+    idx = _index(tmp_path)
+    steps: list[dict[str, object]] = [
+        {"type": "task", "data": {"task": "what was my average food spend"}},
+        {"type": "final", "data": {"answer": "Your food spend averaged £415.67"}},
+    ]
+    _write_session(
+        idx.sessions_dir,
+        "2026-11-15_budget",
+        updated_at="2026-11-15T12:00:00+00:00",
+        steps=steps,
+    )
+    _write_session(
+        idx.sessions_dir,
+        "2026-11-14_other",
+        updated_at="2026-11-14T12:00:00+00:00",
+        steps=[{"type": "task", "data": {"task": "plan a food shop"}}],
+    )
+
+    hits = idx.matching_sessions("food spend")
+
+    assert [hit["id"] for hit in hits] == ["2026-11-15_budget"]
+    assert "spend" in hits[0]["snippet"]
+    assert [h["id"] for h in idx.matching_sessions("aver")] == ["2026-11-15_budget"]
+    assert sorted(h["id"] for h in idx.matching_sessions("food")) == [
+        "2026-11-14_other",
+        "2026-11-15_budget",
+    ]
+    assert idx.matching_sessions("   ") == []
+    assert idx.matching_sessions('"') == []
+
+
+def test_one_busy_chat_never_hides_another_match(tmp_path: Path) -> None:
+    idx = _index(tmp_path)
+    busy: list[dict[str, object]] = []
+    for i in range(300):
+        busy.append({"type": "task", "data": {"task": f"budget check {i}"}})
+        busy.append({"type": "final", "data": {"answer": f"budget line {i} is fine"}})
+    _write_session(
+        idx.sessions_dir,
+        "2026-11-01_busy",
+        updated_at="2026-11-01T12:00:00+00:00",
+        steps=busy,
+    )
+    filler = " ".join(f"word{i}" for i in range(400))
+    _write_session(
+        idx.sessions_dir,
+        "2026-11-02_other",
+        updated_at="2026-11-02T12:00:00+00:00",
+        steps=[{"type": "task", "data": {"task": f"{filler} the budget {filler}"}}],
+    )
+
+    hits = idx.matching_sessions("budget")
+
+    assert {hit["id"] for hit in hits} == {"2026-11-01_busy", "2026-11-02_other"}
+    assert all("budget" in hit["snippet"] for hit in hits)

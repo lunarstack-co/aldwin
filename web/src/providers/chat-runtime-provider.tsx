@@ -7,11 +7,11 @@ import {
   type ExternalStoreThreadData,
   type ThreadMessageLike,
 } from "@assistant-ui/react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useMemo, type ReactNode } from "react";
 
 import { leaveTo } from "@/components/organisms/leave-guard";
-import { conversationHref } from "@/constants/routes";
+import { conversationHref, isSettingsPage } from "@/constants/routes";
 import { useChatStore } from "@/state/chat-store";
 import { useConnectionStore } from "@/state/connection-store";
 import { confirmLeave } from "@/state/unsaved-store";
@@ -36,6 +36,7 @@ export function ChatRuntimeProvider({
   children: ReactNode;
 }) {
   const router = useRouter();
+  const onSettings = isSettingsPage(usePathname());
   const turns = useChatStore((s) => s.turns);
   const activeId = useChatStore((s) => s.activeId);
   const sessions = useChatStore((s) => s.sessions);
@@ -44,6 +45,10 @@ export function ChatRuntimeProvider({
 
   const onNew = useCallback(
     async (message: AppendMessage) => {
+      if (useChatStore.getState().makingRoomSince !== null) {
+        useChatStore.setState({ draft: textOf(message) });
+        return;
+      }
       session.sendTurn(textOf(message));
     },
     [session],
@@ -71,10 +76,11 @@ export function ChatRuntimeProvider({
   );
   const onSwitchToThread = useCallback(
     (id: string) => {
-      if (id === useChatStore.getState().currentSessionId) useChatStore.getState().setHistoryView("chat");
+      // From Settings the open conversation still needs its page, not just the chat view.
+      if (id === useChatStore.getState().currentSessionId && !onSettings) useChatStore.getState().setHistoryView("chat");
       else confirmLeave(() => leaveTo(router, conversationHref(id)));
     },
-    [router],
+    [router, onSettings],
   );
   const onSwitchToNewThread = useCallback(() => {
     confirmLeave(() => {

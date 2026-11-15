@@ -188,6 +188,8 @@ class ContextUsage(_DisplayModel):
     limit: int = Field(ge=1)
     used: int = Field(ge=0)
     segments: list[ContextSegment] = Field(default_factory=list)
+    # Tokens past which Aldwin makes room in this chat; None when it never does.
+    compact_at: int | None = Field(default=None, ge=1)
 
 
 @lru_cache(maxsize=1)

@@ -29,6 +29,8 @@ export type SkillsListRequest = RequestBase & { type: "skills.list" };
 export type SkillsShowRequest = RequestBase & { type: "skills.show"; name: string };
 export type ModelsListRequest = RequestBase & { type: "models.list"; provider?: string; refresh?: boolean };
 export type SetModelRequest = RequestBase & { type: "set_model"; name: string };
+/** Make room in the open chat now, by summarising older messages. */
+export type CompactRequest = RequestBase & { type: "compact" };
 export type ProviderServerRequest = RequestBase & {
   type: "provider.server";
   name: string;
@@ -78,6 +80,7 @@ export type Request =
   | SkillsShowRequest
   | ModelsListRequest
   | SetModelRequest
+  | CompactRequest
   | ProviderServerRequest
   | ProviderDisconnectRequest
   | SearchListRequest
@@ -113,7 +116,10 @@ export type SkillSource = "default" | "user" | "user override";
 /** A flag starting `error:` means the skill failed to load. */
 export type SkillCatalogItem = {
   name: string;
+  /** When to use the skill, written for the model. */
   description: string;
+  /** The plain line people see, when the skill has one. */
+  summary?: string;
   source: SkillSource;
   flags: string[];
   last_used: string | null;
@@ -320,6 +326,8 @@ export type ContextUsage = {
   limit: number;
   used: number;
   segments: ContextSegment[];
+  /** Tokens past which Aldwin makes room; `null` when it never does. */
+  compact_at?: number | null;
 };
 
 type EventBase = { v: number; type: "event"; re: string; channel: string; sender: string };
@@ -349,6 +357,7 @@ export type HistoryEvent = EventBase & {
   kind: "history";
   messages: HistoryItem[];
   interrupted: boolean;
+  context?: ContextUsage | null;
 };
 export type StatusEvent = EventBase & {
   kind: "status";
@@ -375,7 +384,8 @@ export type TodoUpdatedEvent = EventBase & {
   done: number;
   total: number;
 };
-export type NoticeEvent = EventBase & { kind: "notice"; message: string };
+/** `topic` "room" marks Aldwin making room in a long chat, which the browser keeps quiet. */
+export type NoticeEvent = EventBase & { kind: "notice"; message: string; topic?: string | null };
 export type SkillsEvent = EventBase & { kind: "skills"; items: SkillCatalogItem[] };
 export type SkillsUsedEvent = EventBase & { kind: "skills.used"; names: string[]; dropped: DroppedSkill[] };
 /** Dropped apps are unknown (not connected) or past the limit. */

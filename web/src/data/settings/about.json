@@ -1,0 +1,6 @@
+{
+  "loadError": "Couldn't read the settings.",
+  "version": "Version",
+  "updates": "Check for updates",
+  "updatesHint": "When Aldwin starts, it asks PyPI, where Aldwin is published, for the latest version number and tells you if there is a newer one."
+}

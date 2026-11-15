@@ -48,6 +48,26 @@ PATCHABLE_SETTINGS: Final[tuple[str, ...]] = (
     "model",
     "search",
 )
+# The most the settings page lets someone set; config.yaml itself can go higher.
+PAGE_LIMIT_MAXIMUMS: Final[dict[str, int]] = {
+    "profile_chars": 20_000,
+    "persona_chars": 10_000,
+    "notes_chars": 20_000,
+    "notes_days": 30,
+    "max_steps": 1_000,
+    "web_searches": 50,
+    "connector_tools": 100,
+}
+PAGE_LIMITS: Final[tuple[str, ...]] = (
+    "profile_chars",
+    "persona_chars",
+    "notes_chars",
+    "notes_days",
+    "context_compact_percent",
+    "max_steps",
+    "web_searches",
+    "connector_tools",
+)
 _SEARCH_FIELDS: Final[frozenset[str]] = frozenset({"provider", "searxng_url"})
 _SECRET_SUFFIXES: Final[tuple[str, ...]] = ("_key", "_token", "_secret")
 ONBOARDING_FILE: Final[str] = "onboarding.json"
@@ -92,6 +112,13 @@ def list_conversation_metas(home: Path | None = None) -> list[dict[str, Any]]:
     return rows
 
 
+def search_conversations(query: str, home: Path | None = None) -> list[dict[str, str]]:
+    """Saved chats whose messages match `query`, each with a short matching snippet."""
+    from aldwin.core.memory_index import default_memory_index
+
+    return default_memory_index(_resolve_home(home)).matching_sessions(query)
+
+
 def load_conversation_json(
     session_id: str, home: Path | None = None
 ) -> dict[str, Any] | None:
@@ -104,7 +131,11 @@ def load_conversation_json(
         raw: Any = json.loads(stored.path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    return raw if isinstance(raw, dict) else None
+    if not isinstance(raw, dict):
+        return None
+    # The model's notes on a long chat are never shown in the app.
+    raw.pop("compaction", None)
+    return raw
 
 
 def load_connector_icon(
@@ -124,12 +155,32 @@ def get_settings_view(home: Path | None = None) -> dict[str, Any]:
         "model": config.model,
         "check_for_updates": config.check_for_updates,
         "limits": config.limits.model_dump(),
+        "limit_rules": limit_rules(),
         "search": {
             "provider": config.search.provider,
             "searxng_url": config.search.searxng_url,
         },
         "keys": _key_rows(config, root),
     }
+
+
+def limit_rules() -> dict[str, dict[str, int]]:
+    """The default and allowed range of each limit the settings page edits."""
+    rules: dict[str, dict[str, int]] = {}
+    for name in PAGE_LIMITS:
+        field = LimitsConfig.model_fields[name]
+        bounds = {
+            key: getattr(item, key)
+            for item in field.metadata
+            for key in ("ge", "le")
+            if hasattr(item, key)
+        }
+        rules[name] = {
+            "default": int(field.default),
+            "min": int(bounds["ge"]),
+            "max": int(bounds["le"] if "le" in bounds else PAGE_LIMIT_MAXIMUMS[name]),
+        }
+    return rules
 
 
 def apply_settings_patch(
@@ -385,6 +436,13 @@ def _checked_limits(value: Any, config: AldwinConfig) -> dict[str, Any]:
         error = exc.errors()[0]
         where = ".".join(str(part) for part in error.get("loc", ()))
         raise SettingsError(f"limits.{where}: {error.get('msg', '')}.") from None
+    rules = limit_rules()
+    for key, amount in value.items():
+        if key in rules and amount > rules[key]["max"]:
+            raise SettingsError(
+                f"limits.{key}: Input should be less than or equal to "
+                f"{rules[key]['max']}."
+            )
     return dict(value)
 
 

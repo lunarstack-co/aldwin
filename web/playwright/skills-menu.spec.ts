@@ -269,3 +269,16 @@ test("on phones the menu fits the screen with tall rows @cross", async ({ page }
   expect(box.x + box.width).toBeLessThanOrEqual(width);
   for (const option of await options(page).all()) expect((await option.boundingBox())!.height).toBeGreaterThanOrEqual(40);
 });
+
+test("a skill's plain summary is what people see, not the rule written for the model @cross", async ({ page, host }) => {
+  host.skills = [
+    newSkill("connectors", {
+      description: "Connect an app when the user asks, with propose_connector. Use when the user wants an app.",
+      summary: "Connects Aldwin to apps you use, such as Notion or GitHub.",
+    }),
+  ];
+  await openChat(page);
+  await typeInComposer(page, "@");
+  await expect(options(page).first()).toContainText("Connects Aldwin to apps you use, such as Notion or GitHub.");
+  await expect(menu(page)).not.toContainText("propose_connector");
+});

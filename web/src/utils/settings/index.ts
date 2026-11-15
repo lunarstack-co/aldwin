@@ -1,6 +1,6 @@
-import type { Limits, LimitField } from "@/types/settings";
+import type { LimitField, LimitRule, Limits } from "@/types/settings";
 
-export const SETTINGS_SECTIONS = ["providers", "search", "skills", "tools", "advanced", "appearance"] as const;
+export const SETTINGS_SECTIONS = ["providers", "search", "skills", "tools", "advanced", "appearance", "about"] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 /** Models when the address names no section or an unknown one. */
@@ -15,4 +15,15 @@ export function changedLimits(saved: Limits, edited: Limits): Partial<Limits> {
     if (edited[field] !== saved[field]) changed[field] = edited[field];
   }
   return changed;
+}
+
+/** A whole number inside the range the host allows. */
+export function limitIsValid(value: number, rule: LimitRule): boolean {
+  return Number.isInteger(value) && value >= rule.min && value <= rule.max;
+}
+
+/** "4,000 characters", or "60%" for a percentage. */
+export function withUnit(value: number, unit: string): string {
+  const amount = value.toLocaleString("en");
+  return unit === "%" ? `${amount}%` : `${amount} ${unit}`;
 }

@@ -361,6 +361,22 @@ Needs at least one real search key (any of Tavily, Brave, Exa, Perplexity, Paral
    - Expect: the plain text list of every provider with `ready` / `not ready`.
 - [ ] Pass / Fail
 
+### Step 22: Long conversations
+
+Use a hosted model, then repeat with a local model that has about 32,000 tokens of room.
+
+1. In a new chat, run `/compact`.
+   - Expect: `This chat is still short, so there's nothing to make room for yet.` In the browser, **Make room now** in the context ring stays disabled until the chat passes the line.
+2. Paste long documents, or ask for long web pages, until the working line says `Making room in this chat...`.
+   - Expect: the answer still comes; scrolling up still shows the first message; the context ring drops. The browser shows no toast for it.
+3. Ask about a fact from the first message, then `which files did you change?`.
+   - Expect: correct answers, or Aldwin uses `recall` to look them up.
+4. Run `/compact` again, or press **Make room now**.
+   - Expect: `Made room to keep going. Your messages are all still here.`
+5. Switch to a model with less room and send a message.
+   - Expect: `This chat is longer than <model> can hold, so Aldwin made room. Your messages are all still here.`
+- [ ] Pass / Fail
+
 ## 3. Manual test run log template
 
 Copy the template below and fill it in for each platform tested (`macOS` and `Linux`):

@@ -31,7 +31,7 @@ def test_build_agent_default_config(
     aldwin_home: Path,
     fake_model: FakeModel,
 ) -> None:
-    """`build_agent` wires tools, starter skill, `max_steps=15`, and context."""
+    """`build_agent` wires tools, starter skill, `max_steps=50`, and context."""
     ensure_home(aldwin_home)
 
     @tool
@@ -55,7 +55,7 @@ def test_build_agent_default_config(
     )
 
     assert agent.model is fake_model
-    assert agent.max_steps == 15
+    assert agent.max_steps == 50
     assert agent.tool_timeout == 60.0
     assert agent.max_tool_output_chars == 10_000
     assert agent.context_manager is not None

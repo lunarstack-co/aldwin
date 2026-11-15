@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Final, Literal, cast
@@ -17,6 +19,7 @@ from uuid import uuid4
 from agentling import (
     Agent,
     AgentSession,
+    ChatMessage,
     FinalEvent,
     ModelContextLengthError,
     StepEvent,
@@ -29,10 +32,11 @@ from agentling import (
 from agentling import (
     ToolResultEvent as AgentlingToolResultEvent,
 )
-from agentling.memory import FinalStep, TaskStep
+from agentling.memory import FinalStep
 from agentling.tools import ToolCallError
 
 import aldwin
+from aldwin.core import compaction as compaction_core
 from aldwin.core.agent import (
     AnyAskFn,
     SessionContext,
@@ -79,6 +83,8 @@ from aldwin.core.policy import (
     compute_digest,
     sanitize_display_text,
 )
+from aldwin.core.providers.ollama import MAX_NUM_CTX as OLLAMA_MAX_NUM_CTX
+from aldwin.core.providers.ollama import OllamaModel
 from aldwin.core.providers.registry import parse_model_ref
 from aldwin.core.settings import (
     ConfigError,
@@ -109,6 +115,15 @@ from aldwin.core.workspace import (
     Workspace,
     default_workspace_root,
     format_outside_display,
+)
+from aldwin.host.compaction import (
+    Room,
+    RoomOutcome,
+    Sizer,
+    fixed_tokens,
+    leave_out_after_refusal,
+    make_room,
+    model_summariser,
 )
 from aldwin.host.connectors import (
     AddResult,
@@ -141,6 +156,7 @@ from aldwin.protocol import (
     ApproveRequest,
     AppsUsedEvent,
     CatalogItem,
+    CompactRequest,
     ConnectorAuthEvent,
     ConnectorInfo,
     ConnectorProbeEvent,
@@ -234,6 +250,10 @@ CONVERSATION_BUSY_MESSAGE: Final[str] = (
     "Another Aldwin window is answering in this conversation. "
     "Wait for it to finish, then try again."
 )
+# Window assumed for making room by hand when the model's window is unknown.
+BY_HAND_WINDOW: Final[int] = 32_768
+# Fallbacks allowed in one turn after the provider refuses a request as too long.
+MAX_REFUSAL_ROUNDS: Final[int] = 2
 DELETED_ELSEWHERE: Final[str] = (
     "That conversation was deleted in another window, so this message starts a new one."
 )
@@ -293,6 +313,21 @@ def format_tool_summary(content: str) -> str:
         if stripped:
             return shorten_one_line(stripped, MAX_PREVIEW_CHARS)
     return ""
+
+
+def _plus(first: Usage | None, second: Usage | None) -> Usage | None:
+    """Add two usages where either may be missing."""
+    if first is None:
+        return second
+    return first if second is None else first + second
+
+
+def _room_fingerprint(compaction: dict[str, Any] | None) -> str:
+    """A short stamp of what the model saw, so a count is reused only for that view."""
+    if not compaction:
+        return ""
+    canonical = json.dumps(compaction, sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 
 def _to_token_usage(usage: Usage | None) -> TokenUsage | None:
@@ -759,7 +794,6 @@ class AldwinHost:
         self._serve_task: asyncio.Task[None] | None = None
         self._todo: list[dict[str, str]] = list(self._stored_session.todo or [])
         self._host_flags: dict[str, bool] = {"skills_dirty": False}
-        self._pending_turn_notices: list[str] = []
         self._skills_fingerprint: tuple[tuple[str, int, int], ...] = ()
         self._config_secrets_fingerprint: tuple[int, int, int, int] = (0, 0, 0, 0)
         self._session_fingerprint = session_file_fingerprint(self._stored_session.path)
@@ -768,6 +802,9 @@ class AldwinHost:
         self._attached_at_turn_start = False
         self._turn_stream: list[str] = []
         self._turn_tools: dict[str, str] = {}
+        self._switched_model = False
+        self._view_source: dict[str, Any] | None = None
+        self._view_cache: compaction_core.CompactionView | None = None
         self._skill_catalogue: list[LoadedSkill] = []
         self._last_context_chars: dict[str, int] | None = None
 
@@ -783,6 +820,7 @@ class AldwinHost:
             session_id=self._stored_session.meta.id,
             host_flags=self._host_flags,
             model_name=self._model,
+            session_path_getter=lambda: self._stored_session.path,
         )
 
         self._approvals = ApprovalBroker(
@@ -897,7 +935,6 @@ class AldwinHost:
             connectors_block=self._connectors.context_block,
             on_retry=self.on_retry,
             session_context=self._session_context,
-            notice_emitter=self._emit_sync_notice,
             on_context=self._on_context_chars,
         )
 
@@ -927,27 +964,242 @@ class AldwinHost:
         """Build `DoneEvent.context` when the window, usage, and chars are known."""
         if self._negotiated_version < 2:
             return None
-        limit = self._resolve_context_window()
-        if limit is None or last_step_input is None or self._last_context_chars is None:
+        room = self._room()
+        if room is None:
             return None
+        if last_step_input is None or self._last_context_chars is None:
+            return self._conversation_context_usage()
         return context_usage(
             self._last_context_chars,
             used=last_step_input,
-            limit=limit,
+            limit=room.window,
+            compact_at=room.limit,
         )
 
-    def _emit_sync_notice(self, message: str) -> None:
-        """Route synchronous notices to the turn scope queue."""
-        self._pending_turn_notices.append(message)
+    def _conversation_context_usage(self) -> ContextUsage | None:
+        """The context ring for the saved chat, measured without a model call."""
+        if self._negotiated_version < 2 or not self._agent_session.memory.steps:
+            return None
+        room = self._room()
+        hook = self._agent.context_manager
+        if room is None or not isinstance(hook, ContextHook):
+            return None
+        captured: list[dict[str, int]] = []
+        messages = self._agent_session.memory.to_messages(self._agent.instructions)
+        request = hook.render(messages, self._current_view(), captured.append)
+        if not captured:
+            return None
+        used = compaction_core.estimate_tokens(request, self._tool_definitions())
+        return context_usage(
+            captured[-1],
+            used=used + self._real_offset(),
+            limit=room.window,
+            compact_at=room.limit,
+        )
 
-    async def _flush_pending_notices(self, req_id: str, scope: RequestScope) -> None:
-        """Emit any pending synchronous notices (e.g. from context window trims)."""
-        if not self._pending_turn_notices:
+    def _compaction_state(self) -> compaction_core.CompactionState:
+        """The stored view of a long chat, checked against the steps."""
+        return compaction_core.CompactionState.from_dict(
+            self._stored_session.compaction, self._agent_session.memory.steps
+        )
+
+    def _current_view(self) -> compaction_core.CompactionView | None:
+        """The view the context hook applies, rebuilt only when the state changes."""
+        raw = self._stored_session.compaction
+        if raw is None:
+            return None
+        if raw is not self._view_source:
+            self._view_cache = compaction_core.build_view(
+                self._agent_session.memory.steps, self._compaction_state()
+            )
+            self._view_source = raw
+        return self._view_cache
+
+    def _tool_definitions(self) -> list[Any]:
+        return [tool.definition for tool in self._agent_session.tools.values()]
+
+    def _room(self, window: int | None = None) -> Room | None:
+        """The active model's window, limit and hard ceiling; None when unknown."""
+        window = window or self._resolve_context_window()
+        if window is None:
+            return None
+        if isinstance(self._agent.model, OllamaModel):
+            window = min(window, OLLAMA_MAX_NUM_CTX)
+        raw_output = getattr(self._agent.model, "max_tokens", None)
+        max_output = raw_output if isinstance(raw_output, int) else None
+        percent = self._config.limits.context_compact_percent
+        return Room(
+            window=window,
+            limit=compaction_core.compaction_limit(window, max_output, percent),
+            ceiling=compaction_core.hard_ceiling(window, max_output),
+        )
+
+    def _real_offset(self) -> int:
+        """How far the provider's last count was from Aldwin's estimate of it."""
+        measured = self._stored_session.measured or {}
+        tokens, estimate = measured.get("tokens"), measured.get("estimate")
+        if (
+            type(tokens) is not int
+            or type(estimate) is not int
+            or measured.get("model") != self._model
+            or measured.get("room")
+            != _room_fingerprint(self._stored_session.compaction)
+        ):
+            return 0
+        offset = tokens - estimate
+        # Ollama reports the cut count after a silent cut, so never trust a lower one.
+        return max(offset, 0) if is_local_model(self._model) else offset
+
+    def _sizer(self, task_text: str | None) -> Sizer:
+        memory = self._agent_session.memory
+        messages = memory.to_messages(self._agent.instructions)
+        conversation = messages[1:]
+        if task_text is not None:
+            conversation.append(ChatMessage(role="user", content=task_text))
+        hook = self._agent.context_manager
+        system = (
+            hook.render([messages[0]], None)[0]
+            if isinstance(hook, ContextHook)
+            else messages[0]
+        )
+        return Sizer(
+            fixed=fixed_tokens(system, self._tool_definitions()),
+            conversation=conversation,
+            steps=list(memory.steps),
+            offset=self._real_offset(),
+        )
+
+    def _note_real_count(self, last_step_input: int | None) -> None:
+        """Save the provider's count for the last request beside Aldwin's estimate."""
+        hook = self._agent.context_manager
+        if last_step_input is None or not isinstance(hook, ContextHook):
             return
-        notices = list(self._pending_turn_notices)
-        self._pending_turn_notices.clear()
-        for message in notices:
-            await scope.emit(NoticeEvent(re=req_id, message=message))
+        if hook.last_request is None:
+            return
+        self._stored_session.measured = {
+            "tokens": last_step_input,
+            "estimate": compaction_core.estimate_tokens(
+                hook.last_request, self._tool_definitions()
+            ),
+            "model": self._model,
+            "room": _room_fingerprint(self._stored_session.compaction),
+        }
+
+    def _room_message(self, key: str) -> str:
+        if key in ("summarised", "fallback") and self._switched_model:
+            key = "switched"
+        _, model_id = parse_model_ref_parts(self._model)
+        return compaction_core.MESSAGES[key].format(model=model_id)
+
+    def _apply_room(self, outcome: RoomOutcome) -> None:
+        """Save the new view and forget reads whose contents left it."""
+        steps = self._agent_session.memory.steps
+        paths = [
+            *compaction_core.read_paths(steps[slice(*outcome.retired)]),
+            *compaction_core.read_paths(steps[slice(*outcome.shortened)]),
+        ]
+        if paths:
+            self._policy_session.forget_reads(paths)
+            agent_policy = self._session_context.policy_session
+            if agent_policy is not self._policy_session:
+                agent_policy.forget_reads(paths)
+        state = outcome.state
+        empty = state == compaction_core.CompactionState()
+        self._stored_session.compaction = None if empty else state.to_dict()
+        self._persist_session(
+            interrupted=self._stored_session.meta.interrupted, touch=False
+        )
+
+    async def _make_room(
+        self, scope: RequestScope, req_id: str, task_text: str | None
+    ) -> RoomOutcome | None:
+        """Make room before a turn, or by hand when `task_text` is None.
+
+        Returns None when the model's window is unknown.
+        """
+        room = self._room()
+        if room is None and task_text is None:
+            room = self._room(BY_HAND_WINDOW)
+        if room is None:
+            return None
+        local = is_local_model(self._model)
+
+        showed_status = False
+
+        async def on_status(message: str) -> None:
+            nonlocal showed_status
+            showed_status = True
+            await scope.emit(self._turn_status_event(req_id, message))
+
+        task_tokens = (
+            None
+            if task_text is None
+            else compaction_core.estimate_tokens(
+                [ChatMessage(role="user", content=task_text)]
+            )
+        )
+        sizer = self._sizer(task_text)
+        outcome = await make_room(
+            steps=sizer.steps,
+            state=self._compaction_state(),
+            sizer=sizer,
+            room=room,
+            task_tokens=task_tokens,
+            summarise=model_summariser(
+                self._agent.model, compaction_core.summary_timeout(local=local)
+            ),
+            now=lambda: datetime.now(UTC),
+            on_status=on_status,
+            model_name=self._model,
+        )
+        if showed_status:
+            # Clears the line so it doesn't stay on the rest of the turn.
+            await on_status("")
+        if outcome.stop in (None, "notes_failed"):
+            # A failed summary is saved too, so the wait before the next try holds.
+            self._apply_room(outcome)
+        if outcome.notice is not None:
+            message = self._room_message(outcome.notice)
+            await scope.emit(NoticeEvent(re=req_id, message=message, topic="room"))
+        return outcome
+
+    async def _make_room_before_turn(
+        self, scope: RequestScope, req_id: str, task_text: str
+    ) -> tuple[bool, Usage | None]:
+        """Make room for the next message; False when the turn must not run."""
+        try:
+            outcome = await self._make_room(scope, req_id, task_text)
+        except asyncio.CancelledError:
+            self._active_turn_id = None
+            self._active_turn_scope = None
+            if not scope.terminated:
+                await scope.done("stopped")
+            raise
+        except Exception:
+            logger.exception("making room failed; sending the turn as it is")
+            return True, None
+        finally:
+            self._switched_model = False
+        if outcome is None:
+            return True, None
+        if outcome.stop is not None:
+            self._active_turn_id = None
+            self._active_turn_scope = None
+            await scope.error("request_rejected", self._room_message(outcome.stop))
+            return False, outcome.usage
+        return True, outcome.usage
+
+    def _leave_out_after_refusal(self) -> bool:
+        """Leave out older turns after the provider refused a request."""
+        state = self._compaction_state()
+        sizer = self._sizer(None)
+        moved = leave_out_after_refusal(
+            steps=sizer.steps, state=state, sizer=sizer, room=self._room()
+        )
+        if moved is None:
+            return False
+        self._apply_room(RoomOutcome(state=moved, retired=(state.cut, moved.cut)))
+        return True
 
     def _attach_session(self, session: AgentSession) -> None:
         """Make `session` the live agent session and give it the connector tools.
@@ -1028,9 +1280,11 @@ class AldwinHost:
             if ctx.policy_session.on_circuit_breaker is None:
                 ctx.policy_session.on_circuit_breaker = self._on_circuit_breaker
             ctx.session_id = self._stored_session.meta.id
+            ctx.session_path_getter = lambda: self._stored_session.path
 
         if isinstance(agent.context_manager, ContextHook):
             agent.context_manager.on_context = self._on_context_chars
+            agent.context_manager.view_provider = self._current_view
 
         retry = getattr(agent, "retry", None)
         if retry is not None and retry.on_retry is None:
@@ -1411,7 +1665,7 @@ class AldwinHost:
                 )
             return
 
-        if isinstance(req, TurnRequest):
+        if isinstance(req, TurnRequest | CompactRequest):
             if self._turn_task is not None and not self._turn_task.done():
                 async with RequestScope(
                     req.id,
@@ -1430,7 +1684,12 @@ class AldwinHost:
                 self._transport.send_event,
                 version=self._negotiated_version,
             )
-            self._turn_task = asyncio.create_task(self._run_turn(turn_scope, req))
+            runner = (
+                self._run_turn(turn_scope, req)
+                if isinstance(req, TurnRequest)
+                else self._run_compact(turn_scope)
+            )
+            self._turn_task = asyncio.create_task(runner)
             return
 
         if isinstance(
@@ -1818,6 +2077,7 @@ class AldwinHost:
                 re=req.id,
                 messages=messages,
                 interrupted=self._stored_session.meta.interrupted,
+                context=self._conversation_context_usage(),
             )
         )
         await scope.done("ok")
@@ -1884,9 +2144,11 @@ class AldwinHost:
 
         self._agent = self._build_and_attach_agent(self._model)
         self._attach_session(switch_session_model(self._agent_session, self._agent))
+        self._stored_session.measured = None
+        self._switched_model = True
         self._refresh_skill_state_from_agent()
         self._persist_session(interrupted=self._stored_session.meta.interrupted)
-        await scope.done("ok")
+        await scope.done("ok", context=self._conversation_context_usage())
 
     async def _handle_models_list(
         self,
@@ -2381,6 +2643,41 @@ class AldwinHost:
                 self._turn_tools.clear()
                 lock.release()
 
+    async def _run_compact(self, scope: RequestScope) -> None:
+        """Make room by hand, holding this conversation's lock like a turn."""
+        async with scope:
+            lock = ConversationLock(self._home, self._stored_session.meta.id)
+            if not lock.try_acquire():
+                await scope.error("busy", CONVERSATION_BUSY_MESSAGE)
+                return
+            try:
+                if not self._reload_session_if_changed():
+                    await scope.error("internal", "Aldwin couldn't read this chat.")
+                    return
+                # Room made by hand is the user's choice, not the model switch's.
+                self._switched_model = False
+                outcome = await self._make_room(scope, scope.req_id, None)
+            except asyncio.CancelledError:
+                if not scope.terminated:
+                    await scope.done("stopped")
+                raise
+            finally:
+                lock.release()
+            if outcome is not None and outcome.stop is not None:
+                code: ErrorCode = (
+                    "invalid_request"
+                    if outcome.stop == "still_short"
+                    else "request_rejected"
+                )
+                await scope.error(code, self._room_message(outcome.stop))
+                return
+            usage = outcome.usage if outcome is not None else None
+            await scope.done(
+                "ok",
+                usage=_to_token_usage(usage),
+                context=self._conversation_context_usage(),
+            )
+
     async def _run_turn_steps(self, scope: RequestScope, req: TurnRequest) -> None:
         """Execute a turn and map Agentling events to protocol events."""
         self._active_turn_id = req.id
@@ -2402,7 +2699,6 @@ class AldwinHost:
             logger.exception("connector reconcile failed; continuing the turn")
         for message in self._connectors.take_turn_notices():
             await scope.emit(NoticeEvent(re=req.id, message=message))
-        await self._flush_pending_notices(req.id, scope)
         step_text_chunks: list[str] = []
         # Text streamed in the latest model step before tools cleared it.
         last_step_streamed = ""
@@ -2454,6 +2750,11 @@ class AldwinHost:
                 )
             )
             task_text = build_picked_apps(task_text, apps_used)
+        may_run, room_usage = await self._make_room_before_turn(
+            scope, req.id, task_text
+        )
+        if not may_run:
+            return
         if self._stored_session.turns is None:
             self._stored_session.turns = []
         stored_turn: dict[str, Any] = {
@@ -2490,11 +2791,10 @@ class AldwinHost:
                 stream=True,
                 reset=False,
             )
-            can_trim_context = True
+            refusals = 0
             while True:
                 try:
                     async for ev in stream_iter:
-                        await self._flush_pending_notices(req.id, scope)
                         if isinstance(ev, TextDelta):
                             if cold_load_task is not None and not cold_load_task.done():
                                 cold_load_task.cancel()
@@ -2678,30 +2978,22 @@ class AldwinHost:
                                     )
                     break
                 except ModelContextLengthError:
-                    task_indices = [
-                        i
-                        for i, s in enumerate(self._agent_session.memory.steps)
-                        if isinstance(s, TaskStep)
-                    ]
-                    if len(task_indices) > 1 and can_trim_context:
-                        can_trim_context = False
+                    if (
+                        refusals < MAX_REFUSAL_ROUNDS
+                        and self._leave_out_after_refusal()
+                    ):
+                        refusals += 1
                         self._policy_session.clear_step_calls()
-                        self._agent_session.memory.steps = list(
-                            self._agent_session.memory.steps[task_indices[1] :]
-                        )
                         step_text_chunks.clear()
                         self._turn_stream.clear()
                         last_step_streamed = ""
                         action_steps_input_sum = 0
                         last_action_step_input = None
-                        _, model_id = parse_model_ref_parts(self._model)
                         await scope.emit(
                             NoticeEvent(
                                 re=req.id,
-                                message=(
-                                    f"This conversation is too long for "
-                                    f"{model_id}. Aldwin trimmed older messages."
-                                ),
+                                message=self._room_message("fallback"),
+                                topic="room",
                             )
                         )
                         stream_iter = self._agent_session.resume(stream=True)
@@ -2719,6 +3011,8 @@ class AldwinHost:
                     last_step_input = final_usage.input_tokens
             elif last_action_step_input is not None:
                 last_step_input = last_action_step_input
+            self._note_real_count(last_step_input)
+            reported_usage = _to_token_usage(_plus(final_usage, room_usage))
 
             if final_status == "interrupted":
                 self._flush_partial_text(step_text_chunks)
@@ -2733,7 +3027,7 @@ class AldwinHost:
                     )
                 await scope.done(
                     "stopped",
-                    usage=_to_token_usage(final_usage),
+                    usage=reported_usage,
                     context=self._build_turn_context_usage(last_step_input),
                 )
                 return
@@ -2759,10 +3053,9 @@ class AldwinHost:
                         ),
                     )
                 )
-            await self._flush_pending_notices(req.id, scope)
             await scope.done(
                 reason,
-                usage=_to_token_usage(final_usage),
+                usage=reported_usage,
                 max_steps=self._agent.max_steps if reason == "max_steps" else None,
                 context=self._build_turn_context_usage(last_step_input),
             )

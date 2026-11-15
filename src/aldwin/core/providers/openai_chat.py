@@ -83,6 +83,9 @@ _FINISH_REASONS: Final[dict[str, FinishReason]] = {
     "error": "error",
 }
 
+# Hosted OpenAI-compatible APIs do not report a window; most chat models have this.
+HOSTED_CONTEXT_WINDOW: Final[int] = 128_000
+
 # Base URLs confirmed to reject the stream_options parameter.
 _BASE_URLS_WITHOUT_STREAM_OPTIONS: set[str] = set()
 
@@ -100,6 +103,7 @@ class OpenAIChatModel:
         transport: httpx.AsyncBaseTransport | None = None,
         extra_body: dict[str, Any] | None = None,
         local: bool = False,
+        context_window: int | None = None,
     ) -> None:
         """Create the adapter.
 
@@ -114,6 +118,8 @@ class OpenAIChatModel:
             extra_body: Fields merged into every request body last, so they
                 win: sampling settings such as temperature, or a
                 server's own options.
+            local: True for a server on this computer.
+            context_window: The model's window in tokens, or None when unknown.
         """
         self.model = model
         self.api_key = (
@@ -124,6 +130,7 @@ class OpenAIChatModel:
         self.transport = transport
         self.extra_body = dict(extra_body or {})
         self.local = local
+        self.context_window = context_window
 
     def _build_headers(self) -> dict[str, str]:
         headers: dict[str, str] = {}
@@ -547,6 +554,7 @@ class OpenAIChatBackend:
             timeout=self.timeout,
             transport=self.transport,
             local=self.entry.local,
+            context_window=None if self.entry.local else HOSTED_CONTEXT_WINDOW,
         )
 
     def _build_headers(self) -> dict[str, str]:
@@ -627,7 +635,7 @@ class OpenAIChatBackend:
                 ModelInfo(
                     id=model_id,
                     title=str(title),
-                    context_window=128000,
+                    context_window=HOSTED_CONTEXT_WINDOW,
                     supports_tools=supports_tools,
                     local=self.entry.local,
                 )

@@ -17,6 +17,7 @@ from aldwin.protocol import (
     ApprovalEvent,
     ApproveRequest,
     AppsUsedEvent,
+    CompactRequest,
     ConnectorInfo,
     ConnectorsAddRequest,
     DoneEvent,
@@ -74,6 +75,7 @@ from aldwin.protocol import (
         ApproveRequest(id="req_4", approval_id="ap_123", answer="yes"),
         HistoryRequest(id="req_5", limit=20),
         SetModelRequest(id="req_6", name="gpt-4o"),
+        CompactRequest(id="req_compact"),
         ModelsListRequest(id="req_7", provider="openai", refresh=True),
         ProviderKeyRequest(id="req_8", provider="deepseek", key="sk-test-1234"),
         ProviderServerRequest(
@@ -1096,3 +1098,15 @@ def test_done_event_context_usage_round_trips() -> None:
 def test_a_history_row_without_apps_parses_with_an_empty_list() -> None:
     item = HistoryItem.model_validate({"role": "user", "text": "hi"})
     assert item.apps == []
+
+
+def test_compact_request_parses_from_wire_json() -> None:
+    """A bare `compact` frame from a door parses into `CompactRequest`."""
+    parsed = parse_request('{"type": "compact", "id": "x"}')
+    assert isinstance(parsed, CompactRequest)
+    assert parsed.id == "x"
+
+
+def test_notice_topic_accepts_topics_a_newer_host_may_send() -> None:
+    event = NoticeEvent.model_validate({"re": "x", "message": "m", "topic": "later"})
+    assert event.topic == "later"

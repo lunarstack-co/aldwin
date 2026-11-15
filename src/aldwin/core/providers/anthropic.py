@@ -51,6 +51,9 @@ _FINISH_REASONS: Final[dict[str, FinishReason]] = {
 
 _NAMESPACE: Final[str] = "anthropic"
 
+# The Messages API does not report a window; current Claude models have at least this.
+CONTEXT_WINDOW: Final[int] = 200_000
+
 
 class AnthropicMessagesModel:
     """Streams messages from the Anthropic Messages API."""
@@ -65,6 +68,7 @@ class AnthropicMessagesModel:
         timeout: float = 60.0,
         transport: httpx.AsyncBaseTransport | None = None,
         extra_body: dict[str, Any] | None = None,
+        context_window: int | None = None,
     ) -> None:
         self.model = model
         self.api_key = (
@@ -75,6 +79,7 @@ class AnthropicMessagesModel:
         self.timeout = timeout
         self.transport = transport
         self.extra_body = dict(extra_body or {})
+        self.context_window = context_window
 
     def _build_headers(self) -> dict[str, str]:
         headers = {"anthropic-version": API_VERSION}
@@ -420,6 +425,7 @@ class AnthropicBackend:
             base_url=self.base_url,
             timeout=self.timeout,
             transport=self.transport,
+            context_window=None if self.entry.local else CONTEXT_WINDOW,
         )
 
     def _build_headers(self) -> dict[str, str]:
@@ -457,7 +463,7 @@ class AnthropicBackend:
                 ModelInfo(
                     id=model_id,
                     title=str(title),
-                    context_window=200000,
+                    context_window=CONTEXT_WINDOW,
                     supports_tools=True,
                     local=False,
                 )

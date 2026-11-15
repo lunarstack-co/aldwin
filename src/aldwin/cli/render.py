@@ -87,9 +87,6 @@ def _steps_phrase(max_steps: int | None) -> str:
     return f"after {max_steps} {unit}"
 
 
-CONTEXT_NEARLY_FULL_NOTICE: Final[str] = (
-    "Context nearly full. Older messages will be dropped; /new starts fresh."
-)
 # Fallback tip when rotation is unavailable (tests / first-run body).
 TIPS_LINE: Final[str] = (
     'Try: "what can you do?"  ·  /help  ·  /history  ·  Esc stops an answer'
@@ -738,10 +735,6 @@ class ChatRenderer:
     def render_status_notice(self, message: str) -> None:
         """Render a non-terminal status notice such as a retry message."""
         self.console.print(Text(f"  {message}", style="muted"))
-
-    def render_context_notice(self) -> None:
-        """Print the one-shot nearly-full context warning."""
-        self.console.print(Text(CONTEXT_NEARLY_FULL_NOTICE, style="muted"))
 
     def start_turn(
         self,

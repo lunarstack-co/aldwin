@@ -25,13 +25,15 @@ from aldwin.cli.chat_screen import (
     render_whats_new_if_due,
     run_chat,
 )
-from aldwin.cli.render import CONTEXT_NEARLY_FULL_NOTICE, ChatRenderer
+from aldwin.cli.commands import SLASH_COMMANDS
+from aldwin.cli.render import ChatRenderer
 from aldwin.cli.theme import PLAIN_PROMPT_STYLE, create_console
 from aldwin.client import BootstrapResult, bootstrap, mark_whats_new_seen, whats_new_due
 from aldwin.core.settings import load_config
 from aldwin.protocol import (
     ApprovalEvent,
     DoneEvent,
+    ErrorEvent,
     TextEvent,
     TokenUsage,
     ToolCallEvent,
@@ -548,37 +550,46 @@ async def test_invalid_key_passes_key_rejected_to_toolbar(aldwin_home: Path) -> 
     assert True in seen_rejected
 
 
-async def test_context_nearly_full_notice_once(aldwin_home: Path) -> None:
-    """After a turn that leaves ≤10% context, print the one-shot notice once."""
+async def test_compact_command_prints_the_notice(aldwin_home: Path) -> None:
+    """`/compact` asks the host to make room and prints what it said."""
     _ = aldwin_home
     boot = bootstrap(plain=True)
     client = FakeClient()
-    # gpt-4o 128k → ~8% left with 117_760 used tokens.
-    client.queue_turn(
-        [
-            DoneEvent(
-                re="r1",
-                reason="answered",
-                usage=TokenUsage(input_tokens=117_760, output_tokens=0),
-            )
-        ]
+
+    buf = io.StringIO()
+    console = create_console(plain=True, width=80, record=True, file=buf)
+    with create_pipe_input() as pipe_in:
+        pipe_in.send_text("/compact\r")
+        pipe_in.send_text("/exit\r")
+        rc = await _run_chat(boot, client=client, console=console, input_dev=pipe_in)
+
+    assert rc == 0
+    assert ("compact",) in client.requests
+    assert "/compact" in [name for name, _ in SLASH_COMMANDS]
+    text = console.export_text()
+    assert "Made room to keep going. Your messages are all still here." in text
+
+
+async def test_compact_command_prints_the_error(aldwin_home: Path) -> None:
+    """A short chat gets the plain explanation, not a failure."""
+    _ = aldwin_home
+    boot = bootstrap(plain=True)
+    client = FakeClient()
+    still_short = "This chat is still short, so there's nothing to make room for yet."
+    client.compact_result = (
+        ErrorEvent(re="r", code="invalid_request", message=still_short),
+        [],
     )
 
     buf = io.StringIO()
     console = create_console(plain=True, width=80, record=True, file=buf)
     with create_pipe_input() as pipe_in:
-        pipe_in.send_text("fill context\r")
+        pipe_in.send_text("/compact\r")
         pipe_in.send_text("/exit\r")
-        rc = await _run_chat(
-            boot,
-            client=client,
-            console=console,
-            input_dev=pipe_in,
-        )
+        rc = await _run_chat(boot, client=client, console=console, input_dev=pipe_in)
 
     assert rc == 0
-    text = console.export_text()
-    assert text.count(CONTEXT_NEARLY_FULL_NOTICE) == 1
+    assert still_short in console.export_text()
 
 
 def test_whats_new_due_matrix(aldwin_home: Path) -> None:

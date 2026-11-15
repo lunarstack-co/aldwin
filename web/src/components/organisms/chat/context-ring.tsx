@@ -1,10 +1,14 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import copy from "@/data/chat/context.json";
+import { useSession } from "@/providers/chat-session-provider";
 import { useChatStore } from "@/state/chat-store";
 import { cn } from "@/utils/cn";
 import { contextPercent, contextTone } from "@/utils/context";
@@ -31,9 +35,23 @@ const TINTS = [
 
 export function ContextRing() {
   const context = useChatStore((s) => s.context);
+  const running = useChatStore((s) => s.activeId !== null);
+  const making = useChatStore((s) => s.makingRoomSince !== null);
+  const session = useSession();
+  // Errors show under the button; making room never raises a toast.
+  const [problem, setProblem] = useState<string | null>(null);
   if (!context || context.limit <= 0) return null;
 
+  async function makeRoom() {
+    setProblem(null);
+    const outcome = await session.compact();
+    if (!outcome.ok) setProblem(outcome.message);
+  }
+
   const percent = contextPercent(context.used, context.limit);
+  const compactAt = context.compact_at ?? null;
+  const notYet = compactAt !== null && context.used < compactAt;
+  const notYetText = fill(copy.notYet, { threshold: contextPercent(compactAt ?? 0, context.limit), percent });
   const tone = contextTone(context.used, context.limit);
   const amber = tone === "amber";
 
@@ -107,7 +125,57 @@ export function ContextRing() {
           title={copy.title}
           headroomLabel={copy.headroom}
           formatTokens={(t) => fill(copy.about, { tokens: t.toLocaleString("en-US") })}
-        />
+          className="max-w-none shadow-md"
+        >
+          <p id="context-make-room-hint" className="text-muted-foreground text-xs">
+            {copy.makeRoomHint}
+          </p>
+          {notYet ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      aria-disabled="true"
+                      aria-describedby="context-make-room-not-yet"
+                      data-testid="context-make-room"
+                      data-not-yet=""
+                      onClick={(event) => event.preventDefault()}
+                      className="cursor-not-allowed opacity-50 max-md:h-10"
+                    />
+                  }
+                >
+                  {copy.makeRoom}
+                  <span id="context-make-room-not-yet" className="sr-only">
+                    {notYetText}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent data-testid="context-make-room-not-yet">{notYetText}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={running || making}
+              onClick={() => void makeRoom()}
+              aria-describedby="context-make-room-hint"
+              data-testid="context-make-room"
+              className="max-md:h-10"
+            >
+              {making ? copy.making : copy.makeRoom}
+            </Button>
+          )}
+          {problem ? (
+            <p role="alert" data-testid="context-make-room-error" className="text-destructive text-xs">
+              {problem}
+            </p>
+          ) : null}
+        </ContextBreakdownLazy>
       </PopoverContent>
     </Popover>
   );

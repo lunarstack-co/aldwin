@@ -104,6 +104,7 @@ class SkillSummary:
     source: str = "default"
     flags: tuple[str, ...] = ()
     last_used: str | None = None
+    summary: str = ""
 
     @property
     def error(self) -> str | None:
@@ -341,6 +342,7 @@ def get_skills_report(home: Path | None = None) -> SkillsReport:
             source=str(item.get("source") or "default"),
             flags=flags,
             last_used=str(last) if last else None,
+            summary=str(item.get("summary") or ""),
         )
         rows.append(summary)
         if summary.error:

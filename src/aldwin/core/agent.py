@@ -156,6 +156,7 @@ class SessionContext:
     session_id_getter: Callable[[], str] | None = None
     host_flags: dict[str, bool] | None = None
     model_name: str = ""
+    session_path_getter: Callable[[], Path | None] | None = None
 
 
 def build_tools(
@@ -213,6 +214,11 @@ def build_tools(
             home=root,
             session_context=session_ctx,
             session_id_getter=session_ctx.session_id_getter,
+            session_path_getter=lambda: (
+                session_ctx.session_path_getter()
+                if session_ctx.session_path_getter is not None
+                else None
+            ),
         ),
         build_persona_tool(
             ask=_legacy_ask,
@@ -334,7 +340,6 @@ def build_agent(
     host_flags: dict[str, bool] | None = None,
     connectors_block: Callable[[], str] | None = None,
     session_context: SessionContext | None = None,
-    notice_emitter: Callable[[str], None] | None = None,
     on_context: Callable[[dict[str, int]], None] | None = None,
 ) -> Agent:
     """Assemble Aldwin's `Agent` from `config`, `secrets`, and `ask`."""
@@ -465,7 +470,6 @@ def build_agent(
     is_local_provider = getattr(active_model, "local", False)
     if not is_local_provider and provider_entry is not None:
         is_local_provider = provider_entry.local
-    ctx_window = getattr(active_model, "context_window", None)
     effective_limits = LOCAL_TRIMS if is_local_provider else config.limits
     context_manager = build_context(
         root,
@@ -473,9 +477,6 @@ def build_agent(
         workspace=ws_for_context,
         connectors_block=connectors_block,
         is_local=is_local_provider,
-        context_window=ctx_window,
-        notice_emitter=notice_emitter,
-        model_id=model_ref.model if "model_ref" in locals() else None,
         on_context=on_context,
     )
 

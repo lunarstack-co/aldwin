@@ -66,7 +66,7 @@ function SkillRow({ skill }: { skill: SkillCatalogItem }) {
           {open ? copy.hide : copy.show}
         </Button>
       </div>
-      <p className="text-muted-foreground text-sm">{skill.description}</p>
+      <p className="text-muted-foreground text-sm">{skill.summary || skill.description}</p>
       {error !== undefined ? <p className="text-destructive text-sm">{error}</p> : null}
       {open ? (
         <div id={bodyId}>

@@ -3,7 +3,7 @@
 import { ActionBarPrimitive, AuiIf, MessagePrimitive, useAuiState } from "@assistant-ui/react";
 import { CheckIcon, CopyIcon, RotateCcwIcon } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { preloadDisplays } from "@/components/assistant-ui/displays";
 import { MarkdownText } from "@/components/assistant-ui/elements/markdown-text";
@@ -16,6 +16,8 @@ import actions from "@/data/chat/message-actions.json";
 import copy from "@/data/chat/transcript.json";
 import { useDensity } from "@/hooks/use-density";
 import { cn } from "@/utils/cn";
+import type { TurnApproval } from "@/state/chat-store";
+import type { Display } from "@/types/protocol";
 import { unattachedTurnApproval } from "@/utils/thread-messages";
 import { formatClockTime } from "@/utils/time";
 
@@ -24,6 +26,43 @@ const ApprovalCardLazy = dynamic(
     import("@/components/assistant-ui/approval-card").then((m) => m.ApprovalCardImpl),
   { ssr: false },
 );
+
+// Matches the fold transition, so the card unmounts once it has closed.
+const FOLD_MS = 200;
+
+/** In clean density a card shows only while it waits; answering folds it away. */
+function WaitingApproval({ approval, resultDisplay }: { approval: TurnApproval; resultDisplay?: Display | null }) {
+  const waiting = approval.state === "request";
+  const [gone, setGone] = useState(!waiting);
+  const slotRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (waiting) return;
+    // The answered button is leaving, so keyboard focus moves on to the message box.
+    const focus = document.activeElement;
+    if (focus === document.body || slotRef.current?.contains(focus)) {
+      document.querySelector<HTMLElement>("[data-aui-composer-type=thread] textarea:not([disabled])")?.focus();
+    }
+    const timer = setTimeout(() => setGone(true), FOLD_MS);
+    return () => clearTimeout(timer);
+  }, [waiting]);
+  if (gone) return null;
+  return (
+    <div
+      ref={slotRef}
+      data-testid="approval-slot"
+      data-leaving={waiting ? undefined : ""}
+      inert={!waiting}
+      className={cn(
+        "grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none",
+        waiting ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+      )}
+    >
+      <div className="min-h-0 overflow-hidden">
+        <ApprovalCardLazy approval={approval} resultDisplay={resultDisplay} />
+      </div>
+    </div>
+  );
+}
 
 // The runtime's own placeholder for a running message with no words yet is a lone dot; the thinking line covers that wait.
 const Nothing = () => null;
@@ -88,7 +127,7 @@ export function AssistantMessage() {
   }, [hasWork]);
 
   const unattached = turn ? unattachedTurnApproval(turn) : null;
-  // In clean density a card stands in for the folded work only while the turn runs; afterwards the chip holds it.
+  // Once a card is answered, the work chip holds its call.
   const cleanApprovals =
     density === "clean" && turn && status === "running"
       ? [
@@ -118,11 +157,7 @@ export function AssistantMessage() {
         )}
         {density === "clean"
           ? cleanApprovals.map(({ approval, resultDisplay }) => (
-              <ApprovalCardLazy
-                key={approval.event.approval_id}
-                approval={approval}
-                resultDisplay={resultDisplay}
-              />
+              <WaitingApproval key={approval.event.approval_id} approval={approval} resultDisplay={resultDisplay} />
             ))
           : unattached ? (
               <ApprovalCardLazy approval={unattached} />
