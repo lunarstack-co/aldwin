@@ -68,6 +68,8 @@ If you decline three actions in one turn, Aldwin stops the turn.
 
 Every tool result (except `todo` and `calculate`) is wrapped in `<untrusted id="u-…" source="…">` tags with any inner tags escaped. Text read from a file, page, or command output is treated as data, never as an instruction.
 
+In a long chat, Aldwin's notes on the older part are framed the same way: background, never instructions. They are written by a model request with no tools, secrets are redacted from them, and a file read only in the older part must be read again before Aldwin edits it.
+
 ## Approval log
 
 Every policy decision (`auto`, `asked`, `blocked`) writes one JSON line to `~/.aldwin/logs/approvals.jsonl`:

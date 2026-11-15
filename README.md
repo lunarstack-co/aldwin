@@ -69,7 +69,7 @@ Press Ctrl-C to stop.
 - **Chat** with streamed answers, and choose how much of Aldwin's work to see (Clean or Detail).
 - **Approve** file edits, commands, and app actions from a card that shows exactly what will happen.
 - **Find, rename, pin, and delete** past conversations in the sidebar.
-- **Settings** for models, search, skills, connected apps, limits, and appearance, with no files to edit.
+- **Settings** for models, search, skills, connected apps, limits, appearance, and updates, with no files to edit.
 
 The terminal and the browser share one home folder, so conversations, memory, skills, keys, and settings are the same in both. A conversation answers in one place at a time.
 
@@ -131,6 +131,7 @@ Supported shapes are `openai_chat`, `anthropic`, and `ollama`. Non-loopback `htt
 - **Planning:** keep a live checklist for longer jobs and do exact arithmetic and date maths.
 - **Skills:** ten built-in skills, your own skills in `~/.aldwin/skills/`, and an `@` picker to choose one for a message.
 - **Models:** switch between local and cloud providers with `/model`; see [Run it fully local](#run-it-fully-local).
+- **Long chats:** when a chat gets long, Aldwin writes itself notes on the older part and keeps going, and every message stays on screen. `/compact`, or **Make room now** in the browser, does it on request.
 - **Connectors:** connect Notion, Linear, GitHub, and more with `/connectors`, or from Settings in the browser; see the [Connectors](#connectors) section below.
 
 See the [full tool list](https://github.com/lunarstack-co/aldwin/blob/main/docs/tools.md) and the [skills guide](https://github.com/lunarstack-co/aldwin/blob/main/docs/skills.md).
@@ -183,7 +184,7 @@ Read the [safety model](https://github.com/lunarstack-co/aldwin/blob/main/docs/s
 ## Data and privacy
 
 - **No telemetry.** Aldwin collects no analytics.
-- **Sent to a cloud model provider:** when you use a cloud model, your prompts, recent conversation, your profile and recent notes, and anything Aldwin reads for the turn — including connector tool results — go to that provider.
+- **Sent to a cloud model provider:** when you use a cloud model, your prompts, the conversation (or Aldwin's notes on its older part), your profile and recent notes, and anything Aldwin reads for the turn, including connector tool results, go to that provider. When a chat gets long, its older messages go to the provider once more so it can write those notes.
 - **Fully local:** when you use Ollama, LM Studio, or another loopback model, conversation data stays on your machine (except optional web tools, remote connectors, and the PyPI update check).
 - **Web search:** with SearXNG, the query goes to your instance (often localhost). With a hosted key, the query goes to that provider. Connect or switch with `/search`.
 - **Stays local:** everything else in `~/.aldwin`, including your API keys, saved conversations, sign-in tokens, and logs. Connector tokens never go to the model.

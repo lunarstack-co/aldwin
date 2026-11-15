@@ -9,6 +9,7 @@
 | `fakes/` | `FakeModel`, `FakeHost` |
 | `tools/` | Unit tests for built-in tools |
 | `cli/` | Rich render / parity snapshots |
+| `core/` | Pure logic from `aldwin.core`, such as making room in long chats |
 | `integration/` | In-process host turns |
 | `connectors/` | MCP connectors: config, credentials, sign-in, catalogue, local servers, import |
 | `test_web_*.py` | The `aldwin web` server: sign-in link and cookie, `/v1` guards, WebSocket tickets, REST routes, onboarding gates |

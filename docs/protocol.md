@@ -183,7 +183,7 @@ The browser door also reads and writes a few documents over plain HTTP. These ro
 | `GET /v1/health`, `GET /v1/home` | Version and the Aldwin home folder. |
 | `GET /v1/conversations` | Saved conversations newest first (`id`, `created_at`, `updated_at`, `model`, `title`, `interrupted`, `pinned`). Conversations with no turns are left out. |
 | `GET /v1/conversations/search?q=` | Saved conversations whose messages hold every word of `q` (a word also matches longer words it starts), best match first: `items` of `{id, snippet}`. Empty when `q` is blank. |
-| `GET /v1/conversations/{id}` | The conversation file exactly as saved in `sessions/`, or 404. |
+| `GET /v1/conversations/{id}` | The conversation file as saved in `sessions/`, without Aldwin's notes on a long chat (`compaction`), or 404. |
 | `GET /v1/connectors/{name}/icon` | A connected app's own icon as an image, or 404 when none is saved. Sent with `nosniff` and a sandboxing `Content-Security-Policy`, so an SVG cannot run scripts. |
 | `GET /v1/settings` | `model`, `check_for_updates`, `limits`, `limit_rules`, `search` and every key masked with its source. `limit_rules` gives each limit the settings page edits its `default`, `min` and `max`: defaults and minimums come from the config schema, and maximums are what the page allows. `config.yaml` itself can hold larger values. |
 | `PATCH /v1/settings` | Changes `model`, `check_for_updates`, `limits.*` or `search.provider`/`search.searxng_url`. Any other field, keys included, is a 400 and nothing is written, and so is a limit above its `limit_rules` maximum. |
