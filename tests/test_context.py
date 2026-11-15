@@ -1,4 +1,4 @@
-"""Tests for `aldwin.core.context` (`build_context`, persona cap, exchange trimming)."""
+"""Tests for `aldwin.core.context` (`build_context`, persona cap, compaction view)."""
 
 from __future__ import annotations
 
@@ -9,16 +9,16 @@ from pathlib import Path
 import pytest
 from agentling import ChatMessage, ToolCall
 
+from aldwin.core.compaction import CompactionView
 from aldwin.core.context import build_context
 from aldwin.core.home import ensure_home
 from aldwin.core.settings import LimitsConfig
 
 
-def test_build_context_trims_to_last_20_user_exchanges(aldwin_home: Path) -> None:
-    """30 user turns are trimmed to the last 20 with system message first."""
+def test_build_context_keeps_every_exchange(aldwin_home: Path) -> None:
+    """With no compaction view, all 30 user turns reach the model unchanged."""
     ensure_home(aldwin_home)
-    limits = LimitsConfig(context_exchanges=20)
-    ctx = build_context(aldwin_home, limits)
+    ctx = build_context(aldwin_home, LimitsConfig(context_exchanges=5))
 
     messages: list[ChatMessage] = [
         ChatMessage(role="system", content="Base instructions"),
@@ -32,64 +32,38 @@ def test_build_context_trims_to_last_20_user_exchanges(aldwin_home: Path) -> Non
 
     assert messages == original_snapshot
     assert result[0].role == "system"
-    user_messages = [m for m in result if m.role == "user"]
-    assert len(user_messages) == 20
-    assert user_messages[0].content == "user-11"
-    assert user_messages[-1].content == "user-30"
-    assert result[1].content == "user-11"
-    assert result[-1].content == "assistant-30"
+    assert result[1:] == messages[1:]
 
 
-def test_build_context_never_splits_tool_call_from_results(aldwin_home: Path) -> None:
-    """Kept window extends backward when cut lands mid tool-call sequence."""
+def test_build_context_applies_the_view_and_keeps_tool_pairs(
+    aldwin_home: Path,
+) -> None:
+    """The view drops whole earlier messages and prefixes the first kept user one."""
     ensure_home(aldwin_home)
-    limits = LimitsConfig(context_exchanges=20)
-    ctx = build_context(aldwin_home, limits)
-
-    messages: list[ChatMessage] = [
-        ChatMessage(role="system", content="Base instructions"),
-    ]
-    for i in range(1, 11):
-        messages.append(ChatMessage(role="user", content=f"old-user-{i}"))
-        messages.append(ChatMessage(role="assistant", content=f"old-assistant-{i}"))
-
-    # Assistant tool call sits immediately before the 20th-from-last user message,
-    # while its tool result arrives after that user message.
+    ctx = build_context(aldwin_home, LimitsConfig())
     tool_call_msg = ChatMessage(
         role="assistant",
         content="",
-        tool_calls=[
-            ToolCall(id="call_boundary", name="web_search", arguments={"q": "aldwin"})
-        ],
+        tool_calls=[ToolCall(id="c1", name="web_search", arguments={"q": "x"})],
     )
-    tool_result_msg = ChatMessage(
-        role="tool",
-        content="1. Aldwin docs",
-        tool_call_id="call_boundary",
-    )
-    messages.append(tool_call_msg)
-    messages.append(ChatMessage(role="user", content="kept-user-1"))
-    messages.append(tool_result_msg)
-    messages.append(ChatMessage(role="assistant", content="kept-assistant-1"))
-
-    for i in range(2, 21):
-        messages.append(ChatMessage(role="user", content=f"kept-user-{i}"))
-        messages.append(ChatMessage(role="assistant", content=f"kept-assistant-{i}"))
+    tool_result_msg = ChatMessage(role="tool", content="1. Docs", tool_call_id="c1")
+    messages = [
+        ChatMessage(role="system", content="Base instructions"),
+        ChatMessage(role="user", content="old"),
+        ChatMessage(role="assistant", content="old answer"),
+        ChatMessage(role="user", content="new"),
+        tool_call_msg,
+        tool_result_msg,
+        ChatMessage(role="assistant", content="new answer"),
+    ]
+    ctx.view_provider = lambda: CompactionView(drop=2, shorten_until=2, prefix="P")
 
     result = ctx(messages)
 
-    assert result[0].role == "system"
-    assert result[1] == tool_call_msg
-    assert result[2].content == "kept-user-1"
+    assert [m.content for m in result[1:]] == ["P\n\nnew", "", "1. Docs", "new answer"]
+    assert result[2] == tool_call_msg
     assert result[3] == tool_result_msg
-
-    # Every tool message in the output is preceded by its matching assistant call.
-    seen_tool_call_ids: set[str] = set()
-    for msg in result[1:]:
-        for tc in msg.tool_calls:
-            seen_tool_call_ids.add(tc.id)
-        if msg.role == "tool":
-            assert msg.tool_call_id in seen_tool_call_ids
+    assert "old" not in result[0].content
 
 
 def test_build_context_reloads_persona_between_turns(aldwin_home: Path) -> None:
@@ -258,16 +232,15 @@ def test_build_context_performance_under_5ms_for_200_messages(
         t0 = time.perf_counter()
         out = ctx(messages)
         durations_ms.append((time.perf_counter() - t0) * 1000)
-        assert len([m for m in out if m.role == "user"]) == 20
+        assert len([m for m in out if m.role == "user"]) == 100
 
     assert sorted(durations_ms)[len(durations_ms) // 2] < 5.0
 
 
-def test_local_profile_trims(aldwin_home: Path) -> None:
-    """When is_local=True, context limits trim to 8 exchanges."""
+def test_local_profile_keeps_every_exchange(aldwin_home: Path) -> None:
+    """Local models see every earlier exchange, like hosted ones."""
     ensure_home(aldwin_home)
-    standard_limits = LimitsConfig(context_exchanges=20)
-    ctx = build_context(aldwin_home, standard_limits, is_local=True)
+    ctx = build_context(aldwin_home, LimitsConfig(), is_local=True)
 
     messages: list[ChatMessage] = [
         ChatMessage(role="system", content="Base instructions"),
@@ -278,45 +251,7 @@ def test_local_profile_trims(aldwin_home: Path) -> None:
 
     result = ctx(messages)
     user_messages = [m for m in result if m.role == "user"]
-    assert len(user_messages) == 8
-    assert user_messages[0].content == "user-8"
-    assert user_messages[-1].content == "user-15"
-
-
-def test_context_window_trimming_notice(aldwin_home: Path) -> None:
-    """Context-window aware trimming emits a notice once per session."""
-    ensure_home(aldwin_home)
-    notices: list[str] = []
-
-    ctx = build_context(
-        aldwin_home,
-        LimitsConfig(),
-        is_local=True,
-        context_window=2000,
-        model_id="qwen3:8b",
-        notice_emitter=notices.append,
-    )
-
-    # 10 exchanges with 1500 characters each (~15,000 chars total >> 75% of 2000 tokens)
-    messages: list[ChatMessage] = [
-        ChatMessage(role="system", content="Base instructions"),
-    ]
-    for i in range(1, 11):
-        messages.append(ChatMessage(role="user", content=f"user-{i}: " + "X" * 1500))
-        messages.append(ChatMessage(role="assistant", content=f"assistant-{i}"))
-
-    result1 = ctx(messages)
-    kept_users1 = [m for m in result1 if m.role == "user"]
-    assert len(kept_users1) < 8
-    assert len(notices) == 1
-    expected_notice = (
-        "This conversation is too long for qwen3:8b. Aldwin trimmed older messages."
-    )
-    assert expected_notice in notices[0]
-
-    # Subsequent call does not emit duplicate notice
-    _ = ctx(messages)
-    assert len(notices) == 1
+    assert len(user_messages) == 15
 
 
 def test_on_context_reports_all_seven_keys_and_matches_assembled_lengths(

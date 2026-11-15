@@ -3,7 +3,7 @@
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import type { ComponentType } from "react";
+import { useEffect, useRef, type ComponentType } from "react";
 
 import { buttonVariants } from "@/components/ui/button";
 import { chatHref, settingsHref } from "@/constants/routes";
@@ -12,6 +12,7 @@ import { useChatStore } from "@/state/chat-store";
 import { cn } from "@/utils/cn";
 import { SETTINGS_SECTIONS, sectionOf, type SettingsSection } from "@/utils/settings";
 
+import { AboutSection } from "./about-section";
 import { AdvancedSection } from "./advanced-section";
 import { AppearanceSection } from "./appearance-section";
 import { ProvidersSection } from "./providers-section";
@@ -26,6 +27,7 @@ const SECTIONS: Record<SettingsSection, ComponentType> = {
   tools: ToolsSection,
   advanced: AdvancedSection,
   appearance: AppearanceSection,
+  about: AboutSection,
 };
 
 /** The address names the open section, so Back and Forward move between them. */
@@ -36,13 +38,19 @@ export function SettingsHub() {
   const back = chatHref(currentId, hasTurns);
   const Section = SECTIONS[section];
   const text = copy.sections[section];
+  const openLink = useRef<HTMLAnchorElement>(null);
+
+  // On narrow screens the sections scroll sideways, so bring the open one into view.
+  useEffect(() => {
+    openLink.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [section]);
 
   return (
     // Sized by the space beside the sidebar, not the window, so the nav moves on top when it is narrow.
     <div data-testid="settings-hub" className="@container flex min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-6 @md:px-6 @2xl:flex-row @2xl:gap-10">
         <div className="flex min-w-0 shrink-0 flex-col gap-3 @2xl:sticky @2xl:top-6 @2xl:w-48 @2xl:self-start">
-          <Link href={back} className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "self-start max-md:h-10")}>
+          <Link href={back} className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "self-start max-md:h-11")}>
             <ArrowLeft aria-hidden />
             {copy.back}
           </Link>
@@ -51,11 +59,12 @@ export function SettingsHub() {
               {SETTINGS_SECTIONS.map((id) => (
                 <li key={id} className="shrink-0">
                   <Link
+                    ref={id === section ? openLink : undefined}
                     href={settingsHref(id)}
                     aria-current={id === section ? "page" : undefined}
                     data-section={id}
                     className={cn(
-                      "text-muted-foreground hover:bg-accent hover:text-accent-foreground flex rounded-md px-3 py-1.5 text-sm whitespace-nowrap max-md:min-h-10 max-md:items-center",
+                      "text-muted-foreground hover:bg-accent hover:text-accent-foreground flex rounded-md px-3 py-1.5 text-sm whitespace-nowrap max-md:min-h-11 max-md:items-center",
                       id === section && "bg-accent text-accent-foreground font-medium",
                     )}
                   >

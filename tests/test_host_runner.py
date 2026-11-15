@@ -1016,66 +1016,6 @@ async def test_fast_local_token_no_cold_load_status(aldwin_home: Path) -> None:
         await host.stop_host()
 
 
-async def test_context_window_trim_notice_in_turn(
-    aldwin_home: Path,
-) -> None:
-    """Proactive context window trimming emits a NoticeEvent to the client."""
-    from agentling import Delta
-
-    from aldwin.core.agent import build_agent
-    from aldwin.core.settings import AldwinConfig
-
-    ensure_home(aldwin_home)
-
-    class SmallWindowModel:
-        def __init__(self) -> None:
-            self.model = "qwen3:8b"
-            self.local = True
-            self.context_window = 1000
-
-        async def stream(self, _messages: Any, _tools: Any = ()) -> Any:
-            yield Delta(content="Answer.")
-            yield Delta(
-                finish_reason="stop",
-                usage=Usage(input_tokens=10, output_tokens=2),
-            )
-
-    small_model = SmallWindowModel()
-    transport = InProcessTransport()
-    holder: list[AldwinHost] = []
-
-    def builder(_m: str, ask: Any) -> Agent:
-        emitter = holder[0]._emit_sync_notice if holder else None
-        return build_agent(
-            AldwinConfig(model="ollama/qwen3:8b"),
-            None,
-            ask,
-            home=aldwin_home,
-            model=small_model,
-            notice_emitter=emitter,
-        )
-
-    host = AldwinHost(
-        transport,
-        agent_builder=builder,
-        initial_model="ollama/qwen3:8b",
-    )
-    holder.append(host)
-    host._rebuild_agent()
-    await host.start()
-    client = AldwinClient(transport.connect())
-
-    try:
-        await client.connect()
-        _ = await _collect_turn(client, "Message 1 " + "Y" * 2000)
-        events = await _collect_turn(client, "Message 2 " + "Z" * 2000)
-        notices = [ev.message for ev in events if isinstance(ev, NoticeEvent)]
-        assert any("Aldwin trimmed older messages" in n for n in notices)
-    finally:
-        await client.close()
-        await host.stop_host()
-
-
 async def test_turn_malformed_final_answer_error_recovers(
     aldwin_home: Path,
     fake_model: FakeModel,

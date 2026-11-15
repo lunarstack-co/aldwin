@@ -38,6 +38,7 @@ Every message is a Pydantic v2 model with `model_config = ConfigDict(extra="igno
 | `approve` | `ApproveRequest` | `approval_id: str`, `answer: "yes" \| "no"` | Answer a pending `approval` event from the host. |
 | `history` | `HistoryRequest` | `limit: int = 20` (`1..500`) | Fetch the last `limit` user/assistant messages and `interrupted` flag. |
 | `set_model` | `SetModelRequest` | `name: str` | Switch the model for subsequent turns and persist in `config.yaml`. |
+| `compact` | `CompactRequest` | *(none)* | Make room in the active conversation now, by summarising older messages. See [Long conversations](#long-conversations). |
 | `models.list` | `ModelsListRequest` | `provider: str \| None = None`, `refresh: bool = False` | List available models across configured and local providers. |
 | `provider.key` | `ProviderKeyRequest` | `provider: str`, `key: str` | Validate and persist an API key for a cloud provider. |
 | `provider.server` | `ProviderServerRequest` | `name: str`, `base_url: str`, `key: str \| None = None`, `title: str \| None = None`, `local: bool = False` | Register a custom OpenAI-compatible server in `config.yaml`. |
@@ -50,7 +51,7 @@ Every message is a Pydantic v2 model with `model_config = ConfigDict(extra="igno
 | `tool_call` | `ToolCallEvent` | `call_id: str`, `name: str`, `args_preview: str` (≤ 120 chars) | No | Tool execution started. |
 | `tool_result` | `ToolResultEvent` | `call_id: str`, `ok: bool`, `summary: str` (≤ 120 chars), `duration_ms: int` | No | Tool execution completed. |
 | `approval` | `ApprovalEvent` | `approval_id: str`, `summary: str`, `detail: str = ""` | No | Host is paused waiting for a `yes` or `no` `approve` request. |
-| `history` | `HistoryEvent` | `messages: list[HistoryItem]`, `interrupted: bool` | No | Past messages (`role: "user" \| "assistant" \| "tool"`, `text`, `at`, `apps`). |
+| `history` | `HistoryEvent` | `messages: list[HistoryItem]`, `interrupted: bool`, `context: ContextUsage \| None` | No | Past messages (`role: "user" \| "assistant" \| "tool"`, `text`, `at`, `apps`). `context` is how full the window is for the saved chat, so a reloaded page can show it. |
 | `status` | `StatusEvent` | `message: str`, `turn_streamed_chunks: int`, `active_tool: str \| None`, `partial_text: str \| None` | No | Status notice (e.g. `OpenAI is busy, retrying (2 of 3)…`) and the current turn's progress. See [Reconnecting](#reconnecting). |
 | `models` | `ModelsEvent` | `current: str`, `providers: list[ProviderModels]` | No | List of providers and models returned in response to `models.list`. |
 | `done` | `DoneEvent` | `reason: "answered" \| "stopped" \| "max_steps" \| "ok"`, `usage: TokenUsage \| None`, `max_steps: int \| None` (set when `reason="max_steps"`) | **Yes** | Request completed normally. |
@@ -60,7 +61,7 @@ Every message is a Pydantic v2 model with `model_config = ConfigDict(extra="igno
 
 - `version_mismatch`: client's `v_min..v_max` does not include the host's `PROTOCOL_VERSION`.
 - `protocol`: a request was sent before completing the `hello` handshake.
-- `busy`: a `turn`, `set_model`, `sessions.open` or `sessions.new` was sent while another turn is already running, a `turn` was sent while another Aldwin window is answering in the same conversation, or a `sessions.rename`, `sessions.pin` or `sessions.delete` reached a conversation that is busy (see [Conversations](#conversations)).
+- `busy`: a `turn`, `compact`, `set_model`, `sessions.open` or `sessions.new` was sent while another turn is already running, a `turn` was sent while another Aldwin window is answering in the same conversation, or a `sessions.rename`, `sessions.pin` or `sessions.delete` reached a conversation that is busy (see [Conversations](#conversations)).
 - `unknown_approval`: `approve` referenced an `approval_id` that does not exist or already finished.
 - `unknown_model`: `set_model` requested an unsupported or blank model name.
 - `auth_failed`: the active model provider rejected the API key (`401` or `403`).
@@ -71,6 +72,26 @@ Every message is a Pydantic v2 model with `model_config = ConfigDict(extra="igno
 
 ---
 
+## Long conversations
+
+The host decides what the model sees of a long chat. Doors keep showing every message: `history`, the conversation list and `GET /v1/conversations/{id}` never include the notes Aldwin keeps for itself.
+
+Before each turn, when the request would pass a share of the model's window (`limits.context_compact_percent`, 60 to 90, 60 by default), the host makes room in three steps: it shortens tool results from earlier turns, then summarises older turns with the active model, and if that fails it leaves the oldest turns out of the model's view. Making room aims to leave the chat (the notes plus the recent turns kept word for word) at about 10% of the window: the notes take up to 4% (between 1,000 and 4,000 tokens), and the recent turns the rest, at most 40,000 tokens, with their long tool results shortened. Shortening alone is enough only when it leaves the chat within 15% of the window. Making room may send these on the turn's `id`, before any `text`:
+
+- `status` with `Making room in this chat...` as soon as the chat is over the line.
+- `status` with `Writing notes on earlier messages to make room...` while a summary is being written.
+- `status` with an empty `message` once making room is finished, so doors clear the line.
+- `notice` with `Made room by shortening long results from earlier steps. Your messages are all still here.` when shortening tool results was enough.
+- `notice` with `Made room to keep going. Your messages are all still here.` after a summary.
+- `notice` with `Made room to keep going. Aldwin may recall less of the earlier chat. Your messages are all still here.` when older turns were left out without a summary.
+- `notice` with `This chat is longer than {model} can hold, so Aldwin made room. Your messages are all still here.` on the first turn after switching to a model with less room.
+
+These notices carry `topic: "room"`. The browser does not show them, since the working line already showed Aldwin making room; the terminal shows them briefly. `topic` is a plain string, so a door can ignore topics it doesn't know.
+
+A turn that cannot fit ends with `error(code="request_rejected")` and one of: `That message is too long for {model}. …`, `{model} has too little room to work with Aldwin. …`, or `This chat is too long for {model}, even after making room. …`. Tokens spent writing a summary are included in that turn's `done.usage`; `done.context` reports only the answer's own request.
+
+`compact` makes room by hand between turns, even below the limit, with the same sizes. It runs like a turn: `stop` cancels it, a second request while it runs gets `busy`, and it answers with the same `status` and `notice` events, then `done(reason="ok", usage=…)`. A chat whose turns all fit in the recent part kept word for word gets `error(code="invalid_request", message="This chat is still short, so there's nothing to make room for yet.")`, unless shortening its tool results made room, which answers `done` as usual. When the notes can't be written and nothing else changed, it answers `error(code="request_rejected", message="Aldwin couldn't write notes on this chat just now, so nothing changed. Try again in a few minutes.")`; Aldwin then waits 1, 5 or 15 minutes before it tries to write notes again.
+
 ## Protocol rules
 
 1. **Handshake first (`FR-4`):** The client must send `hello` before any other request. If `v_min <= 1 <= v_max`, the host replies `done(reason="ok")`; otherwise `error(code="version_mismatch")`. Any request before a successful `hello` receives `error(code="protocol")`.
@@ -79,7 +100,7 @@ Every message is a Pydantic v2 model with `model_config = ConfigDict(extra="igno
 4. **Stop (`FR-8`):** On `stop`, the host resolves any pending approvals as `"no"` (`False`), calls `session.interrupt()`, cancels the turn task, flushes any partial streamed text into the session, saves atomically to disk, emits `done(re=turn_id, reason="stopped")`, and replies `done(re=stop_id, reason="ok")`.
 5. **Forward compatibility (`FR-1`):** Unknown fields are ignored in both directions (`ConfigDict(extra="ignore")`).
 
-The tables above list the original `v1` messages. `v2` also has the skills and todo messages (`skills.list`, `skills.show`, `todo.get`; `skills`, `skills.used`, `skill.body`, `todo.updated`, `notice`), defined in `aldwin/protocol/messages.py`. A `turn` may also name connected apps in `apps` (connector names such as `linear`); the host tells the model the user wants those apps used for that message, and answers with `apps.used`, which lists the apps it used and any it dropped (`unknown` when the app is not connected, or `limit` past three).
+The tables above list the original `v1` messages. `v2` also has the skills and todo messages (`skills.list`, `skills.show`, `todo.get`; `skills`, `skills.used`, `skill.body`, `todo.updated`, `notice`), defined in `aldwin/protocol/messages.py`. Each `skills` item has a `description`, which tells the model when to use the skill, and may have a `summary`, the plain line doors show people instead. A `turn` may also name connected apps in `apps` (connector names such as `linear`); the host tells the model the user wants those apps used for that message, and answers with `apps.used`, which lists the apps it used and any it dropped (`unknown` when the app is not connected, or `limit` past three).
 
 ---
 
@@ -161,10 +182,11 @@ The browser door also reads and writes a few documents over plain HTTP. These ro
 |---|---|
 | `GET /v1/health`, `GET /v1/home` | Version and the Aldwin home folder. |
 | `GET /v1/conversations` | Saved conversations newest first (`id`, `created_at`, `updated_at`, `model`, `title`, `interrupted`, `pinned`). Conversations with no turns are left out. |
+| `GET /v1/conversations/search?q=` | Saved conversations whose messages hold every word of `q` (a word also matches longer words it starts), best match first: `items` of `{id, snippet}`. Empty when `q` is blank. |
 | `GET /v1/conversations/{id}` | The conversation file exactly as saved in `sessions/`, or 404. |
 | `GET /v1/connectors/{name}/icon` | A connected app's own icon as an image, or 404 when none is saved. Sent with `nosniff` and a sandboxing `Content-Security-Policy`, so an SVG cannot run scripts. |
-| `GET /v1/settings` | `model`, `check_for_updates`, `limits`, `search` and every key masked with its source. |
-| `PATCH /v1/settings` | Changes `model`, `check_for_updates`, `limits.*` or `search.provider`/`search.searxng_url`. Any other field, keys included, is a 400 and nothing is written. |
+| `GET /v1/settings` | `model`, `check_for_updates`, `limits`, `limit_rules`, `search` and every key masked with its source. `limit_rules` gives each limit the settings page edits its `default`, `min` and `max`: defaults and minimums come from the config schema, and maximums are what the page allows. `config.yaml` itself can hold larger values. |
+| `PATCH /v1/settings` | Changes `model`, `check_for_updates`, `limits.*` or `search.provider`/`search.searxng_url`. Any other field, keys included, is a 400 and nothing is written, and so is a limit above its `limit_rules` maximum. |
 | `POST /v1/settings/secrets` | `{kind: "provider" \| "search", name, key, base_url?}`. Checks the key with the provider, saves it only if the check passes, and answers with the key masked. Saving a search key also makes that provider the one `web_search` uses, as `/search` does. A rejected key is a 400; a provider that cannot be reached is a 502. |
 | `GET /v1/setup/status` | Which first-run steps are done: keys (masked), model, `keys_ok` (a model can run), `host_ready` (Aldwin is serving the WebSocket), `profile_done`, `profile_skipped`, and the profile answers saved so far. |
 | `POST /v1/setup/check-key` | Same body as `secrets`; checks the key without saving it. |
@@ -249,7 +271,7 @@ Events not tied to a request, such as `connector.status` and a `notice` when a c
 - `ToolResultEvent.display: Display | None = None`: optional structured display for the finished tool call.
 - `ApprovalEvent.call_id: str | None = None`: the `call_id` of the `tool_call` waiting for approval, so a door can show the approval inline on that row.
 - `ApprovalEvent.display: Display | None = None`: optional structured preview (`terminal`, `diff` or `grant`) for the pending approval.
-- `DoneEvent.context: ContextUsage | None = None`: prompt token usage and per-segment breakdown (`limit`, `used`, `segments: list[ContextSegment]` with `key`, `label`, `tokens`). Sent when the active model's context window is known, using the last step's `input_tokens`.
+- `DoneEvent.context: ContextUsage | None = None`: prompt token usage and per-segment breakdown (`limit`, `used`, `segments: list[ContextSegment]` with `key`, `label`, `tokens`). Sent when the active model's context window is known, using the last step's `input_tokens`, or an estimate of the saved chat when the provider reported none. The replies to `set_model` and `compact` carry it too, measured for the saved chat. `limit` is the window Aldwin uses, which for Ollama is the context size it asks for. `compact_at` is the token count past which Aldwin makes room in this chat; the browser enables **Make room now** only past it.
 - `HistoryItem.at: str | None = None`: ISO 8601 UTC timestamp on `user` (`at`) and `assistant` (`done_at`) rows when recorded on the saved turn.
 - `HistoryItem.apps: list[HistoryApp] = []`: on `user` rows, the apps picked with that message (`name`, the connector name, and `title`, the name shown when it was sent). Empty on other rows and on messages sent without apps.
 

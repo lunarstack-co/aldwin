@@ -373,6 +373,42 @@ async def test_skills_list_flags_override_and_tools_removed() -> None:
     assert "Add or edit skills in ~/.aldwin/skills/" in text
 
 
+async def test_skills_list_shows_the_plain_summary() -> None:
+    from aldwin.client import SkillsReport, SkillSummary
+
+    client = FakeClient()
+    client.custom_skills = SkillsReport(
+        valid=(
+            SkillSummary(
+                name="files",
+                description="Use when the user asks to find or change files.",
+                summary="Finds, reads and edits files in your workspace.",
+            ),
+        ),
+    )
+    console = create_console(plain=True, width=120, record=True, file=io.StringIO())
+
+    await handle_slash_command(
+        "/skills",
+        client=client,
+        renderer=ChatRenderer(console, plain=True),
+        prompt_line=_noop_prompt,
+    )
+
+    text = console.export_text()
+    assert "Finds, reads and edits files in your workspace." in text
+    assert "Use when" not in text
+
+
+def test_skills_report_carries_each_skill_summary(aldwin_home: Path) -> None:
+    from aldwin.client import get_skills_report
+
+    rows = {row.name: row for row in get_skills_report(aldwin_home).valid}
+
+    assert rows["files"].summary
+    assert "use when" not in rows["files"].summary.lower()
+
+
 async def test_workspace_command_shows_and_switches_root_and_clears_grants(
     tmp_path: Path,
 ) -> None:

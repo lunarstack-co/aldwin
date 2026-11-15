@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 import yaml
+from agentling.memory import FinalStep, TaskStep
 from fastapi.routing import APIRoute, APIWebSocketRoute
 from fastapi.testclient import TestClient
 
@@ -38,6 +39,7 @@ HTTP_ROUTES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
     ("GET", "/v1/health", None),
     ("GET", "/v1/home", None),
     ("GET", "/v1/conversations", None),
+    ("GET", "/v1/conversations/search", None),
     ("GET", "/v1/conversations/2026-11-10_abc", None),
     ("GET", "/v1/connectors/mail/icon", None),
     ("GET", "/v1/settings", None),
@@ -99,6 +101,27 @@ def _session_with_turn(home: Path, text: str) -> str:
     stored.turns = [{"text": text, "skills": []}]
     store.save(stored, stored.memory, interrupted=False)
     return stored.meta.id
+
+
+def test_search_finds_conversations_by_what_was_said(
+    api: TestClient, aldwin_home: Path
+) -> None:
+    """History search looks inside messages, not only at titles."""
+    store = _store(aldwin_home)
+    stored = store.create_new(model="openai/gpt-4o")
+    stored.memory.add(TaskStep(task="How much did I spend on food?"))
+    stored.memory.add(FinalStep(answer="About £415 a month on groceries."))
+    stored.turns = [{"text": "How much did I spend on food?", "skills": []}]
+    stored.meta.title = "Money questions"
+    store.save(stored, stored.memory, interrupted=False)
+
+    found = api.get("/v1/conversations/search", params={"q": "groceries"})
+    missing = api.get("/v1/conversations/search", params={"q": "holiday"})
+
+    assert found.status_code == 200
+    assert [item["id"] for item in found.json()["items"]] == [stored.meta.id]
+    assert "groceries" in found.json()["items"][0]["snippet"]
+    assert missing.json() == {"items": []}
 
 
 def _ok_provider(monkeypatch: pytest.MonkeyPatch, status: AccessStatus) -> list[str]:
@@ -255,6 +278,20 @@ def test_detail_returns_the_file_as_saved(api: TestClient, aldwin_home: Path) ->
     assert isinstance(response.json()["memory"], str)
 
 
+def test_detail_leaves_out_the_models_notes(api: TestClient, aldwin_home: Path) -> None:
+    """The summary Aldwin keeps for a long chat is never shown in the app."""
+    store = _store(aldwin_home)
+    stored = store.create_new(model="openai/gpt-4o")
+    stored.turns = [{"text": "Hello", "skills": []}]
+    stored.compaction = {"version": 1, "summary": "private notes", "cut": 0}
+    store.save(stored, stored.memory, interrupted=False)
+
+    body = api.get(f"/v1/conversations/{stored.meta.id}").json()
+
+    assert "compaction" not in body
+    assert body["turns"] == [{"text": "Hello", "skills": []}]
+
+
 @pytest.mark.parametrize("session_id", ["2026-01-01_missing", "..", "a.b", "%2e%2e"])
 def test_missing_or_odd_id_is_404(api: TestClient, session_id: str) -> None:
     """An unknown id, or one that is not a file name, is not found."""
@@ -288,7 +325,14 @@ def test_settings_show_keys_masked_with_their_source(
     assert response.status_code == 200
     assert OPENAI_KEY not in response.text and BRAVE_KEY not in response.text
     body = response.json()
-    assert set(body) == {"model", "check_for_updates", "limits", "search", "keys"}
+    assert set(body) == {
+        "model",
+        "check_for_updates",
+        "limits",
+        "limit_rules",
+        "search",
+        "keys",
+    }
     keys = {(row["kind"], row["name"]): row for row in body["keys"]}
     assert keys[("provider", "openai")]["source"] == "file"
     assert keys[("provider", "openai")]["masked"] == "sk-…cdef"
@@ -296,6 +340,32 @@ def test_settings_show_keys_masked_with_their_source(
     assert keys[("search", "tavily")]["source"] == "missing"
     assert keys[("search", "tavily")]["masked"] == ""
     assert body["limits"]["max_steps"] == load_config().limits.max_steps
+
+
+def test_settings_send_each_limit_default_and_range(api: TestClient) -> None:
+    """Defaults and minimums come from the config schema; the page adds maximums."""
+    rules = api.get("/v1/settings").json()["limit_rules"]
+
+    assert rules["max_steps"] == {"default": 50, "min": 1, "max": 1000}
+    assert rules["context_compact_percent"] == {"default": 60, "min": 60, "max": 90}
+    assert rules["profile_chars"] == {"default": 4000, "min": 100, "max": 20000}
+    assert "context_exchanges" not in rules
+
+
+def test_page_maximum_limits_the_page_not_the_file(
+    api: TestClient, aldwin_home: Path
+) -> None:
+    """The page saves up to its maximum; a bigger value in config.yaml still works."""
+    response = api.patch("/v1/settings", json={"limits": {"max_steps": 1000}})
+    assert response.status_code == 200
+    (aldwin_home / "config.yaml").write_text(
+        "limits:\n  max_steps: 150000000\n", "utf-8"
+    )
+
+    assert api.get("/v1/settings").json()["limits"]["max_steps"] == 150_000_000
+    response = api.patch("/v1/settings", json={"limits": {"web_searches": 6}})
+    assert response.status_code == 200
+    assert load_config().limits.max_steps == 150_000_000
 
 
 def test_patch_limits_persists_for_the_terminal(api: TestClient) -> None:
@@ -354,6 +424,10 @@ def test_empty_patch_changes_nothing(api: TestClient, aldwin_home: Path) -> None
         ({"providers": {}}, "cannot be changed here"),
         ({"limits": {"nope": 1}}, "limits.nope"),
         ({"limits": {"max_steps": 0}}, "limits.max_steps"),
+        (
+            {"limits": {"max_steps": 1001}},
+            "limits.max_steps: Input should be less than or equal to 1000.",
+        ),
         ({"limits": 3}, "limits must be an object"),
         ({"search": {"provider": "duck"}}, "search.provider"),
         ({"search": {"tavily_api_key": "x"}}, "search.tavily_api_key"),

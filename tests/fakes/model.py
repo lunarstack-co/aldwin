@@ -25,10 +25,12 @@ class FakeTurn:
 
     chunks: list[str] = field(default_factory=list)
     tool_calls: list[tuple[str, str, dict[str, Any]]] = field(default_factory=list)
-    usage: Usage = field(
+    # None replays a provider that reports no token counts.
+    usage: Usage | None = field(
         default_factory=lambda: Usage(input_tokens=10, output_tokens=5)
     )
     exc: Exception | None = None
+    finish_reason: FinishReason | None = None
     hang_forever: bool = False
     hang_started: asyncio.Event = field(default_factory=asyncio.Event)
     hang_release: asyncio.Event = field(default_factory=asyncio.Event)
@@ -84,6 +86,20 @@ class FakeTurn:
             tool_calls=[(call_id, name, arguments)],
             usage=usage or Usage(input_tokens=12, output_tokens=6),
         )
+
+    @classmethod
+    def summary(
+        cls,
+        text: str | None = None,
+        *,
+        finish_reason: FinishReason | None = None,
+        usage: Usage | None = None,
+    ) -> FakeTurn:
+        """Notes with every heading Aldwin requires, as a summary request returns."""
+        from aldwin.core.compaction import HEADINGS
+
+        body = text or "\n".join(f"## {heading}\nNone" for heading in HEADINGS)
+        return cls(chunks=[body], usage=usage, finish_reason=finish_reason)
 
     @classmethod
     def final(
@@ -193,7 +209,9 @@ def _to_scripted_turn(turn: FakeTurn) -> Exception | list[Delta]:
                 ]
             )
         )
-    finish_reason: FinishReason = "tool_calls" if turn.tool_calls else "stop"
+    finish_reason: FinishReason = turn.finish_reason or (
+        "tool_calls" if turn.tool_calls else "stop"
+    )
     deltas.append(Delta(usage=turn.usage, finish_reason=finish_reason))
     return deltas
 

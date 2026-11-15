@@ -14,5 +14,6 @@
   "collapse": "Hide sidebar",
   "expand": "Show sidebar",
   "interrupted": "Interrupted",
-  "options": "Options for {title}"
+  "options": "Options for {title}",
+  "close": "Close conversations"
 }

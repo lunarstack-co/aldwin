@@ -6,6 +6,7 @@ import { useSettingsStore } from "@/state/settings-store";
 import {
   PROTOCOL_VERSION,
   type ApprovalAnswer,
+  type ContextUsage,
   type Event,
   type OutboundRequest,
   type StatusEvent,
@@ -23,7 +24,8 @@ type Reply = (event: Event) => void;
 
 type WithoutId<R> = R extends unknown ? Omit<R, "id"> : never;
 export type RequestBody = WithoutId<OutboundRequest>;
-export type Outcome = { ok: true } | { ok: false; code: string; message: string };
+/** `context` is set when the host measured the chat again, after a model switch or making room. */
+export type Outcome = { ok: true; context?: ContextUsage | null } | { ok: false; code: string; message: string };
 
 function todosOf(event: TodoUpdatedEvent) {
   return { items: event.items, done: event.done, total: event.total };
@@ -44,6 +46,8 @@ export type ChatSession = {
   refreshSessions: () => void;
   renameConversation: (id: string, title: string) => Promise<Outcome>;
   pinConversation: (id: string, pinned: boolean) => Promise<Outcome>;
+  /** Make room in the open chat now. */
+  compact: () => Promise<Outcome>;
   deleteConversation: (id: string) => Promise<Outcome>;
   listSkills: () => void;
   /** Events for the request go to `onEvent`; the promise settles on `done`, `error`, or a dropped socket. */
@@ -123,7 +127,7 @@ export function createChatSession(
 
   function loadHistory() {
     ask("history", (event) => {
-      if (event.kind === "history") chat().loadHistory(event.messages, event.interrupted);
+      if (event.kind === "history") chat().loadHistory(event.messages, event.interrupted, event.context);
       if (event.kind === "done" || event.kind === "error") {
         useConnectionStore.getState().setPhase("open", 0);
         refreshSessions();
@@ -172,7 +176,7 @@ export function createChatSession(
       const id = requestId(body.type.replace(/\./g, "_"));
       pending.set(id, resolve);
       replies.set(id, (event) => {
-        if (event.kind === "done") resolve({ ok: true });
+        if (event.kind === "done") resolve({ ok: true, context: event.context });
         else if (event.kind === "error") resolve({ ok: false, code: event.code, message: event.message });
         else {
           applySettingsEvent(event);
@@ -243,7 +247,8 @@ export function createChatSession(
     }
     const store = chat();
     if (event.kind === "notice") {
-      store.pushToast(event.message);
+      // The working line already showed Aldwin making room.
+      if (event.topic !== "room") store.pushToast(event.message);
       return;
     }
     if (event.kind === "todo.updated") {
@@ -385,6 +390,18 @@ export function createChatSession(
     refreshSessions,
     renameConversation: (id, title) => changeConversation({ type: "sessions.rename", session_id: id, title }),
     pinConversation: (id, pinned) => changeConversation({ type: "sessions.pin", session_id: id, pinned }),
+    compact: async () => {
+      chat().setMakingRoom(now());
+      try {
+        const outcome = await request({ type: "compact" }, (event) => {
+          if (event.kind === "notice" && event.topic !== "room") chat().pushToast(event.message);
+        });
+        if (outcome.ok && outcome.context !== undefined) chat().setContext(outcome.context);
+        return outcome;
+      } finally {
+        chat().setMakingRoom(null);
+      }
+    },
     deleteConversation: (id) =>
       request({ type: "sessions.delete", session_id: id }, (event) => {
         if (event.kind !== "sessions") return;

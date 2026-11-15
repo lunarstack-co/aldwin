@@ -874,7 +874,6 @@ async def _chat_loop(
     pending_queue: list[QueuedTurn] = []
     restore_draft: str | None = None
     key_rejected = False
-    context_notice_shown = False
     search_label: str | None = None
     key_check_task: asyncio.Task[None] | None = None
     update_task: asyncio.Task[str | None] | None = None
@@ -885,9 +884,8 @@ async def _chat_loop(
         quit_requested = True
 
     def _reset_tokens() -> None:
-        nonlocal last_context_tokens, context_notice_shown
+        nonlocal last_context_tokens
         last_context_tokens = 0
-        context_notice_shown = False
         renderer.clear_todo()
 
     async def _refresh_search_label() -> None:
@@ -910,15 +908,6 @@ async def _chat_loop(
             key_rejected=key_rejected,
             search_provider=search_label,
         )
-
-    def _maybe_context_notice() -> None:
-        nonlocal context_notice_shown
-        from aldwin.cli.theme import context_meter_level
-
-        pct = context_left_percent(client.model, last_context_tokens)
-        if context_meter_level(pct) == "err" and not context_notice_shown:
-            renderer.render_context_notice()
-            context_notice_shown = True
 
     skill_cache = SkillCache(items=[])
     skill_lexer = SkillLexer(skill_cache)
@@ -1053,7 +1042,6 @@ async def _chat_loop(
 
         while not quit_requested:
             session.set_busy(False)
-            _maybe_context_notice()
             if pending_queue:
                 queued = pending_queue.pop(0)
                 user_text = queued.text

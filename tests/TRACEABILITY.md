@@ -24,6 +24,21 @@ Coverage floor: CI `--cov-fail-under=90` overall; aim ≥85% line on `core/`/`ho
 | Manual run | TC-15 | `docs/manual-test.md` Step 14 |
 | Pasted secrets: shapes, notice, redaction before the model call, history filter | Pasted-secret FR-1 to FR-5, NFR security | `tests/test_secret_shapes.py`, `tests/integration/test_pasted_secret_host.py`, `tests/cli/test_history_filter.py`, `tests/security/test_pasted_secrets.py`, `docs/manual-test.md` Step 19 |
 
+## Long conversations
+
+| Area | Requirement | Primary tests |
+| -- | -- | -- |
+| Limit, sizes, shortening, cut, summary texts, file list | What the model sees of a long chat | `tests/core/test_compaction.py` |
+| Making room before a turn, by hand and after a refusal; stop; other processes | Host behaviour and events | `tests/integration/test_compaction_host.py` |
+| Summary safety | Secrets redacted, no tools in the summary request, planted instructions still ask | `tests/security/test_compaction_safety.py` |
+| Stored state | The model's view and the last count saved with the chat | `tests/test_sessions.py` |
+| Context hook | Every message reaches the model unless the host's view leaves it out | `tests/test_context.py` |
+| Recall in this chat | `scope="this_conversation"` | `tests/tools/test_recall.py`, `tests/integration/test_compaction_host.py` |
+| Settings | `limits.context_compact_percent` 60 to 90; old `context_exchanges` ignored | `tests/test_settings.py`, `tests/test_web_rest.py` |
+| Doors | `/compact` and Make room now | `tests/test_cli_chat.py`, `web/playwright/make-room.spec.ts` |
+| Hook speed | A 500-step view applied cheaply | `tests/perf/test_budgets.py` |
+| Manual run | Long chats on a hosted and a local model | `docs/manual-test.md` Step 23 |
+
 ## Security, policy, e2e, perf (this change)
 
 | Area | Requirement | Primary tests |

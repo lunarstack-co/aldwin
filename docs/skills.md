@@ -38,6 +38,8 @@ Write release notes grouped into Added, Fixed, and Known limitations.
 
 Save it as `~/.aldwin/skills/release-notes/SKILL.md`.
 
+You can add an optional `summary:` line, at most 120 characters, that tells people what the skill does. The `@` menu, Settings and `/skills` show it instead of the `description`, which is written for the model.
+
 You can also ask Aldwin to draft a skill for you. It uses the `create_skill` tool, which shows the file as a diff and always asks before saving.
 
 Rules:

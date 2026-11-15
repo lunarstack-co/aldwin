@@ -19,6 +19,7 @@ from aldwin.host.home_api import (
     load_conversation_json,
     save_key,
     save_onboarding_profile,
+    search_conversations,
 )
 from aldwin.host.in_process import (
     AccessStatus,
@@ -177,6 +178,7 @@ __all__ = [
     "get_setup_status",
     "keys_gate_ok",
     "list_conversation_metas",
+    "search_conversations",
     "load_connector_icon",
     "load_conversation_json",
     "save_key",

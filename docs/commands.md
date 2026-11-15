@@ -42,6 +42,7 @@ Type `/` at the prompt for autocomplete:
 | `/help` | Show slash commands and keyboard shortcuts |
 | `/new` | Start a fresh conversation (previous session stays saved on disk) |
 | `/history` | Show this conversation's saved messages (up to 500) |
+| `/compact` | Make room in a long chat now: Aldwin summarises older messages for itself. Your messages stay as they are |
 | `/copy [code]` | Copy Aldwin's last answer as markdown, or with `code` just its last code block. See [Copying answers](#copying-answers) |
 | `/model [name\|all]` | Switch model or provider (local, cloud, custom servers, Add a provider, or Manage keys to update or remove a saved key) |
 | `/search` | Pick a web search provider with the arrow keys: connect it (key checked before saving), use it, update its key, or disconnect it |

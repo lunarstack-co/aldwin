@@ -90,7 +90,7 @@ export function SkillsButton({ inputRef, disabled }: { inputRef: RefObject<HTMLT
         searchSkills(skills.items, query).map((skill) => ({
           id: skill.name,
           label: skill.name,
-          description: skill.description,
+          description: skill.summary || skill.description,
           icon: <AtSign aria-hidden />,
         }))
       }

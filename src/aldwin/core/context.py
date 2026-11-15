@@ -1,4 +1,4 @@
-"""Context manager that rebuilds the system prompt and trims conversation history."""
+"""Context manager that rebuilds the system prompt and applies the compaction view."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from typing import Final
 import tzlocal
 from agentling import ChatMessage
 
+from aldwin.core.compaction import CompactionView, apply_view
 from aldwin.core.home import read_base_instructions
 from aldwin.core.memory import memory_block
 from aldwin.core.persona import read_persona
@@ -24,7 +25,6 @@ read_persona_stub = read_persona
 memory_block_stub = memory_block
 
 LOCAL_TRIMS: Final[LimitsConfig] = LimitsConfig(
-    context_exchanges=8,
     profile_chars=1500,
     notes_chars=1500,
     notes_days=3,
@@ -102,95 +102,6 @@ def format_environment_block(
         "</environment>\n\n"
         f"{UNTRUSTED_SYSTEM_NOTICE}"
     )
-
-
-def _find_matching_assistant_index(
-    conversation: list[ChatMessage],
-    tool_index: int,
-) -> int | None:
-    """Find the assistant message index that initiated `conversation[tool_index]`."""
-    tool_call_id = conversation[tool_index].tool_call_id
-    fallback_idx: int | None = None
-
-    for idx in range(tool_index - 1, -1, -1):
-        msg = conversation[idx]
-        if msg.role != "assistant" or not msg.tool_calls:
-            continue
-        if tool_call_id is not None and any(
-            tc.id == tool_call_id for tc in msg.tool_calls
-        ):
-            return idx
-        if fallback_idx is None:
-            fallback_idx = idx
-
-    return fallback_idx
-
-
-def _trim_conversation(
-    conversation: list[ChatMessage],
-    max_exchanges: int,
-    *,
-    context_window: int | None = None,
-    system_chars: int = 0,
-) -> tuple[list[ChatMessage], bool]:
-    """Keep the last `max_exchanges` user turns without splitting tool calls/results.
-
-    If `context_window` is provided, prunes older exchanges until estimated prompt
-    characters / 3.5 <= 0.75 * context_window.
-    Returns (kept_conversation, trimmed_for_context_window).
-    """
-    if not conversation:
-        return [], False
-
-    user_indices = [idx for idx, msg in enumerate(conversation) if msg.role == "user"]
-    if len(user_indices) > max_exchanges:
-        start_idx = user_indices[-max_exchanges]
-    else:
-        start_idx = 0
-
-    while start_idx > 0:
-        extended_idx = start_idx
-        for idx in range(start_idx, len(conversation)):
-            if conversation[idx].role == "tool":
-                assistant_idx = _find_matching_assistant_index(conversation, idx)
-                if assistant_idx is not None and assistant_idx < extended_idx:
-                    extended_idx = assistant_idx
-        if extended_idx == start_idx:
-            break
-        start_idx = extended_idx
-
-    trimmed_window = False
-    if context_window is not None and context_window > 0:
-        max_tokens = int(0.75 * context_window)
-
-        def estimate_tokens(start: int) -> float:
-            total_chars = system_chars
-            for msg in conversation[start:]:
-                total_chars += len(msg.content or "")
-                if msg.tool_calls:
-                    for tc in msg.tool_calls:
-                        total_chars += len(tc.name or "") + len(str(tc.arguments or ""))
-            return total_chars / 3.5
-
-        current_users = [idx for idx in user_indices if idx >= start_idx]
-        while len(current_users) > 1 and estimate_tokens(start_idx) > max_tokens:
-            trimmed_window = True
-            current_users.pop(0)
-            start_idx = current_users[0]
-            while start_idx > 0:
-                extended = start_idx
-                for idx in range(start_idx, len(conversation)):
-                    if conversation[idx].role == "tool":
-                        assistant_idx = _find_matching_assistant_index(
-                            conversation, idx
-                        )
-                        if assistant_idx is not None and assistant_idx < extended:
-                            extended = assistant_idx
-                if extended == start_idx:
-                    break
-                start_idx = extended
-
-    return list(conversation[start_idx:]), trimmed_window
 
 
 def _assemble_system_message(
@@ -297,22 +208,44 @@ def build_system_message(
 ContextChars = dict[str, int]
 
 
+ViewProvider = Callable[[], CompactionView | None]
+
+
 class ContextHook:
-    """Agentling's `context_manager`; reports prompt segment sizes to `on_context`."""
+    """Agentling's `context_manager`; applies the host's view and reports sizes."""
 
     def __init__(
         self,
         build: Callable[
-            [list[ChatMessage], Callable[[ContextChars], None] | None],
+            [
+                list[ChatMessage],
+                Callable[[ContextChars], None] | None,
+                ViewProvider | None,
+            ],
             list[ChatMessage],
         ],
         on_context: Callable[[ContextChars], None] | None,
+        view_provider: ViewProvider | None = None,
     ) -> None:
         self._build = build
         self.on_context = on_context
+        self.view_provider = view_provider
+        # The host compares the provider's count for this request with its estimate.
+        self.last_request: list[ChatMessage] | None = None
 
     def __call__(self, messages: list[ChatMessage]) -> list[ChatMessage]:
-        return self._build(messages, self.on_context)
+        shaped = self._build(messages, self.on_context, self.view_provider)
+        self.last_request = shaped
+        return shaped
+
+    def render(
+        self,
+        messages: list[ChatMessage],
+        view: CompactionView | None,
+        on_context: Callable[[ContextChars], None] | None = None,
+    ) -> list[ChatMessage]:
+        """Build a request through `view` without recording it."""
+        return self._build(messages, on_context, lambda: view)
 
 
 def build_context(
@@ -325,29 +258,16 @@ def build_context(
     memory_builder: Callable[[Path, LimitsConfig], str] | None = None,
     connectors_block: Callable[[], str] | None = None,
     is_local: bool = False,
-    context_window: int | None = None,
-    notice_emitter: Callable[[str], None] | None = None,
-    model_id: str | None = None,
     on_context: Callable[[ContextChars], None] | None = None,
 ) -> ContextHook:
     """Build the Agentling `context_manager` hook for `home` and `limits`.
 
-    On every model call:
-    1. Replaces `messages[0]` with Agentling's instructions (which already
-       include the skill catalog) + `## Persona` + `<memory>` + `<environment>`
-       (+ `<connectors>` when any are enabled) and the `<untrusted id="…">`
-       prompt rule.
-    2. Keeps only the last `effective_limits.context_exchanges` user turns and
-       everything after the earliest kept user turn. If `is_local` is True, applies
-       `LOCAL_TRIMS`.
-    3. Extends the kept window backward if needed so an assistant tool call is
-       never separated from its `tool` result messages.
+    It rebuilds the system message on every call; only the host's view drops messages.
     """
     resolved_home = home.expanduser().resolve()
     cached_tz = resolve_timezone_name()
     cached_os = resolve_os_description()
     effective_limits = LOCAL_TRIMS if is_local else limits
-    trimmed_notice_emitted = False
 
     if callable(workspace):
         ws_getter: Callable[[], Path | str] = workspace
@@ -360,8 +280,8 @@ def build_context(
     def _context_manager(
         messages: list[ChatMessage],
         report: Callable[[ContextChars], None] | None,
+        view_provider: ViewProvider | None,
     ) -> list[ChatMessage]:
-        nonlocal trimmed_notice_emitted
         if messages and messages[0].role == "system":
             base_instructions = messages[0].content
             conversation = messages[1:]
@@ -382,26 +302,16 @@ def build_context(
             connectors_block=connectors_block,
         )
         system_message = ChatMessage(role="system", content=sys_content)
-        kept_conversation, trimmed_window = _trim_conversation(
-            conversation,
-            effective_limits.context_exchanges,
-            context_window=context_window,
-            system_chars=len(sys_content),
-        )
-        if trimmed_window and not trimmed_notice_emitted and notice_emitter is not None:
-            trimmed_notice_emitted = True
-            notice_emitter(
-                f"This conversation is too long for {model_id or 'this model'}. "
-                "Aldwin trimmed older messages."
-            )
+        view = view_provider() if view_provider is not None else None
+        shaped = apply_view([system_message, *conversation], view)
         if report is not None:
             conv_chars = 0
-            for msg in kept_conversation:
+            for msg in shaped[1:]:
                 conv_chars += len(msg.content or "")
                 if msg.tool_calls:
                     for tc in msg.tool_calls:
                         conv_chars += len(tc.name or "") + len(str(tc.arguments or ""))
             report({**sys_counts, "conversation": conv_chars})
-        return [system_message, *kept_conversation]
+        return shaped
 
     return ContextHook(_context_manager, on_context)

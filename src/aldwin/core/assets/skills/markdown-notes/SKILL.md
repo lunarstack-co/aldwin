@@ -1,6 +1,7 @@
 ---
 name: markdown-notes
 description: Work inside the user's notes, an Obsidian vault or any folder of .md files. Use when asked to find, add to, link, rename or tidy notes.
+summary: Works in your notes, such as an Obsidian vault or a folder of Markdown files.
 ---
 
 # Markdown notes

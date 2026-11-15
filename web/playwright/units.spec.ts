@@ -11,7 +11,7 @@ import { allowsProtocol, allowsTag } from "../src/utils/markdown";
 import { pageTitle } from "../src/utils/page-title";
 import { markFor } from "../src/components/brand/brand-mark";
 import { codeLanguages, resolveCodeLanguage } from "../src/components/assistant-ui/elements/shiki-bundle";
-import { changedLimits, sectionOf } from "../src/utils/settings";
+import { changedLimits, limitIsValid, sectionOf, withUnit } from "../src/utils/settings";
 import { searchSkills, skillFormatter, skillsFromText, visibleSkills } from "../src/utils/skills";
 import { turnsToMessages } from "../src/utils/thread-messages";
 import { formatDuration } from "../src/utils/time";
@@ -217,8 +217,18 @@ test("settings addresses and sections", () => {
   expect(sectionOf(null)).toBe("providers");
 });
 
+test("limit values and units", () => {
+  const rule = { default: 50, min: 1, max: 1000 };
+  expect(limitIsValid(50, rule)).toBe(true);
+  expect(limitIsValid(1000, rule)).toBe(true);
+  for (const bad of [0, -5, 2.5, 1001, Number.NaN]) expect(limitIsValid(bad, rule)).toBe(false);
+  expect(withUnit(4000, "characters")).toBe("4,000 characters");
+  expect(withUnit(60, "%")).toBe("60%");
+  expect(sectionOf("about")).toBe("about");
+});
+
 test("only changed limits are sent", () => {
-  const saved = { context_exchanges: 20, profile_chars: 4000, notes_chars: 4000, notes_days: 7, persona_chars: 2000, max_steps: 15, web_searches: 5, connector_tools: 40 };
+  const saved = { context_compact_percent: 60, profile_chars: 4000, notes_chars: 4000, notes_days: 7, persona_chars: 2000, max_steps: 15, web_searches: 5, connector_tools: 40 };
   expect(changedLimits(saved, { ...saved, max_steps: 20 })).toEqual({ max_steps: 20 });
   expect(changedLimits(saved, saved)).toEqual({});
 });

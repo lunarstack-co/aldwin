@@ -125,7 +125,7 @@ test("icon buttons are labelled", async ({ page, host }) => {
 });
 
 test("every Settings section passes axe", async ({ page }) => {
-  for (const section of ["providers", "search", "skills", "tools", "advanced", "appearance"]) {
+  for (const section of ["providers", "search", "skills", "tools", "advanced", "appearance", "about"]) {
     await openChat(page, `/settings/?section=${section}`);
     await expect(page.locator(`[data-testid=settings-${section}]`)).toBeVisible();
     await expect(page.locator(`[data-testid=settings-${section}]`)).not.toContainText("Loading");

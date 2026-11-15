@@ -213,3 +213,46 @@ def test_at_filter_budget() -> None:
     list(completer.get_completions(doc, event))
     elapsed_ms = (time.perf_counter() - t0) * 1000
     assert elapsed_ms < budget(0.016) * 1000, elapsed_ms
+
+
+def test_compaction_view_costs_under_5ms_for_500_steps() -> None:
+    """Applying a stored view to a 500-step chat stays cheap on every model call."""
+    from statistics import median
+
+    from agentling import ChatMessage, ToolResult
+    from agentling.memory import ActionStep, FinalStep, Step, TaskStep
+
+    from aldwin.core.compaction import CompactionState, apply_view, build_view
+    from aldwin.core.policy import wrap_untrusted
+
+    steps: list[Step] = []
+    for i in range(125):
+        steps.append(TaskStep(task=f"turn {i}"))
+        steps.append(
+            ActionStep(
+                model_message=ChatMessage(role="assistant", content=""),
+                tool_results=[
+                    ToolResult(
+                        tool_call_id=str(i),
+                        name="read_file",
+                        content=wrap_untrusted("x" * 6_000, tool="read_file"),
+                    )
+                ],
+            )
+        )
+        steps.append(FinalStep(answer="done"))
+        steps.append(TaskStep(task="follow-up"))
+    messages = [ChatMessage(role="system", content="S")]
+    for step in steps:
+        messages.extend(step.to_messages())
+    view = build_view(
+        steps, CompactionState(summary="notes", cut=200, shortened_through=400)
+    )
+
+    timings = []
+    for _ in range(100):
+        started = time.perf_counter()
+        apply_view(messages, view)
+        timings.append(time.perf_counter() - started)
+
+    assert median(timings) < budget(0.005), median(timings)

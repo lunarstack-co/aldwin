@@ -647,3 +647,25 @@ async def test_no_bak_sibling(edits: SimpleNamespace) -> None:
     await _mark_read(edits, "a.md")
     await edits.tools["edit_file"].call({"path": "a.md", "old": "x", "new": "y"})
     assert not (edits.root / "a.md.bak").exists()
+
+
+async def test_forgotten_read_needs_a_fresh_read(edits: SimpleNamespace) -> None:
+    """Once a read leaves the model's view, editing asks for the file again."""
+    path = edits.root / "notes.md"
+    _write(path, "draft\n")
+    await _mark_read(edits, "notes.md")
+
+    edits.session.forget_reads(["notes.md", "../outside.md", "missing.md"])
+
+    assert path.resolve() not in edits.session.read_files
+    assert path.resolve() not in edits.workspace.read_files
+    msg = await _call_fail(
+        edits.tools["edit_file"],
+        {"path": "notes.md", "old": "draft", "new": "final"},
+    )
+    assert msg == "read the file first: notes.md"
+    await _mark_read(edits, "notes.md")
+    result = await edits.tools["edit_file"].call(
+        {"path": "notes.md", "old": "draft", "new": "final"}
+    )
+    assert result.ok is True

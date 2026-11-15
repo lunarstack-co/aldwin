@@ -103,6 +103,7 @@ def context_usage(
     *,
     used: int,
     limit: int,
+    compact_at: int | None = None,
 ) -> ContextUsage:
     """Build a `ContextUsage` breakdown scaled to `used` input tokens."""
     safe_used = max(0, int(used))
@@ -132,4 +133,5 @@ def context_usage(
         limit=safe_limit,
         used=safe_used,
         segments=segments,
+        compact_at=compact_at,
     )

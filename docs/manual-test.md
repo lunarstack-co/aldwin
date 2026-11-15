@@ -383,12 +383,32 @@ Use a home folder that has a working model. Keep the terminal that runs `aldwin 
    - Expect: the new title shows; a **Pinned** group appears and goes when unpinned; after delete the chat is gone, a new chat opens, and its file is gone from `~/.aldwin/sessions/`.
 9. Open **Settings**. Under **Models**, add a key with a wrong value, then a real one. Under **Search** and **Tools**, connect one provider and one app (Context7 needs no sign-in).
    - Expect: the wrong key is refused with the reason and nothing saved; the real key shows masked; the app shows `Connected` with its tool count.
-10. Open `http://127.0.0.1:7841/` in a second tab of the same browser.
+10. Under **Advanced**, set **Steps per answer** to `1001`, then to `60` and press **Save**. Then **Reset to defaults**, **Reset** and **Save**. Open **About**.
+    - Expect: `Enter a whole number from 1 to 1,000.` under the field and **Save** off; after saving 60, `~/.aldwin/config.yaml` has `max_steps: 60`; after the reset it has `max_steps: 50`. **About** shows the running version.
+11. Open **See all** and search for a word you typed in a message but not in any title.
+    - Expect: that conversation is listed, with the words around the match under its title.
+12. Open `http://127.0.0.1:7841/` in a second tab of the same browser.
     - Expect: `Open in another tab` with **Take over**; taking over disconnects the first tab.
-11. In a terminal, run `aldwin` on the same home folder.
+13. In a terminal, run `aldwin` on the same home folder.
     - Expect: the conversation from the browser is there, with the same model.
-12. Press `Ctrl-C` in the `aldwin web` terminal.
+14. Press `Ctrl-C` in the `aldwin web` terminal.
     - Expect: the page shows `Connection lost. Reconnecting…`, then `Aldwin stopped` with **Reload**.
+- [ ] Pass / Fail
+
+### Step 23: Long conversations
+
+Use a hosted model, then repeat with a local model that has about 32,000 tokens of room.
+
+1. In a new chat, run `/compact`.
+   - Expect: `This chat is still short, so there's nothing to make room for yet.` In the browser, **Make room now** in the context ring stays disabled until the chat passes the line.
+2. Paste long documents, or ask for long web pages, until the working line says `Making room in this chat...`.
+   - Expect: the answer still comes; scrolling up still shows the first message; the context ring drops. The browser shows no toast for it.
+3. Ask about a fact from the first message, then `which files did you change?`.
+   - Expect: correct answers, or Aldwin uses `recall` to look them up.
+4. Run `/compact` again, or press **Make room now**.
+   - Expect: `Made room to keep going. Your messages are all still here.`
+5. Switch to a model with less room and send a message.
+   - Expect: `This chat is longer than <model> can hold, so Aldwin made room. Your messages are all still here.`
 - [ ] Pass / Fail
 
 ---
@@ -428,7 +448,8 @@ Copy the template below and fill it in for each platform tested (`macOS` and `Li
 | 19 | Pasted secrets | PASS | |
 | 20 | Providers | PASS | |
 | 21 | Connect web search | PASS | |
-| 22 | The browser (`aldwin web`): link, approval card, conversations, settings, second tab, stop | PASS | |
+| 22 | The browser (`aldwin web`): link, approval card, conversations, settings, search, second tab, stop | PASS | |
+| 23 | Long conversations: `/compact`, making room, Make room now, model switch | PASS | |
 ```
 
 ---
@@ -447,4 +468,5 @@ Tick every item below on clean **macOS** and clean **Linux** (Python 3.11+) afte
 - [ ] Streaming markdown, tool cards, `Esc` stops within 1 second
 - [ ] Every terminal command asks `y/n`
 - [ ] A 50-turn conversation stays fast and survives tool errors
+- [ ] A long chat makes room by itself, and every message stays on screen and in `/history`
 - [ ] `pytest` passes; Fola can explain every file in `src/aldwin`

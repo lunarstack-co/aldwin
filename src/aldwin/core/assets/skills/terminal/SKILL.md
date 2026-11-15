@@ -1,6 +1,7 @@
 ---
 name: terminal
 description: Run shell commands with run_command safely and only when no file tool fits. Use before running any shell command.
+summary: Runs commands in the terminal when nothing else fits, after asking you first.
 ---
 
 # Terminal

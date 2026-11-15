@@ -128,12 +128,16 @@ DroppedReason = Literal["unknown", "limit"]
 
 
 class SkillCatalogItem(BaseModel):
-    """One skill descriptor in a `skills` event."""
+    """One skill descriptor in a `skills` event.
+
+    `description` is written for the model; doors show `summary` to people when set.
+    """
 
     model_config = ConfigDict(extra="ignore")
 
     name: str
     description: str
+    summary: str = ""
     source: SkillSource = "default"
     flags: list[str] = Field(default_factory=list)
     last_used: str | None = None
@@ -285,6 +289,12 @@ class SetModelRequest(RequestBase):
 
     type: Literal["set_model"] = "set_model"
     name: str = Field(min_length=1)
+
+
+class CompactRequest(RequestBase):
+    """Make room in the active conversation now, by summarising older messages."""
+
+    type: Literal["compact"] = "compact"
 
 
 class SkillsListRequest(RequestBase):
@@ -495,6 +505,7 @@ Request = Annotated[
     | SessionsPinRequest
     | SessionsDeleteRequest
     | SetModelRequest
+    | CompactRequest
     | SkillsListRequest
     | SkillsShowRequest
     | TodoGetRequest
@@ -631,18 +642,26 @@ class SkillBodyEvent(EventBase):
 
 
 class NoticeEvent(EventBase):
-    """Non-terminal informational notice (e.g. `skills reloaded`)."""
+    """Non-terminal informational notice (e.g. `skills reloaded`).
+
+    `topic` is "room" when Aldwin made room in a long chat; doors may keep those quiet.
+    """
 
     kind: Literal["notice"] = "notice"
     message: str
+    topic: str | None = None
 
 
 class HistoryEvent(EventBase):
-    """Rendered past messages and interrupted status for session resume."""
+    """Rendered past messages and interrupted status for session resume.
+
+    `context` is how full the model's window is, or None when empty or unknown.
+    """
 
     kind: Literal["history"] = "history"
     messages: list[HistoryItem] = Field(default_factory=list)
     interrupted: bool = False
+    context: ContextUsage | None = None
 
 
 class SessionsEvent(EventBase):

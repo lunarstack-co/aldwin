@@ -371,7 +371,7 @@ test("take over while waiting keeps the card pending, clean density shows outsid
   });
 });
 
-test("in clean density a settled card leaves with the turn; in detail it stays on its row", async ({ page, host }) => {
+test("in clean density an answered card folds away at once; in detail it stays on its row", async ({ page, host }) => {
   const approval = {
     approval_id: "ap_w",
     call_id: "w1",
@@ -395,8 +395,8 @@ test("in clean density a settled card leaves with the turn; in detail it stays o
   host.emitApproval(approval);
   const card = page.getByTestId("approval-card");
   await card.getByRole("button", { name: "Allow", exact: true }).click();
+  await expect(card).toHaveCount(0);
   host.emitToolResult({ call_id: "w1", ok: true, summary: "Write notes.md", display: approval.display });
-  await expect(card).toBeVisible();
   await host.stream("I created notes.md.");
   host.done({ reason: "answered" });
   await expect(card).toHaveCount(0);
@@ -423,4 +423,26 @@ test("the pill goes to the waiting card, not an earlier answered one", async ({ 
   await page.getByTestId("approval-pill").click();
   await expect(waiting.getByRole("button", { name: "Allow", exact: true })).toBeFocused();
   await expect(waiting).toBeInViewport();
+});
+
+test("in clean density a card stays while a reason is typed, then folds away when it is sent", async ({ page, host }) => {
+  await openChat(page);
+  await send(page, "two commands");
+  host.toolCall({ call_id: "c1", name: "run_command" });
+  host.emitApproval({ approval_id: "ap_one", call_id: "c1", summary: "Run date", digest: "sha256:o1" });
+  const card = page.getByTestId("approval-card");
+
+  await card.getByRole("button", { name: "Deny" }).click();
+  await page.getByTestId("approval-deny-reason").fill("not now");
+  await expect(card).toBeVisible();
+  await page.getByTestId("approval-deny-confirm").click();
+  await expect(card).toHaveCount(0);
+  await expect(page.getByTestId("composer-input")).toBeFocused();
+  expect(host.sent.filter((frame) => frame.type === "approve").at(-1)).toMatchObject({ answer: "no", reason: "not now" });
+
+  host.emitToolResult({ call_id: "c1", ok: false, summary: "declined" });
+  host.toolCall({ call_id: "c2", name: "run_command" });
+  host.emitApproval({ approval_id: "ap_two", call_id: "c2", summary: "Run uptime", digest: "sha256:o2" });
+  await expect(card).toHaveCount(1);
+  await expect(page.locator('[data-approval-id="ap_two"]')).toBeVisible();
 });

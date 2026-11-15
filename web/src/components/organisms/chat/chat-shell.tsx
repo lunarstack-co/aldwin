@@ -129,7 +129,7 @@ export function ChatShell({ children }: { children?: ReactNode }) {
               <ViewMenu />
             </>
           }
-          rail={(close) => (
+          rail={(close, inSheet) => (
             <Rail
               sessions={sessions}
               currentId={currentId}
@@ -146,6 +146,7 @@ export function ChatShell({ children }: { children?: ReactNode }) {
               }}
               seeAllOpen={view === "see-all"}
               onNavigate={close}
+              onClose={inSheet ? close : undefined}
             />
           )}
         >

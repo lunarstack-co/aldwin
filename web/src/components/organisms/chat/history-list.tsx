@@ -2,9 +2,11 @@
 
 import { ThreadListItemPrimitive, ThreadListPrimitive, useAuiState } from "@assistant-ui/react";
 import { Ellipsis } from "lucide-react";
+import { usePathname } from "next/navigation";
 import { createContext, useContext } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { isSettingsPage } from "@/constants/routes";
 import copy from "@/data/chat/rail.json";
 import { fill } from "@/utils/text";
 import { useChatStore } from "@/state/chat-store";
@@ -18,17 +20,21 @@ type RowOptions = {
   onChoose?: () => void;
   /** `page` is See all, where titles read at full strength beside quieter date headings. */
   tone?: "rail" | "page";
+  /** Words around a search match in a chat's messages, by chat id. */
+  matches?: Record<string, string>;
 };
 
 const RowContext = createContext<RowOptions>({ disabled: false, testId: "history-row" });
 
 /** Choosing a row goes through the runtime to the address bar. */
 function HistoryRow() {
-  const { disabled, testId, onChoose, tone = "rail" } = useContext(RowContext);
+  const { disabled, testId, onChoose, tone = "rail", matches } = useContext(RowContext);
   const id = useAuiState((s) => s.threadListItem.id);
   const title = useAuiState((s) => s.threadListItem.title);
   const interrupted = useAuiState((s) => s.threadListItem.custom?.interrupted === true);
-  const current = useChatStore((s) => s.currentSessionId === id);
+  // On Settings no conversation is on screen, even though one stays open behind it.
+  const onSettings = isSettingsPage(usePathname());
+  const current = useChatStore((s) => s.currentSessionId === id) && !onSettings;
   // The host marks a conversation interrupted while its turn runs, in case it crashes; a live turn is not interrupted.
   const running = useChatStore((s) => s.activeId !== null);
   const showInterrupted = interrupted && !(current && running);
@@ -47,7 +53,14 @@ function HistoryRow() {
           current && "bg-sidebar-accent text-sidebar-accent-foreground font-medium",
         )}
       >
-        <span className="min-w-0 flex-1 truncate">{shown}</span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate">{shown}</span>
+          {matches?.[id] ? (
+            <span className="text-muted-foreground truncate text-xs font-normal" data-testid="history-match">
+              {matches[id]}
+            </span>
+          ) : null}
+        </span>
         {showInterrupted ? (
           <Badge variant="outline" className="shrink-0" data-testid="interrupted-badge">
             {copy.interrupted}
@@ -83,6 +96,7 @@ export function HistoryList({
   testId = "history-row",
   onChoose,
   tone,
+  matches,
 }: {
   ids: string[];
   disabled: boolean;
@@ -90,11 +104,12 @@ export function HistoryList({
   /** Runs when a row is chosen, such as closing the sheet the rows sit in. */
   onChoose?: () => void;
   tone?: "rail" | "page";
+  matches?: Record<string, string>;
 }) {
   const threadIds = useAuiState((s) => s.threads.threadIds);
   const indices = ids.map((id) => threadIds.indexOf(id)).filter((index) => index >= 0);
   return (
-    <RowContext.Provider value={{ disabled, testId, onChoose, tone }}>
+    <RowContext.Provider value={{ disabled, testId, onChoose, tone, matches }}>
       <ul className="flex min-h-0 flex-col gap-0.5">
         {indices.map((index) => (
           <li key={threadIds[index]}>

@@ -45,12 +45,12 @@ test.describe("cancel @cross", () => {
     expect(host.sentOfType("search.connect")).toHaveLength(0);
   });
 
-  test("Advanced edits can be cancelled", async ({ page }) => {
+  test("Advanced edits can be discarded", async ({ page }) => {
     await openSettings(page, "advanced");
     await page.getByTestId("limit-max_steps").fill("30");
-    await page.getByTestId("advanced-cancel").click();
-    await expect(page.getByTestId("limit-max_steps")).toHaveValue("15");
-    await expect(page.getByTestId("advanced-save")).toBeDisabled();
+    await page.getByTestId("advanced-discard").click();
+    await expect(page.getByTestId("limit-max_steps")).toHaveValue("50");
+    await expect(page.getByTestId("save-bar")).toHaveCount(0);
   });
 
   test("a waiting sign-in can be cancelled", async ({ page, host }) => {

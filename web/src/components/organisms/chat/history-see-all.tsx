@@ -9,6 +9,7 @@ import { Kbd } from "@/components/ui/kbd";
 import copy from "@/data/chat/history-see-all.json";
 import railCopy from "@/data/chat/rail.json";
 import type { SessionMeta } from "@/types/protocol";
+import { searchConversations } from "@/utils/api";
 import { isTyping } from "@/utils/dom";
 import { filterSessions, groupSessions } from "@/utils/history";
 import { fill } from "@/utils/text";
@@ -33,11 +34,28 @@ export function HistorySeeAll({
   const titleId = useId();
   const searchId = useId();
   const search = useRef<HTMLInputElement>(null);
+  const [found, setFound] = useState<{ query: string; snippets: Record<string, string> }>({ query: "", snippets: {} });
 
   useEffect(() => {
     const id = setTimeout(() => setQuery(input), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(id);
   }, [input]);
+
+  useEffect(() => {
+    const asked = query.trim();
+    if (!asked) return;
+    let live = true;
+    searchConversations(asked).then(
+      ({ items }) => {
+        if (live) setFound({ query: asked, snippets: Object.fromEntries(items.map((item) => [item.id, item.snippet])) });
+      },
+      // Titles still match without it.
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [query]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -51,7 +69,11 @@ export function HistorySeeAll({
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack]);
 
-  const matches = new Set(filterSessions(sessions, query, railCopy.untitled));
+  const snippets = query.trim() && found.query === query.trim() ? found.snippets : {};
+  const matches = new Set([
+    ...filterSessions(sessions, query, railCopy.untitled),
+    ...sessions.filter((s) => Object.hasOwn(snippets, s.id)),
+  ]);
   const groups = groupSessions(
     sessions.filter((s) => matches.has(s)),
     now,
@@ -103,7 +125,7 @@ export function HistorySeeAll({
           </Kbd>
         </div>
         <p role="status" className="sr-only">
-          {fill(copy.resultCount, { count: matches.size })}
+          {fill(matches.size === 1 ? copy.resultCountOne : copy.resultCount, { count: matches.size })}
         </p>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {sections.length === 0 ? (
@@ -122,6 +144,7 @@ export function HistorySeeAll({
                   disabled={disabled}
                   testId="see-all-row"
                   tone="page"
+                  matches={snippets}
                 />
               </div>
             ))

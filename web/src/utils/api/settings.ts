@@ -1,4 +1,4 @@
-import type { KeyKind, SavedKey, SettingsPatch, SettingsView } from "@/types/settings";
+import type { HomeInfo, KeyKind, SavedKey, SettingsPatch, SettingsView } from "@/types/settings";
 
 import { call } from "./client";
 
@@ -14,4 +14,8 @@ export function patchSettings(patch: SettingsPatch): Promise<SettingsView> {
 /** The host checks the key with its vendor first and saves it only if the check passes. */
 export function saveSecret(kind: KeyKind, name: string, key: string): Promise<SavedKey> {
   return call("POST", "/v1/settings/secrets", { kind, name, key });
+}
+
+export function getHomeInfo(): Promise<HomeInfo> {
+  return call("GET", "/v1/home");
 }

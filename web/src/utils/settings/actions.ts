@@ -18,6 +18,8 @@ export async function loadModels(session: ChatSession, refresh = false): Promise
 export async function chooseModel(session: ChatSession, ref: string): Promise<Outcome> {
   const outcome = await session.request({ type: "set_model", name: ref });
   if (outcome.ok) store().setCurrentModel(ref);
+  // The new model's window changes how full the chat is.
+  if (outcome.ok && outcome.context !== undefined) useChatStore.getState().setContext(outcome.context);
   return outcome;
 }
 

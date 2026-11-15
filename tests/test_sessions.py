@@ -688,3 +688,31 @@ def test_session_file_fingerprint_tracks_saves(aldwin_home: Path) -> None:
     assert session_file_fingerprint(stored.path) != before
 
     assert session_file_fingerprint(aldwin_home / "sessions" / "nope.json") == (0, 0)
+
+
+def test_compaction_entry_round_trips_with_private_mode(aldwin_home: Path) -> None:
+    """The model's view of a long chat is saved with the session and read back."""
+    store = SessionStore()
+    stored = store.create_new(model="gpt-4o")
+    entry = {"version": 1, "summary": "notes", "cut": 0, "left_out": 2}
+    stored.compaction = dict(entry)
+
+    store.save(stored, stored.memory, interrupted=False)
+    loaded = store.load_file(stored.path)
+
+    assert loaded is not None
+    assert loaded.compaction == entry
+    assert stored.path.stat().st_mode & 0o777 == 0o600
+
+
+def test_session_without_compaction_loads_none(aldwin_home: Path) -> None:
+    """Files saved before compaction existed load with no compaction entry."""
+    store = SessionStore()
+    stored = store.create_new(model="gpt-4o")
+
+    loaded = store.load_file(stored.path)
+
+    assert loaded is not None
+    assert loaded.compaction is None
+    raw = json.loads(stored.path.read_text("utf-8"))
+    assert "compaction" not in raw

@@ -4,5 +4,11 @@
   "percent": "{percent}%",
   "title": "Context",
   "about": "about {tokens}",
-  "headroom": "Headroom"
+  "headroom": "Headroom",
+  "makeRoom": "Make room now",
+  "makeRoomHint": "Aldwin writes itself notes on older messages so the chat has room to keep going. Your messages stay as they are.",
+  "making": "Making room…",
+  "makingStatus": "Writing notes on earlier messages to make room",
+  "makingLabel": "Aldwin is making room",
+  "notYet": "You can make room once this chat passes {threshold}% of what the model can read. It's at {percent}% now, so there's plenty of room."
 }

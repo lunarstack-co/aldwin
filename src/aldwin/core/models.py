@@ -22,6 +22,7 @@ from agentling import (
     ModelTimeoutError,
 )
 
+from aldwin.core.compaction import MESSAGES
 from aldwin.core.logging import _redact_text
 from aldwin.core.providers.openai_chat import (
     OpenAIChatModel,
@@ -358,7 +359,7 @@ def classify_model_error(
         target = model_id if has_explicit_model else "this model"
         return (
             "request_rejected",
-            f"This conversation is too long for {target}. Start a fresh one with /new.",
+            MESSAGES["did_not_help"].format(model=target),
         )
     if isinstance(exc, ModelOutputTruncatedError):
         return (

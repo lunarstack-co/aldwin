@@ -14,7 +14,7 @@ from fakes.model import FakeModel, final, hang, raise_, text, tool_call
 
 from aldwin.client import AldwinClient
 from aldwin.core.agent import build_agent
-from aldwin.core.settings import AldwinConfig, SecretsConfig
+from aldwin.core.settings import AldwinConfig, LimitsConfig, SecretsConfig
 from aldwin.host import AldwinHost, AskFn, InProcessTransport, SessionStore
 from aldwin.protocol import (
     ApprovalEvent,
@@ -188,14 +188,15 @@ async def test_max_steps_emits_done_max_steps(
     host_client: AldwinClient,
     fake_model: FakeModel,
 ) -> None:
-    """Reaching `max_steps=15` emits `DoneEvent(reason='max_steps')`."""
-    for step in range(15):
+    """Reaching the default step limit emits `DoneEvent(reason='max_steps')`."""
+    limit = LimitsConfig().max_steps
+    for step in range(limit):
         fake_model.add_turns(
             tool_call("recall", {"query": f"topic {step}"}, call_id=f"c_{step}")
         )
     fake_model.add_turns(final("Stopped at max steps."))
 
-    events = await collect(host_client.turn("Run 15 recall steps"))
+    events = await collect(host_client.turn(f"Run {limit} recall steps"))
 
     assert isinstance(events[-1], DoneEvent)
     assert events[-1].reason == "max_steps"
@@ -292,11 +293,11 @@ async def test_new_conversation_starts_fresh_and_keeps_old_file(
     assert len(session_files) == 2
 
 
-async def test_fifty_turn_conversation_caps_context_at_20_user_turns(
+async def test_fifty_turn_conversation_keeps_every_user_turn(
     host_client: AldwinClient,
     fake_model: FakeModel,
 ) -> None:
-    """50-turn conversation keeps <= 20 user turns and 1 terminal event each."""
+    """50 turns each end once, and the model sees every earlier user turn."""
     for i in range(50):
         if i % 10 == 0:
             fake_model.add_turns(
@@ -323,11 +324,8 @@ async def test_fifty_turn_conversation_caps_context_at_20_user_turns(
     assert elapsed < 5.0, f"50 turns took {elapsed:.2f}s (budget < 5.0s)"
     assert len(terminal_events) == 50
 
-    for call_idx, call_messages in enumerate(fake_model.calls):
-        user_turns = sum(1 for msg in call_messages if msg.role == "user")
-        assert user_turns <= 20, (
-            f"Model call {call_idx} received {user_turns} user turns (max 20)"
-        )
+    last_call_users = [msg for msg in fake_model.calls[-1] if msg.role == "user"]
+    assert len(last_call_users) == 50
 
 
 async def test_turn_with_tool_then_final_answer_emits_text_and_hides_final_answer_card(

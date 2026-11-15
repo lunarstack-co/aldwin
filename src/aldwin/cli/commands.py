@@ -43,6 +43,7 @@ SLASH_COMMANDS: Final[tuple[tuple[str, str], ...]] = (
     ("/help", "Show commands and keyboard shortcuts"),
     ("/new", "Start a new conversation"),
     ("/history", "Show this conversation’s saved messages"),
+    ("/compact", "Make room in a long chat now by summarising older messages"),
     ("/copy", "Copy the last answer · /copy code for its last code block"),
     ("/model", "Switch model or provider"),
     ("/search", "Connect, switch or disconnect web search"),
@@ -92,6 +93,8 @@ class SlashCommandClient(Protocol):
     ) -> ModelsEvent: ...
 
     async def set_model(self, name: str) -> DoneEvent | ErrorEvent: ...
+
+    async def compact(self) -> tuple[DoneEvent | ErrorEvent, list[str]]: ...
 
     async def save_provider_key(
         self, provider: str, key: str
@@ -792,7 +795,7 @@ def render_skills_report(report: SkillsReport, console: object) -> None:
             continue
 
         name = sanitize_display_text(skill.name)
-        desc = sanitize_display_text(skill.description)
+        desc = sanitize_display_text(skill.summary or skill.description)
         if len(desc) > 80:
             desc = desc[:79] + "…"
         source = sanitize_display_text(skill.source)
@@ -934,6 +937,21 @@ async def handle_slash_command(
         )
         return False
 
+    if cmd == "/compact":
+        renderer.render_status_notice(
+            "Writing notes on earlier messages to make room..."
+        )
+        try:
+            result, notices = await client.compact()
+        except ProtocolError as exc:
+            renderer.console.print(Text(str(exc), style="warn"))
+            return False
+        for notice in notices:
+            renderer.render_status_notice(notice)
+        if isinstance(result, ErrorEvent):
+            renderer.console.print(Text(result.message, style="warn"))
+        return False
+
     if cmd == "/copy":
         _handle_copy(arg, renderer)
         return False
@@ -1019,6 +1037,7 @@ async def handle_slash_command(
                         source=item.source,
                         flags=tuple(item.flags),
                         last_used=item.last_used,
+                        summary=item.summary,
                     )
                     for item in event.items
                 )

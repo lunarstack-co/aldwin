@@ -119,6 +119,9 @@ type ChatState = {
   draft: string | null;
   skills: SkillsCatalog;
   context: ContextUsage | null;
+  /** When making room by hand started; new messages wait until it ends. */
+  makingRoomSince: number | null;
+  setMakingRoom: (since: number | null) => void;
   waitingApproval: string | null;
   setWaitingApproval: (summary: string | null) => void;
   setApproval: (event: ApprovalEvent) => void;
@@ -153,7 +156,9 @@ type ChatState = {
   finishTurn: (reason: DoneReason, now: number, end?: TurnEnd) => void;
   failTurn: (message: string, now: number, code?: string) => void;
   /** Replace the transcript with the host's history, keeping a running turn at the end. */
-  loadHistory: (items: HistoryItem[], interrupted?: boolean) => void;
+  loadHistory: (items: HistoryItem[], interrupted?: boolean, context?: ContextUsage | null) => void;
+  /** How full the model's window is, from a reply that measured the saved chat. */
+  setContext: (context: ContextUsage | null) => void;
   /** Make the host's in-flight turn the active one after a reconnect. */
   adoptRunningTurn: (
     partialText: string | null,
@@ -287,6 +292,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   toasts: [],
   interrupted: false,
   draft: null,
+  makingRoomSince: null,
   skills: { status: "idle", items: [] },
   context: null,
   pickedApps: [],
@@ -536,7 +542,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       waitingApproval: null,
     })),
 
-  loadHistory: (items, interrupted = false) => {
+  loadHistory: (items, interrupted = false, context = null) => {
     const { turns, activeId } = get();
     const fromHistory = groupHistory(items);
     const active = turns.find((t) => t.id === activeId);
@@ -560,9 +566,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       turns: fromHistory,
       interrupted: interrupted && active === undefined,
       historyLoaded: true,
-      context: active ? get().context : null,
+      context: active ? get().context : context,
     });
   },
+
+  setContext: (context) => set({ context }),
+
+  setMakingRoom: (since) => set({ makingRoomSince: since }),
 
   adoptRunningTurn: (partialText, activeTool, now, message = "") =>
     set((state) => {
