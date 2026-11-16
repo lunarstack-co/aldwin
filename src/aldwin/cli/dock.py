@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable
 from typing import Final, Literal
 
-from prompt_toolkit.filters import Condition
+from prompt_toolkit.filters import Condition, has_completions, is_searching
 from prompt_toolkit.formatted_text import AnyFormattedText, FormattedText
 from prompt_toolkit.input.ansi_escape_sequences import ANSI_SEQUENCES
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
@@ -23,7 +23,8 @@ SHORTCUTS_PANEL: Final[tuple[tuple[str, str], ...]] = (
     ("↵", "send"),
     ("⌥↵ / ⇧↵", "newline"),
     ("↑↓", "history"),
-    ("⌃R", "search history"),
+    ("⌃R", "search"),
+    ("⌃G", "editor"),
     ("⌃O", "expand diff"),
     ("Esc", "stop / close"),
     ("⌃C", "clear / quit"),
@@ -106,7 +107,7 @@ class AldwinPromptSession(PromptSession[str]):
         if self._footer_kind == "paste":
             return "paste again to expand"
         if self._footer_kind == "shortcuts":
-            return " · ".join(f"{k} {v}" for k, v in SHORTCUTS_PANEL[:4])
+            return " · ".join(f"{k} {v}" for k, v in SHORTCUTS_PANEL[:5])
         return "? for shortcuts"
 
     def _toolbar_text(self) -> AnyFormattedText:
@@ -134,6 +135,10 @@ class AldwinPromptSession(PromptSession[str]):
         @kb.add("c-j")
         def _ctrl_j(event: KeyPressEvent) -> None:
             event.current_buffer.insert_text("\n")
+
+        @kb.add("c-g", filter=~has_completions & ~is_searching)
+        def _ctrl_g(event: KeyPressEvent) -> None:
+            event.current_buffer.open_in_editor()
 
         @kb.add("c-m")
         def _enter(event: KeyPressEvent) -> None:
