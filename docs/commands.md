@@ -85,10 +85,7 @@ is installed. If none of these work, it says so and you can select with the mous
 | `Ctrl+C` | Clear the draft; twice on an empty prompt saves and exits |
 | `Ctrl+D` | Save the conversation and exit |
 
-To use a graphical editor such as VS Code, configure the `EDITOR` environment
-variable with its wait option (for example, `EDITOR="code --wait"`). This
-ensures Aldwin waits until you finish editing before returning the draft
-to the prompt.
+Ctrl+G uses `$VISUAL`, then `$EDITOR`, and otherwise the first of nano or vi it finds. To use a graphical editor such as VS Code, set the variable with its wait option (for example, `EDITOR="code --wait"`) so Aldwin waits until you close the file before putting the draft back in the prompt.
 
 ## Uninstall
 

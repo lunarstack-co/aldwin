@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable
 from typing import Final, Literal
 
-from prompt_toolkit.filters import Condition
+from prompt_toolkit.filters import Condition, has_completions, is_searching
 from prompt_toolkit.formatted_text import AnyFormattedText, FormattedText
 from prompt_toolkit.input.ansi_escape_sequences import ANSI_SEQUENCES
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
@@ -23,8 +23,8 @@ SHORTCUTS_PANEL: Final[tuple[tuple[str, str], ...]] = (
     ("↵", "send"),
     ("⌥↵ / ⇧↵", "newline"),
     ("↑↓", "history"),
-    ("⌃R", "search history"),
-    ("⌃G", "open in editor"),
+    ("⌃R", "search"),
+    ("⌃G", "editor"),
     ("⌃O", "expand diff"),
     ("Esc", "stop / close"),
     ("⌃C", "clear / quit"),
@@ -137,14 +137,9 @@ class AldwinPromptSession(PromptSession[str]):
         def _ctrl_j(event: KeyPressEvent) -> None:
             event.current_buffer.insert_text("\n")
 
-        @kb.add("c-g")
+        @kb.add("c-g", filter=~has_completions & ~is_searching)
         def _ctrl_g(event: KeyPressEvent) -> None:
-            buf = event.current_buffer
-
-            if buf.complete_state is not None:
-                return
-
-            buf.open_in_editor()
+            event.current_buffer.open_in_editor()
 
         @kb.add("c-m")
         def _enter(event: KeyPressEvent) -> None:

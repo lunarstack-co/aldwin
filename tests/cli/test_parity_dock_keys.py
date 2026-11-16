@@ -3,15 +3,32 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 from prompt_toolkit.buffer import Buffer
+from prompt_toolkit.completion import Completion
+from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
 from aldwin.cli.dock import AldwinPromptSession
 from aldwin.cli.paste import PasteStore
+
+
+async def _until(check: Callable[[], bool], timeout: float = 2.0) -> None:
+    async def poll() -> None:
+        while not check():
+            await asyncio.sleep(0.01)
+
+    await asyncio.wait_for(poll(), timeout)
+
+
+def _refuse_editor(
+    self: Buffer, validate_and_handle: bool = False
+) -> asyncio.Task[None]:
+    raise AssertionError("editor should not open")
 
 
 @pytest.mark.asyncio
@@ -101,7 +118,7 @@ async def test_dock_ctrl_g_opens_editor_and_returns_edited_text(
 
     def track_editor_task(
         self: Buffer, validate_and_handle: bool = False
-    ) -> asyncio.Task:
+    ) -> asyncio.Task[None]:
         task = original_open(self, validate_and_handle)
         editor_task.append(task)
         editor_started.set()
@@ -171,35 +188,43 @@ async def test_dock_ctrl_g_preserves_draft_when_editor_fails(
 
 
 @pytest.mark.asyncio
-async def test_dock_ctrl_g_does_nothing_while_completion_is_active(
+async def test_dock_ctrl_g_closes_completion_menu_without_opening_editor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    editor_called = False
-
-    def fake_open_editor(self: Buffer) -> asyncio.Task[None]:
-        nonlocal editor_called
-        editor_called = True
-        raise AssertionError("Editor should not open")
-
-    monkeypatch.setattr(Buffer, "open_in_editor", fake_open_editor)
+    monkeypatch.setattr(Buffer, "open_in_editor", _refuse_editor)
 
     with create_pipe_input() as pipe:
         session = AldwinPromptSession(input=pipe, output=DummyOutput())
         session.key_bindings = session.attach_key_bindings()
-
         prompt_task = asyncio.create_task(session.prompt_async("> "))
+        await _until(lambda: session.app.is_running)
 
-        await asyncio.sleep(0.05)
-
-        # Simulate an active completion picker.
-        session.default_buffer._set_completions([])
-
+        session.default_buffer._set_completions([Completion("help", start_position=0)])
         pipe.send_text("\x07")  # Ctrl+G
-        await asyncio.sleep(0.05)
+        await _until(lambda: session.default_buffer.complete_state is None)
 
-        assert not editor_called
-
-        session.default_buffer.cancel_completion()
         pipe.send_text("\r")
+        assert await asyncio.wait_for(prompt_task, timeout=2.0) == ""
 
+
+@pytest.mark.asyncio
+async def test_dock_ctrl_g_cancels_history_search_without_opening_editor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(Buffer, "open_in_editor", _refuse_editor)
+    history = InMemoryHistory()
+    history.append_string("hello world")
+
+    with create_pipe_input() as pipe:
+        session = AldwinPromptSession(input=pipe, output=DummyOutput(), history=history)
+        session.key_bindings = session.attach_key_bindings()
+        prompt_task = asyncio.create_task(session.prompt_async("> "))
+        await _until(lambda: session.app.is_running)
+
+        pipe.send_text("\x12hel")  # Ctrl+R, then a search term
+        await _until(lambda: session.app.layout.is_searching)
+        pipe.send_text("\x07")  # Ctrl+G
+        await _until(lambda: not session.app.layout.is_searching)
+
+        pipe.send_text("\r")
         await asyncio.wait_for(prompt_task, timeout=2.0)
